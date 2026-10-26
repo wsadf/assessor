@@ -22,7 +22,15 @@ if (fs.existsSync(dist)) {
   );
 }
 
-await app.listen({ port: config.panel.port, host: "127.0.0.1" });
+try {
+  await app.listen({ port: config.panel.port, host: "127.0.0.1" });
+} catch (err) {
+  if ((err as NodeJS.ErrnoException).code !== "EADDRINUSE") throw err;
+  console.error(
+    `A porta ${config.panel.port} ja esta em uso, provavelmente por outro painel aberto. Feche o outro terminal ou troque PAINEL_PORT no .env.`,
+  );
+  process.exit(1);
+}
 console.log(
   `API do painel em http://localhost:${config.panel.port} (telefone ${config.panel.phone}${demo ? ", dados de demonstracao" : ""})`,
 );
