@@ -4,13 +4,14 @@ import { useRoute } from "vue-router";
 import { api, precisaToken, salvarToken } from "./api";
 import AppIcon from "./components/AppIcon.vue";
 import AssessorAvatar from "./components/AssessorAvatar.vue";
+import BotaoWhatsapp from "./components/BotaoWhatsapp.vue";
 import { MESAS, SUBMENU_FINANCAS, mesaPorId } from "./mesas";
 
 const route = useRoute();
 const mesaAtual = computed(() => mesaPorId(String(route.meta.mesa ?? "financas")));
 const menuAberto = ref(false);
 const tema = ref(document.documentElement.dataset.theme === "light" ? "light" : "dark");
-const me = ref<{ nome: string | null; telefone: string; ia: string } | null>(null);
+const me = ref<{ nome: string | null; telefone: string; ia: string; whatsapp: string | null } | null>(null);
 const tokenDigitado = ref("");
 
 watch(() => route.fullPath, () => (menuAberto.value = false));
@@ -106,6 +107,7 @@ onMounted(carregarMe);
         <button class="icon-btn" :aria-label="tema === 'dark' ? 'Usar tema claro' : 'Usar tema escuro'" @click="alternarTema">
           <AppIcon :name="tema === 'dark' ? 'lua' : 'sol'" />
         </button>
+        <BotaoWhatsapp :numero="me?.whatsapp ?? null" :mesa="mesaAtual.id" />
       </header>
 
       <main class="conteudo">

@@ -103,6 +103,28 @@ export async function markReadWithTyping(messageId: string) {
   }).catch(() => undefined);
 }
 
+let numeroCache: string | null = null;
+
+/**
+ * Numero do assessor para o link wa.me: WHATSAPP_NUMERO no .env ou, sem ele, o numero
+ * exibido do Phone number ID na Meta. Sem nenhum dos dois, o painel explica como configurar.
+ */
+export async function assistantNumber(): Promise<string | null> {
+  if (config.whatsapp.displayNumber) return config.whatsapp.displayNumber;
+  if (numeroCache) return numeroCache;
+  if (!process.env.WHATSAPP_TOKEN || !process.env.WHATSAPP_PHONE_NUMBER_ID) return null;
+  try {
+    const res = await graphFetch(graph(`${config.whatsapp.phoneNumberId}?fields=display_phone_number`), {
+      signal: AbortSignal.timeout(5000),
+    });
+    const json = (await res.json()) as { display_phone_number?: string };
+    numeroCache = json.display_phone_number?.replace(/\D/g, "") || null;
+  } catch {
+    numeroCache = null;
+  }
+  return numeroCache;
+}
+
 export async function downloadMedia(mediaId: string): Promise<{ data: Buffer; mimeType: string }> {
   const meta = (await (await graphFetch(graph(mediaId))).json()) as { url: string; mime_type: string };
   const file = await graphFetch(meta.url);

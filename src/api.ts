@@ -3,6 +3,7 @@ import { z } from "zod";
 import { config } from "./config.js";
 import type { Kind, Repo, Task, Transaction } from "./db.js";
 import { fromLocal, localDate } from "./time.js";
+import { assistantNumber } from "./whatsapp.js";
 
 const mesSchema = z.string().regex(/^\d{4}-\d{2}$/);
 const dataSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -107,7 +108,7 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
 
       api.get("/me", async () => {
         const user = repo.getUser(phone);
-        return { telefone: phone, nome: user?.name ?? null, ia: config.aiProvider, hoje: localDate() };
+        return { telefone: phone, nome: user?.name ?? null, ia: config.aiProvider, hoje: localDate(), whatsapp: await assistantNumber() };
       });
 
       api.get("/meses", async () => {

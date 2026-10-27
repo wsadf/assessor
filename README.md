@@ -59,6 +59,8 @@ Para ver os seus dados reais:
 npm run painel
 ```
 
+No topo, o botão **Conversar no WhatsApp** abre a conversa com o assessor, já com uma mensagem para o assessor da mesa aberta. Ele usa `WHATSAPP_NUMERO` do `.env` ou, se estiver vazio, descobre o número pelo app da Meta (`WHATSAPP_TOKEN` e `WHATSAPP_PHONE_NUMBER_ID`). Sem nenhum dos dois, o botão explica como configurar.
+
 Abra http://localhost:3001. Na primeira vez, o painel pede o `PAINEL_TOKEN` do `.env`. Ele protege a API, que fica pública quando o túnel do WhatsApp está aberto. Por padrão o painel mostra o telefone do chat do terminal; para ver o do WhatsApp, coloque seu número em `PAINEL_TELEFONE`.
 
 Para desenvolver com recarga automática, em dois terminais:

@@ -45,6 +45,8 @@ export const config = {
     apiVersion: process.env.WHATSAPP_API_VERSION ?? "v23.0",
     noticeTemplate: process.env.WHATSAPP_NOTICE_TEMPLATE ?? "",
     noticeTemplateLanguage: process.env.WHATSAPP_NOTICE_TEMPLATE_LANG ?? "pt_BR",
+    // Numero publico do assessor, usado no botao "Conversar no WhatsApp" do painel.
+    displayNumber: (process.env.WHATSAPP_NUMERO ?? "").replace(/\D/g, ""),
   },
 
   // Numero de teste da Meta so entrega para numeros cadastrados; a lista evita que

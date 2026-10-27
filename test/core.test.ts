@@ -10,6 +10,7 @@ process.env.GEMINI_MODEL = "modelo-principal";
 process.env.GEMINI_FALLBACK_MODEL = "modelo-reserva";
 process.env.PAINEL_TOKEN = "token-teste";
 process.env.PAINEL_TELEFONE = "5511999990000";
+process.env.WHATSAPP_NUMERO = "55 (11) 98888-7777";
 
 const { openDb, repo: makeRepo } = await import("../src/db.js");
 const { executeTool, nextOccurrence } = await import("../src/tools.js");
@@ -352,5 +353,12 @@ test("renda variavel: media, faixa e variacao dos ultimos 6 meses", async () => 
   assert.equal(f.renda.menor, 1000);
   assert.equal(f.renda.maior, 5000);
   assert.ok(f.renda.variacao > 0.25);
+  await app.close();
+});
+
+test("API informa o numero do assessor para o botao do WhatsApp, so com digitos", async () => {
+  const app = buildServer(fresh());
+  const me = (await app.inject({ method: "GET", url: "/api/me", headers: { "x-painel-token": "token-teste" } })).json();
+  assert.equal(me.whatsapp, "5511988887777");
   await app.close();
 });
