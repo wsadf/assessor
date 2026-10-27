@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import { runAgent, type UserInput } from "./agent.js";
 import { registerApi } from "./api.js";
 import { AuthError } from "./auth.js";
+import { retirarPendentes } from "./avisos.js";
 import { config } from "./config.js";
 import { resolverContexto } from "./conta.js";
 import type { Repo } from "./db.js";
@@ -131,6 +132,9 @@ export function buildServer(repo: Repo) {
                   enviarArquivo: async (doc, data) =>
                     void arquivos.push({ data, mimeType: doc.mime_type, filename: nomeParaDownload(doc) }),
                 });
+          // Agora a janela de 24 h esta aberta: e a hora de entregar o que a Meta recusou antes.
+          const pendentes = retirarPendentes(repo.db, msg.from, new Date());
+          if (pendentes.length) await sendText(msg.from, `Avisos que ficaram para depois:\n${pendentes.map((p) => `- ${p}`).join("\n")}`);
           await sendText(msg.from, answer);
           for (const arquivo of arquivos) await sendDocument(msg.from, arquivo);
           app.log.info({ from: msg.from, type: msg.type, ms: Date.now() - started }, "mensagem respondida");

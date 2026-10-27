@@ -4,6 +4,7 @@ import path from "node:path";
 import { config } from "./config.js";
 import { prepararTabelasConta } from "./conta.js";
 import { prepararTabelasDocumentos } from "./documentos.js";
+import { prepararTabelasAvisos } from "./avisos.js";
 
 export type Kind = "despesa" | "receita";
 export type Recurrence = "diario" | "semanal" | "mensal" | null;
@@ -25,9 +26,13 @@ export interface Transaction {
   installment_total: number | null;
   /** Telefone de quem lancou; nulo nos registros anteriores a conta compartilhada, que sao do titular. */
   created_by: string | null;
+  /** Recorrencia que lancou esta transacao sozinha. */
+  recurring_id: number | null;
+  /** Conta a pagar quitada por esta despesa. */
+  bill_id: number | null;
 }
 
-type Opcionais = "counterpart" | "installment_group" | "installment_number" | "installment_total" | "created_by";
+type Opcionais = "counterpart" | "installment_group" | "installment_number" | "installment_total" | "created_by" | "recurring_id" | "bill_id";
 export type NewTransaction = Omit<Transaction, "id" | "created_at" | Opcionais> & Partial<Pick<Transaction, Opcionais>>;
 
 export interface Reminder {
@@ -148,13 +153,20 @@ export function openDb(file = config.dbPath) {
     ["reminders", "created_by", "TEXT"],
     ["reminders", "notify_phone", "TEXT"],
     ["tasks", "created_by", "TEXT"],
+    ["transactions", "recurring_id", "INTEGER"],
+    ["transactions", "bill_id", "INTEGER"],
   ]) {
     const cols = (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
     if (!cols.includes(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
   }
   db.exec(`CREATE INDEX IF NOT EXISTS idx_tx_counterpart ON transactions (phone, counterpart)`);
+  // Garante uma transacao por data de cada recorrencia, mesmo com dois ticks do agendador.
+  db.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_tx_recorrencia ON transactions (recurring_id, occurred_on) WHERE recurring_id IS NOT NULL`,
+  );
   prepararTabelasConta(db);
   prepararTabelasDocumentos(db);
+  prepararTabelasAvisos(db);
   return db;
 }
 
@@ -192,9 +204,9 @@ export function repo(db: Db) {
       const info = db
         .prepare(
           `INSERT INTO transactions (phone, kind, amount_cents, category, description, payment_method, occurred_on,
-             counterpart, installment_group, installment_number, installment_total, created_by)
+             counterpart, installment_group, installment_number, installment_total, created_by, recurring_id, bill_id)
            VALUES (@phone, @kind, @amount_cents, @category, @description, @payment_method, @occurred_on,
-             @counterpart, @installment_group, @installment_number, @installment_total, @created_by)`,
+             @counterpart, @installment_group, @installment_number, @installment_total, @created_by, @recurring_id, @bill_id)`,
         )
         .run({
           counterpart: null,
@@ -202,6 +214,8 @@ export function repo(db: Db) {
           installment_number: null,
           installment_total: null,
           created_by: null,
+          recurring_id: null,
+          bill_id: null,
           ...t,
         });
       return this.getTransaction(t.phone, Number(info.lastInsertRowid))!;
@@ -441,22 +455,6 @@ export function repo(db: Db) {
         tasks: q("tasks", "created_at"),
         messages: q("history", "created_at"),
       };
-    },
-
-    usersForSummary(today: string): string[] {
-      return (
-        db
-          // Membro de conta compartilhada nao recebe o resumo da conta: so o titular.
-          .prepare(
-            `SELECT phone FROM users WHERE (last_summary_on IS NULL OR last_summary_on < ?)
-               AND phone NOT IN (SELECT member_phone FROM account_members WHERE removed_at IS NULL)`,
-          )
-          .all(today) as { phone: string }[]
-      ).map((r) => r.phone);
-    },
-
-    markSummarySent(phone: string, today: string) {
-      db.prepare(`UPDATE users SET last_summary_on = ? WHERE phone = ?`).run(today, phone);
     },
   };
 }

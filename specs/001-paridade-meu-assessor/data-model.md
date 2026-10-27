@@ -144,3 +144,94 @@ na busca (filtro na consulta).
 
 `documentos`: titular e acesso completo. Regras de visibilidade em
 [research.md R18](research.md#r18-permissao).
+
+# US3: Avisos proativos
+
+Decisoes em [research.md](research.md) R23 a R34.
+
+## bills (nova): conta a pagar
+
+| Campo | Tipo | Regra |
+| --- | --- | --- |
+| id | INTEGER PK | |
+| phone | TEXT NOT NULL | telefone da conta |
+| created_by | TEXT NOT NULL | quem cadastrou |
+| description | TEXT NOT NULL | 1 a 80 caracteres, ex.: "Condominio", "Fatura Nubank" |
+| amount_cents | INTEGER | valor previsto, > 0; nulo quando varia (fatura) |
+| category | TEXT NOT NULL | categoria da despesa ao pagar; padrao "Contas" |
+| due_on | TEXT NOT NULL | proximo vencimento, `AAAA-MM-DD` |
+| due_day | INTEGER | dia do vencimento (1 a 31) para recorrencia mensal; nulo se unica |
+| status | TEXT NOT NULL | `aberta`, `paga`, `cancelada` |
+| paid_transaction_id | INTEGER | ultima despesa gerada ao pagar |
+| created_at | TEXT NOT NULL | |
+
+Transicoes:
+
+```text
+aberta --pagar (unica)--> paga
+aberta --pagar (mensal)--> aberta, com due_on no proximo mes (due_day; 31 vira o ultimo dia)
+aberta --cancelar--> cancelada
+```
+
+## recurring (nova): lancamento recorrente
+
+| Campo | Tipo | Regra |
+| --- | --- | --- |
+| id | INTEGER PK | |
+| phone | TEXT NOT NULL | telefone da conta |
+| created_by | TEXT NOT NULL | |
+| kind | TEXT NOT NULL | `despesa` ou `receita` |
+| amount_cents | INTEGER NOT NULL | > 0 |
+| category | TEXT NOT NULL | |
+| description | TEXT NOT NULL | 1 a 80 caracteres |
+| counterpart | TEXT | |
+| payment_method | TEXT | |
+| frequency | TEXT NOT NULL | `diaria`, `semanal`, `mensal` |
+| anchor_day | INTEGER | semanal: 0 (domingo) a 6; mensal: 1 a 31; diaria: nulo |
+| next_on | TEXT NOT NULL | proxima data de lancamento, `AAAA-MM-DD` |
+| status | TEXT NOT NULL | `ativa`, `pausada`, `cancelada` |
+| created_at | TEXT NOT NULL | |
+
+Transicoes: `ativa <-> pausada` (retomar recalcula `next_on` a partir de hoje), `ativa|pausada ->
+cancelada` (final). Lancamentos ja feitos continuam.
+
+## Colunas novas
+
+| Tabela | Coluna | Regra |
+| --- | --- | --- |
+| transactions | recurring_id INTEGER | recorrencia que gerou; indice unico parcial `(recurring_id, occurred_on) WHERE recurring_id IS NOT NULL` |
+| transactions | bill_id INTEGER | conta a pagar quitada por esta despesa |
+
+## notice_prefs (nova)
+
+| Campo | Tipo | Regra |
+| --- | --- | --- |
+| phone | TEXT NOT NULL | quem recebe (membro) |
+| kind | TEXT NOT NULL | `vencimentos`, `categoria`, `recorrentes`, `resumo_manha`, `resumo_noite` |
+| enabled | INTEGER NOT NULL | 0 ou 1 |
+| hour | INTEGER NOT NULL | 0 a 23 |
+
+Chave primaria `(phone, kind)`. Sem linha, vale o padrao de R28 (horas padrao: vencimentos,
+categoria e recorrentes 9h; resumo da manha `DAILY_SUMMARY_HOUR`; resumo da noite 21h). A
+coluna `users.last_summary_on` deixa de ser usada pelo resumo da manha, que passa ao `notice_log`.
+
+## notice_log (nova)
+
+| Campo | Tipo | Regra |
+| --- | --- | --- |
+| phone | TEXT NOT NULL | quem recebeu |
+| kind | TEXT NOT NULL | tipo do aviso |
+| key | TEXT NOT NULL | chave de R30 |
+| sent_at | TEXT NOT NULL | |
+
+Chave primaria `(phone, kind, key)`. Linhas com mais de 90 dias sao apagadas pelo agendador.
+
+## pending_notices (nova)
+
+| Campo | Tipo | Regra |
+| --- | --- | --- |
+| id | INTEGER PK | |
+| phone | TEXT NOT NULL | quem deveria receber |
+| text | TEXT NOT NULL | texto pronto do aviso ou lembrete |
+| created_at | TEXT NOT NULL | descartado depois de 7 dias |
+| delivered_at | TEXT | preenchido quando sai na proxima conversa |

@@ -118,6 +118,7 @@ export const api = {
   get: <T>(path: string, params: Record<string, string | number | undefined | null> = {}) => request<T>("GET", path + qs(params)),
   post: <T>(path: string, body: unknown) => request<T>("POST", path, body),
   patch: <T>(path: string, body: unknown) => request<T>("PATCH", path, body),
+  put: <T>(path: string, body: unknown) => request<T>("PUT", path, body),
   del: <T>(path: string) => request<T>("DELETE", path),
 };
 
@@ -137,6 +138,54 @@ export interface Transacao {
   criadoPor?: string | null;
   /** Documento guardado como comprovante; so vem na lista de Transacoes. */
   comprovanteId?: number | null;
+  /** Lancada sozinha por uma recorrencia; so vem na lista de Transacoes. */
+  recorrente?: boolean;
+  /** Conta a pagar quitada por esta despesa; so vem na lista de Transacoes. */
+  contaPagarId?: number | null;
+}
+
+export interface ContaPagar {
+  id: number;
+  descricao: string;
+  valor: number | null;
+  categoria: string;
+  vencimento: string;
+  mensal: boolean;
+  situacao: "aberta" | "paga" | "cancelada";
+  vencida: boolean;
+  ultimaTransacaoId: number | null;
+}
+
+export type Frequencia = "diaria" | "semanal" | "mensal";
+
+export interface Recorrencia {
+  id: number;
+  tipo: Tipo;
+  valor: number;
+  categoria: string;
+  descricao: string;
+  contraparte: string | null;
+  pagamento: string | null;
+  frequencia: Frequencia;
+  frequenciaTexto: string;
+  proxima: string;
+  situacao: "ativa" | "pausada" | "cancelada";
+}
+
+export type TipoAviso = "vencimentos" | "categoria" | "recorrentes" | "resumo_manha" | "resumo_noite";
+
+export interface Aviso {
+  tipo: TipoAviso;
+  nome: string;
+  descricao: string;
+  ligado: boolean;
+  hora: number;
+  disponivel: boolean;
+}
+
+export interface Avisos {
+  avisos: Aviso[];
+  modeloAprovado: boolean;
 }
 
 export interface PastaDoc {
@@ -220,6 +269,7 @@ export interface Financas {
   mesAnterior: { mes: string; despesas: number };
   renda?: { meses: { mes: string; receitas: number }[]; media: number; menor: number; maior: number; variacao: number };
   comprometido: { mes: string; valor: number }[];
+  contasProximas?: ContaPagar[];
   pulso: {
     lancamentos: number;
     ticketMedio: number;

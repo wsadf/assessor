@@ -26,6 +26,7 @@ export const mesaLiberada = (m: Mesa, pode: (c: Capacidade) => boolean) => !m.ex
 export const SUBMENU_FINANCAS = [
   { nome: "Painel", rota: "/financas", icone: "painel" },
   { nome: "Transações", rota: "/financas/transacoes", icone: "transacoes" },
+  { nome: "Contas e recorrências", rota: "/financas/contas", icone: "repetir" },
   { nome: "Categorias", rota: "/financas/categorias", icone: "categorias" },
   { nome: "Pessoas e lojas", rota: "/financas/contrapartes", icone: "pessoas" },
   { nome: "Formas de pagamento", rota: "/financas/pagamentos", icone: "cartao" },
