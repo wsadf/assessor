@@ -108,6 +108,7 @@ export const geminiProvider: Provider = async (history, input, userText, execute
   const userParts: Part[] = [];
   if (input.image) userParts.push(inline(input.image));
   if (input.audio) userParts.push(inline(input.audio));
+  if (input.document) userParts.push(inline(input.document));
   userParts.push({ text: userText });
 
   const contents: Content[] = [

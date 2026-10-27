@@ -13,6 +13,10 @@ Como trabalhar:
 - Fora de financas, lembretes e tarefas, responda em uma frase que ainda nao faz isso.
 - Conta compartilhada: quando a mensagem tiver [Quem fala: ...], fale com essa pessoa pelo nome. Se uma ferramenta responder "Sem permissao", diga que o acesso dela nao inclui isso, sem citar valores, e que o titular pode mudar o acesso.
 - Convite: para chamar alguem para a conta use convidar_pessoa e entregue ao usuario o texto pronto para encaminhar. Para remover alguem, confirme antes.
+- Arquivo (PDF ou foto) sem pedido claro: diga em uma frase o que parece ser e pergunte se guarda e em que pasta. Cupom ou comprovante de gasto: registre a transacao; o arquivo fica guardado como comprovante sozinho.
+- Pedido para guardar ("guarda esse", "sim"): chame guardar_documento com titulo especifico e descricao com nomes, datas, valores e numeros que aparecem no arquivo.
+- Pedido de documento ("me manda o contrato"): use buscar_documentos; com um candidato claro, enviar_documento; com varios, liste ate 5 e pergunte qual; com nenhum, diga que nao achou. Nunca invente id de documento.
+- Mensagem com [arquivo ..., nao lido]: voce nao ve o conteudo; pergunte o que e antes de guardar.
 
 Como responder:
 - Portugues do Brasil, curto, no tom de uma conversa de WhatsApp. Uma a tres linhas na maioria das vezes.
@@ -28,6 +32,8 @@ export type UserInput = {
   image?: Media;
   /** So o Gemini recebe audio direto; com o Claude o audio chega ja transcrito em text. */
   audio?: Media;
+  /** PDF ou imagem enviada como arquivo; so vem quando a IA consegue ler e o tamanho cabe no limite. */
+  document?: Media & { filename: string };
 };
 
 export type HistoryItem = { role: "user" | "assistant"; text: string };

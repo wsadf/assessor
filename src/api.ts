@@ -7,6 +7,13 @@ import { assistantNumber, sendNotice } from "./whatsapp.js";
 import { auth, AuthError } from "./auth.js";
 import { conta as servicoConta, repoDoContexto, resolverContexto } from "./conta.js";
 import { CAPACIDADES, contextoTitular, pode, PERFIS_CONVIDAVEIS, type Capacidade, type Contexto } from "./permissoes.js";
+import { documentos as servicoDocumentos, nomeParaDownload, PASTA_IDS, podeVerDocumento, type Documento } from "./documentos.js";
+
+const documentoBody = z.object({
+  titulo: z.string().trim().min(1).max(120).optional(),
+  pasta: z.enum(PASTA_IDS).optional(),
+  descricao: z.string().trim().max(600).nullable().optional(),
+});
 
 const mesSchema = z.string().regex(/^\d{4}-\d{2}$/);
 const dataSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -138,6 +145,10 @@ const CAPACIDADE_ROTA: Record<string, Capacidade[]> = {
   "DELETE /api/conta/convites/:id": ["acessos"],
   "PATCH /api/conta/membros/:telefone": ["acessos"],
   "DELETE /api/conta/membros/:telefone": ["acessos"],
+  // O download de um arquivo fica fora: a regra de visibilidade do documento decide (R18).
+  "GET /api/documentos": ["documentos"],
+  "PATCH /api/documentos/:id": ["documentos"],
+  "DELETE /api/documentos/:id": ["documentos"],
 };
 const SEM_ACESSO = { erro: "Seu acesso a esta conta não inclui isso." };
 
@@ -169,6 +180,7 @@ async function enviarCodigo(phone: string, codigo: string, log: FastifyInstance[
 export function registerApi(app: FastifyInstance, repo: Repo) {
   const contas = auth(repo.db);
   const acessos = servicoConta(repo.db);
+  const arquivos = servicoDocumentos(repo.db);
   const contextoDa = new WeakMap<FastifyRequest, Contexto>();
   /** Dados da conta vistos pelo perfil de quem pediu: `phone` e o telefone da conta, nao o de quem esta logado. */
   const de = (req: FastifyRequest) => {
@@ -367,6 +379,68 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
 
       api.get("/conta/convites", async (req) => ({ convites: acessos.listarConvites(de(req).ctx.conta) }));
 
+      /** Documento guardado que quem pediu pode ver; o resto responde como inexistente. */
+      const documentoVisivel = (req: FastifyRequest): Documento | undefined => {
+        const doc = arquivos.porId(Number((req.params as { id: string }).id));
+        return podeVerDocumento(repo, de(req).ctx, doc) && doc.status === "guardado" ? doc : undefined;
+      };
+      const toDoc = (d: Documento, nomes: Map<string, string>) => ({
+        id: d.id,
+        titulo: d.title,
+        descricao: d.description,
+        pasta: d.folder,
+        tipo: d.mime_type,
+        tamanho: d.size_bytes,
+        nomeOriginal: d.original_name,
+        dataDocumento: d.document_date,
+        enviadoPor: nomes.get(d.created_by) ?? null,
+        guardadoEm: d.saved_at,
+        transacaoId: d.transaction_id,
+      });
+
+      api.get("/documentos", async (req) => {
+        const { phone } = de(req);
+        const q = req.query as { pasta?: string; busca?: string; pagina?: string };
+        const pasta = PASTA_IDS.includes(q.pasta as never) ? q.pasta! : null;
+        const nomes = acessos.nomes(phone);
+        const lista = q.busca?.trim()
+          ? { documentos: arquivos.buscar(phone, q.busca, { pasta, limite: 30 }), total: 0 }
+          : arquivos.listar(phone, { pasta, pagina: Number(q.pagina) || 1 });
+        const bytes = arquivos.uso(phone);
+        return {
+          pastas: arquivos.pastasComUso(phone),
+          documentos: lista.documentos.map((d) => toDoc(d, nomes)),
+          total: q.busca?.trim() ? lista.documentos.length : lista.total,
+          uso: { bytes, limite: arquivos.limites.contaBytes, alerta: bytes >= arquivos.limites.contaBytes * 0.8 },
+        };
+      });
+
+      api.get("/documentos/:id/arquivo", async (req, reply) => {
+        const doc = documentoVisivel(req);
+        if (!doc) return reply.code(404).send({ erro: "documento nao encontrado" });
+        return reply
+          .type(doc.mime_type)
+          .header("content-disposition", `inline; filename*=UTF-8''${encodeURIComponent(nomeParaDownload(doc))}`)
+          .header("cache-control", "private, no-store")
+          .send(arquivos.ler(doc));
+      });
+
+      api.patch("/documentos/:id", async (req, reply) => {
+        const b = parse(documentoBody, body(req), reply);
+        if (!b) return;
+        const doc = documentoVisivel(req);
+        if (!doc) return reply.code(404).send({ erro: "documento nao encontrado" });
+        const novo = arquivos.atualizar(doc.id, b)!;
+        return toDoc(novo, acessos.nomes(de(req).phone));
+      });
+
+      api.delete("/documentos/:id", async (req, reply) => {
+        const doc = documentoVisivel(req);
+        if (!doc) return reply.code(404).send({ erro: "documento nao encontrado" });
+        arquivos.excluir(doc.id);
+        return { ok: true };
+      });
+
       api.post("/conta/convites", async (req, reply) => {
         const { ctx } = de(req);
         const b = parse(conviteBody, body(req), reply);
@@ -525,9 +599,11 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
         // Autoria so aparece quando ha mais de uma pessoa lancando; nulo e o titular.
         const nomes = ctx.compartilhada ? acessos.nomes(phone) : null;
         const criadoPor = (t: Transaction) => (nomes && t.created_by && t.created_by !== phone ? (nomes.get(t.created_by) ?? "Membro") : null);
+        // Transacoes ja vem filtradas pelo perfil, e o comprovante de uma transacao visivel tambem e visivel.
+        const comprovantes = arquivos.comprovantes(phone, txs.map((t) => t.id));
         return {
           mes,
-          transacoes: txs.map((t) => ({ ...toTx(t), criadoPor: criadoPor(t) })),
+          transacoes: txs.map((t) => ({ ...toTx(t), criadoPor: criadoPor(t), comprovanteId: comprovantes.get(t.id) ?? null })),
           categorias: repo.categories(phone),
           contrapartes: repo.counterparts(phone),
         };

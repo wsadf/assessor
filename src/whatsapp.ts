@@ -7,6 +7,7 @@ export type Incoming =
   | { id: string; from: string; name?: string; type: "text"; text: string }
   | { id: string; from: string; name?: string; type: "audio"; mediaId: string }
   | { id: string; from: string; name?: string; type: "image"; mediaId: string; caption?: string }
+  | { id: string; from: string; name?: string; type: "document"; mediaId: string; filename?: string; mimeType?: string; caption?: string }
   | { id: string; from: string; name?: string; type: "unsupported"; original: string };
 
 /** Extrai as mensagens de um payload de webhook; ignora status de entrega e leitura. */
@@ -23,6 +24,10 @@ export function parseWebhook(body: any): Incoming[] {
         if (m.type === "text") out.push({ ...base, type: "text", text: m.text.body });
         else if (m.type === "audio") out.push({ ...base, type: "audio", mediaId: m.audio.id });
         else if (m.type === "image") out.push({ ...base, type: "image", mediaId: m.image.id, caption: m.image.caption });
+        else if (m.type === "document") {
+          const d = m.document;
+          out.push({ ...base, type: "document", mediaId: d.id, filename: d.filename, mimeType: d.mime_type, caption: d.caption });
+        }
         else out.push({ ...base, type: "unsupported", original: m.type });
       }
     }
@@ -61,6 +66,34 @@ export async function sendText(to: string, text: string) {
       }),
     });
   }
+}
+
+/** Sobe o arquivo para a Meta e devolve o media id usado na mensagem. */
+export async function uploadMedia(data: Buffer, mimeType: string, filename: string): Promise<string> {
+  const form = new FormData();
+  form.append("messaging_product", "whatsapp");
+  form.append("type", mimeType);
+  form.append("file", new Blob([new Uint8Array(data)], { type: mimeType }), filename);
+  const res = await graphFetch(graph(`${config.whatsapp.phoneNumberId}/media`), { method: "POST", body: form });
+  return ((await res.json()) as { id: string }).id;
+}
+
+/** Imagem vai como foto; o resto como documento, com o nome do arquivo visivel na conversa. */
+export async function sendDocument(to: string, arquivo: { data: Buffer; mimeType: string; filename: string; caption?: string }) {
+  const id = await uploadMedia(arquivo.data, arquivo.mimeType, arquivo.filename);
+  const imagem = /^image\/(jpeg|png)$/.test(arquivo.mimeType);
+  await graphFetch(graph(`${config.whatsapp.phoneNumberId}/messages`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to,
+      type: imagem ? "image" : "document",
+      [imagem ? "image" : "document"]: imagem
+        ? { id, caption: arquivo.caption }
+        : { id, filename: arquivo.filename, caption: arquivo.caption },
+    }),
+  });
 }
 
 /** Mensagem de modelo aprovado; unica forma de escrever fora da janela de 24h desde a ultima mensagem do usuario. */

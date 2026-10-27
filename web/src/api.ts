@@ -52,11 +52,11 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 export type Perfil = "titular" | "completo" | "so_gastos" | "agenda_tarefas";
 export type PerfilMembro = Exclude<Perfil, "titular">;
-export type Capacidade = "despesas" | "receitas" | "agenda" | "tarefas" | "acessos";
+export type Capacidade = "despesas" | "receitas" | "agenda" | "tarefas" | "documentos" | "acessos";
 
 export const PERFIS: Record<Perfil, { nome: string; detalhe: string }> = {
   titular: { nome: "Titular", detalhe: "dono da conta, vê tudo e gerencia quem tem acesso" },
-  completo: { nome: "Acesso completo", detalhe: "vê e lança gastos, receitas, agenda e tarefas" },
+  completo: { nome: "Acesso completo", detalhe: "vê e lança gastos, receitas, agenda, tarefas e documentos" },
   so_gastos: { nome: "Só gastos", detalhe: "registra e vê só as despesas, sem receitas nem saldo" },
   agenda_tarefas: { nome: "Agenda e tarefas", detalhe: "só lembretes e tarefas, sem nada de dinheiro" },
 };

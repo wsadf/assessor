@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { config } from "./config.js";
 import { prepararTabelasConta } from "./conta.js";
+import { prepararTabelasDocumentos } from "./documentos.js";
 
 export type Kind = "despesa" | "receita";
 export type Recurrence = "diario" | "semanal" | "mensal" | null;
@@ -153,6 +154,7 @@ export function openDb(file = config.dbPath) {
   }
   db.exec(`CREATE INDEX IF NOT EXISTS idx_tx_counterpart ON transactions (phone, counterpart)`);
   prepararTabelasConta(db);
+  prepararTabelasDocumentos(db);
   return db;
 }
 
