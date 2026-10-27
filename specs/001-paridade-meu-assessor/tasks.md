@@ -94,12 +94,12 @@ nem pelo assessor nem pela API.
 
 **Painel web**
 
-- [ ] T024 [P] [US1] Em `web/src/api.ts`, adicionar as chamadas `validarConvite`, `listarAcessos`, `listarConvites`, `criarConvite`, `cancelarConvite`, `alterarPerfil`, `removerMembro` e o campo `convite` no cadastro; tipar `conta` em `/me` (depende de T021, T022, T023)
-- [ ] T025 [US1] Em `web/src/estado.ts`, `web/src/mesas.ts` e `web/src/router.ts`, guardar `capacidades` de `/me` e esconder mesas e rotas sem capacidade (Fiscal exige `receitas`; Agenda exige `agenda`; Tarefas exige `tarefas`); rota bloqueada leva para a primeira mesa permitida (depende de T024)
-- [ ] T026 [P] [US1] Criar `web/src/views/operacao/AcessosView.vue` ("Equipe e acesso"): lista de titular e membros com perfil e data; para o titular, botao de convite com escolha de perfil e rotulo, codigo exibido uma vez com copiar e "enviar no WhatsApp", lista de convites com estado e cancelar, alterar perfil e remover membro com confirmacao; reaproveitar `EstadoVazio`, `StatusCarga` e o estilo das telas de Financas (depende de T024)
-- [ ] T027 [US1] Em `web/src/views/OperacaoMesa.vue` e `web/src/router.ts`, ligar a rota `/operacao/acessos` a `AcessosView` e mostrar o atalho "Equipe e acesso" com a contagem de pessoas (depende de T026)
-- [ ] T028 [P] [US1] Em `web/src/views/auth/CriarContaView.vue`, campo opcional "Tenho um codigo de convite": ao validar, mostrar "Voce vai entrar na conta de <titular>" (e o aviso de R8 quando `temDadosProprios`), pular os passos de plano e pagamento e seguir para a ativacao (depende de T024)
-- [ ] T029 [P] [US1] Em `web/src/views/financas/FinancasPainel.vue`, `TransacoesView.vue` e `AnalisesView.vue`, esconder blocos de receita, saldo, renda e projecao quando faltar `receitas`; em `TransacoesView.vue`, mostrar `criadoPor` em cada lancamento quando a conta tiver membros (depende de T025)
+- [X] T024 [P] [US1] Em `web/src/api.ts`, adicionar as chamadas `validarConvite`, `listarAcessos`, `listarConvites`, `criarConvite`, `cancelarConvite`, `alterarPerfil`, `removerMembro` e o campo `convite` no cadastro; tipar `conta` em `/me` (depende de T021, T022, T023)
+- [X] T025 [US1] Em `web/src/estado.ts`, `web/src/mesas.ts` e `web/src/router.ts`, guardar `capacidades` de `/me` e esconder mesas e rotas sem capacidade (Fiscal exige `receitas`; Agenda exige `agenda`; Tarefas exige `tarefas`); rota bloqueada leva para a primeira mesa permitida (depende de T024)
+- [X] T026 [P] [US1] Criar `web/src/views/operacao/AcessosView.vue` ("Equipe e acesso"): lista de titular e membros com perfil e data; para o titular, botao de convite com escolha de perfil e rotulo, codigo exibido uma vez com copiar e "enviar no WhatsApp", lista de convites com estado e cancelar, alterar perfil e remover membro com confirmacao; reaproveitar `EstadoVazio`, `StatusCarga` e o estilo das telas de Financas (depende de T024)
+- [X] T027 [US1] Em `web/src/views/OperacaoMesa.vue` e `web/src/router.ts`, ligar a rota `/operacao/acessos` a `AcessosView` e mostrar o atalho "Equipe e acesso" com a contagem de pessoas (depende de T026)
+- [X] T028 [P] [US1] Em `web/src/views/auth/CriarContaView.vue`, campo opcional "Tenho um codigo de convite": ao validar, mostrar "Voce vai entrar na conta de <titular>" (e o aviso de R8 quando `temDadosProprios`), pular os passos de plano e pagamento e seguir para a ativacao (depende de T024)
+- [X] T029 [P] [US1] Em `web/src/views/financas/FinancasPainel.vue`, `TransacoesView.vue` e `AnalisesView.vue`, esconder blocos de receita, saldo, renda e projecao quando faltar `receitas`; em `TransacoesView.vue`, mostrar `criadoPor` em cada lancamento quando a conta tiver membros (depende de T025)
 
 **Checkpoint**: US1 completa; testes T007 a T011 verdes; roteiro do [quickstart.md](quickstart.md) passando.
 
@@ -107,9 +107,9 @@ nem pelo assessor nem pela API.
 
 ## Phase 4: Polish & Cross-Cutting Concerns
 
-- [ ] T030 [P] Em `src/seed.ts`, criar no `data/demo.db` a pessoa Bia (`bia@assessor.local`, senha `demo1234`, perfil `so_gastos`) ligada a conta demo, com alguns gastos lancados por ela e um convite pendente
-- [ ] T031 [P] Em `README.md`, documentar convites e perfis, a tela Equipe e acesso, o login demo da Bia, que membros precisam estar autorizados pelo titular em `ALLOWED_NUMBERS` e o limite de 5 destinatarios do numero de teste da Meta (principio VII); atualizar a tabela "Como esta organizado" com `src/conta.ts` e `src/permissoes.ts`
-- [ ] T032 Rodar `npm run typecheck` e `npm test` e corrigir o que falhar
+- [X] T030 [P] Em `src/seed.ts`, criar no `data/demo.db` a pessoa Bia (`bia@assessor.local`, senha `demo1234`, perfil `so_gastos`) ligada a conta demo, com alguns gastos lancados por ela e um convite pendente
+- [X] T031 [P] Em `README.md`, documentar convites e perfis, a tela Equipe e acesso, o login demo da Bia, que membros precisam estar autorizados pelo titular em `ALLOWED_NUMBERS` e o limite de 5 destinatarios do numero de teste da Meta (principio VII); atualizar a tabela "Como esta organizado" com `src/conta.ts` e `src/permissoes.ts`
+- [X] T032 Rodar `npm run typecheck` e `npm test` e corrigir o que falhar
 - [ ] T033 Executar o roteiro de [quickstart.md](quickstart.md) com `npm run painel:demo` e `npm run chat`, uma vez com `AI_PROVIDER=gemini` e outra com `AI_PROVIDER=claude` (principio III)
 
 ---
