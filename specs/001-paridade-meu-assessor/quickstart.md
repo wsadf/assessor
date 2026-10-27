@@ -115,3 +115,51 @@ Com o numero de teste: mandar um PDF com a legenda "guarda esse" (guardado e cla
 uma foto de cupom (lancamento e comprovante), mandar um PDF sem legenda e depois "sim, guarda"
 (guardado), e pedir o arquivo de volta (chega como documento na conversa). Repetir com
 `AI_PROVIDER=gemini` e `AI_PROVIDER=claude`.
+# US3: avisos proativos
+
+Contratos em [contracts/ferramentas-avisos.md](contracts/ferramentas-avisos.md) e
+[contracts/api-avisos.md](contracts/api-avisos.md). Os avisos usam relogio injetado (`now`) nos
+testes; nao e preciso esperar o dia virar.
+
+## 1. Testes automaticos
+
+Os testes novos (arquivo `test/avisos.test.ts`) devem cobrir:
+
+- conta a pagar com vencimento amanha gera um aviso na hora da pessoa e nenhum segundo aviso no
+  tick seguinte; paga, nao avisa; mensal paga avanca para o mes seguinte (31 de janeiro vira 28 ou
+  29 de fevereiro);
+- recorrencia semanal lanca uma transacao por segunda, com `recurring_id`, uma vez so mesmo com
+  dois ticks; pausada nao lanca; servidor parado por 10 dias lanca so as ocorrencias dos ultimos 7;
+- categoria 15% acima com diferenca maior que R$ 50 avisa com a projecao; abaixo dos pisos, nao
+  avisa; segundo aviso da mesma categoria na mesma semana nao sai;
+- resumo da noite conta so as areas do perfil; sem registros no dia, nao envia;
+- preferencias: padroes do titular e do membro; desligar pelo `configurar_avisos` para os envios;
+- envio recusado vira pendente e sai antes da resposta na proxima mensagem; pendente com mais de
+  7 dias e descartado; lembrete que falha nao e reenviado a cada tick;
+- `comparar_meses` com total e as tres maiores variacoes;
+- permissoes: so gastos cria conta a pagar e recorrencia de despesa, nao de receita; agenda e
+  tarefas nao recebe aviso de categoria nem vencimento;
+- API das tres areas, inclusive `403` e `contasProximas` em `/financas`.
+
+## 2. Terminal
+
+Com `DB_PATH=data/demo.db` e o titular demo:
+
+- "o condominio vence dia 8, 480 reais, todo mes" cria conta a pagar mensal;
+- "paguei o condominio" registra a despesa e mostra o proximo vencimento;
+- "toda segunda tem 89,90 da academia" cria a recorrencia e diz a proxima data;
+- "compara meu gasto com o mes passado" traz total e tres categorias;
+- "para de me avisar de categoria" e "me manda o resumo da noite as 22h" mudam as preferencias.
+
+## 3. Painel
+
+Em `npm run painel:demo` como `demo@assessor.local`: Financas > Contas e recorrencias lista,
+cria, paga, pausa e cancela; o painel de Financas mostra as contas dos proximos 7 dias;
+Operacao > Avisos liga e desliga e troca o horario, e avisa quando nao ha modelo aprovado. Como
+`bia@assessor.local`: Contas e recorrencias so com despesas; Avisos com categoria e vencimentos
+disponiveis e desligados.
+
+## 4. Agendador
+
+Com o servidor rodando e um numero de teste: cadastrar uma conta que vence amanha e mudar a hora
+de `vencimentos` para a hora atual; o aviso chega em ate 30 segundos e nao se repete.

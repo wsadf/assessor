@@ -1,7 +1,8 @@
 # Research: Paridade com o Meu Assessor
 
-Decisoes por historia. R1 a R10 sao da US1 (conta compartilhada, implementada); R11 a R22 sao da
-US2 (documentos). As demais historias acrescentam secoes aqui.
+Decisoes por historia. R1 a R10 sao da US1 (conta compartilhada) e R11 a R22 da US2 (documentos),
+ambas implementadas; R23 a R34 sao da US3 (avisos proativos). As demais historias acrescentam
+secoes aqui.
 
 # US1: Conta compartilhada
 
@@ -214,3 +215,123 @@ US2 (documentos). As demais historias acrescentam secoes aqui.
 - Seis ferramentas novas no bloco com cache. PDFs ate 5 MB entram no turno em que chegam, uma vez.
   Busca e envio sao so texto. Estimativa: um usuario que guarda 10 documentos por mes acrescenta
   cerca de 30 mil tokens de entrada, menos de R$ 0,10 no modelo padrao.
+
+# US3: Avisos proativos de financas
+
+## R23. Avisos sem IA
+
+- **Decision**: todo aviso proativo (vencimento, categoria acima do normal, lancamento recorrente,
+  resumo da noite) e montado por codigo a partir do banco, com texto fixo. Nenhum aviso chama o
+  modelo. A IA so entra quando a pessoa responde.
+- **Rationale**: principio IV. Um aviso diario por conta com IA custaria mais que a meta de R$ 3
+  por mes sozinho; com texto fixo o custo e zero. Principio VII: o numero do aviso vem do banco,
+  nunca de uma estimativa do modelo.
+- **Alternatives considered**: deixar o modelo redigir o aviso (mais natural, caro e sujeito a
+  erro em valor).
+
+## R24. Contas a pagar
+
+- **Decision**: entidade propria `bills` (conta a pagar): descricao, valor opcional, vencimento,
+  categoria, recorrencia mensal opcional e situacao. O aviso sai na vespera do vencimento, no
+  horario de avisos da pessoa (padrao 9h). "Paguei o condominio" chama `pagar_conta`, que registra
+  a despesa (com o valor informado ou o cadastrado) e, se for mensal, passa o vencimento para o
+  mes seguinte (dia 31 vira o ultimo dia do mes, como nas parcelas). Fatura de cartao entra como
+  conta a pagar mensal enquanto nao ha Open Finance (US8).
+- **Rationale**: lembrete nao tem valor nem vira lancamento; conta a pagar fecha o ciclo "avisou,
+  paguei, registrou". FR-012.
+- **Alternatives considered**: reaproveitar `reminders` com campos extras (mistura duas coisas e
+  complica a tela de Agenda).
+
+## R25. Lancamentos recorrentes
+
+- **Decision**: entidade `recurring` (recorrencia): tipo (despesa ou receita), valor, categoria,
+  descricao, contraparte, forma de pagamento, frequencia (`diaria`, `semanal`, `mensal`), proxima
+  data e situacao (`ativa`, `pausada`, `cancelada`). O agendador lanca a transacao quando a proxima
+  data chega, grava `recurring_id` na transacao e avanca a data. Se o servidor ficou parado, lanca
+  no maximo as ocorrencias dos ultimos 7 dias, uma por data, sem duplicar (indice unico em
+  `recurring_id` + `occurred_on`).
+- **Rationale**: FR-014 e cenario 3 ("toda segunda tem 89,90 da academia"). O indice unico garante
+  "uma vez so" mesmo com dois ticks concorrentes.
+- **Alternatives considered**: lancar todas as parcelas futuras de uma vez, como o parcelamento
+  (uma assinatura nao tem fim conhecido, e cancelar exigiria apagar o futuro).
+
+## R26. Categoria acima do normal
+
+- **Decision**: uma vez por dia, no horario de avisos, para cada pessoa com o aviso ligado e com
+  a capacidade `despesas`: compara o gasto de cada categoria do dia 1 ate hoje com o mesmo
+  intervalo do mes anterior (dia 31 vira o ultimo dia do mes anterior). Avisa quando o atual for
+  pelo menos 15% maior, a diferenca passar de R$ 50 e o mes anterior tiver ao menos R$ 100 na
+  categoria. A projecao de fechamento e `gasto ate hoje / dias passados * dias do mes`. No maximo
+  um aviso por categoria por semana ISO (registro em `notice_log`).
+- **Rationale**: FR-013 e cenario 2. Os pisos de R$ 50 e R$ 100 evitam aviso de "Padaria subiu
+  40%" por R$ 6, que faz a pessoa desligar o aviso.
+- **Alternatives considered**: media dos ultimos 3 meses (mais estavel, mas a spec pede o mes
+  anterior e e mais facil de conferir).
+
+## R27. Resumos da manha e da noite
+
+- **Decision**: o resumo da manha existente passa a ser uma preferencia (`resumo_manha`, ligado
+  para o titular, como hoje). O resumo da noite (`resumo_noite`, desligado por padrao, 21h) conta o
+  que entrou na conta no dia, so nas areas que o perfil enxerga: gastos (quantidade e total),
+  lembretes e tarefas criados, documentos guardados. Membros podem ligar os dois para si.
+- **Rationale**: FR-015, cenario 5, e a pendencia da US1 (resumo por membro, R4). Desligado por
+  padrao evita mandar mensagem nao pedida.
+
+## R28. Preferencias por pessoa
+
+- **Decision**: tabela `notice_prefs` por telefone de quem recebe (membro, nao conta), um registro
+  por tipo: `vencimentos`, `categoria`, `recorrentes`, `resumo_manha`, `resumo_noite`. Campos:
+  ligado e hora. Padroes: titular com `vencimentos`, `categoria`, `recorrentes` e `resumo_manha`
+  ligados; membro com tudo desligado ate ligar. Sem linha, vale o padrao. A pessoa muda pelo
+  WhatsApp ("para de me avisar de categoria", "me manda o resumo da noite as 22h") ou no painel.
+- **Rationale**: FR-016 e cenario 6. Membro desligado por padrao: entrar numa conta nao deve
+  encher o WhatsApp de ninguem.
+
+## R29. Aviso que nao pode ser entregue
+
+- **Decision**: avisos e lembretes saem por `sendNotice` (modelo aprovado se configurado). Se a
+  Meta recusar (por exemplo, fora da janela de 24 horas sem modelo), o texto vai para
+  `pending_notices` e o lembrete avanca normalmente. Na proxima mensagem da pessoa, o webhook
+  manda os pendentes ("Avisos que ficaram para depois:") antes da resposta do assessor. Pendente
+  com mais de 7 dias e descartado.
+- **Rationale**: edge case da spec. Corrige o comportamento atual, em que o lembrete que falha e
+  reenviado a cada 30 segundos indefinidamente.
+
+## R30. Nao repetir aviso
+
+- **Decision**: `notice_log` com `(phone, tipo, chave)` unico. Chaves: `vencimento:<bill_id>:<data>`,
+  `categoria:<nome>:<ano-semana>`, `recorrente:<recurring_id>:<data>`, `resumo_manha:<data>`,
+  `resumo_noite:<data>`. O registro e gravado antes do envio, numa transacao; se a chave ja
+  existir, o aviso nao sai.
+- **Rationale**: SC-004 ("nenhum aviso em duplicidade") mesmo com o agendador rodando a cada
+  30 segundos.
+
+## R31. Comparativo com o mes anterior
+
+- **Decision**: ferramenta `comparar_meses` (mes atual contra o anterior, ou um mes informado):
+  total de despesas, diferenca em valor e percentual, e as tres categorias com maior variacao
+  absoluta. Mes corrente compara ate o mesmo dia (R26). Sem receitas para quem nao tem a
+  capacidade.
+- **Rationale**: cenario 4; consulta de leitura, sem tabela nova.
+
+## R32. Permissoes
+
+- **Decision**: contas a pagar e recorrencias de despesa exigem `despesas`; recorrencia de receita
+  exige `receitas`; avisos de categoria e vencimento so saem para quem tem `despesas`; o resumo
+  da noite so conta areas visiveis. Preferencias de aviso sao pessoais e qualquer perfil muda as
+  proprias. Tudo pelo `repoDoContexto` e por `exigir`, como na US1.
+
+## R33. Painel
+
+- **Decision**: em Financas, a tela nova **Contas e recorrencias** (`/financas/contas`) lista
+  contas a pagar (proximas, vencidas, pagas no mes) e recorrencias, com criar, editar, pagar,
+  pausar e cancelar. Em Operacao, a tela **Avisos** (`/operacao/avisos`) liga e desliga cada tipo
+  e escolhe o horario, para quem esta logado.
+- **Rationale**: contas e recorrencias sao dinheiro (mesa do Bento); avisos valem para todas as
+  mesas (Otto coordena).
+
+## R34. Custo e carga (principio IV)
+
+- Nove ferramentas novas no bloco com cache, cerca de 1.500 tokens a mais, pagos uma vez por
+  cache. Avisos sem IA. O calculo de categoria roda uma vez por dia por pessoa com o aviso ligado,
+  com duas consultas agregadas por mes; para mil contas, milissegundos.
