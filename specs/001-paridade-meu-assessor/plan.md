@@ -1,12 +1,13 @@
-# Implementation Plan: Paridade com o Meu Assessor (US1 a US5)
+# Implementation Plan: Paridade com o Meu Assessor (US1 a US6)
 
-**Branch**: `001-us5-agendamento` | **Date**: 2026-10-27 | **Spec**: [spec.md](spec.md)
+**Branch**: `001-us6-falar-por-voce` | **Date**: 2026-10-27 | **Spec**: [spec.md](spec.md)
 
 **Input**: Feature specification from `/specs/001-paridade-meu-assessor/spec.md`
 
 **Note**: o plano cresce por historia. US1 (conta compartilhada, PR #1), US2 (documentos, PR #2),
-US3 (avisos proativos, PR #3) e US4 (Google Agenda, PR #4) estao implementadas e na `main`. Esta
-revisao planeja a US5 (pagina publica de agendamento). As historias 6 a 9 entram depois.
+US3 (avisos proativos, PR #3), US4 (Google Agenda, PR #4) e US5 (pagina de agendamento, PR #5)
+estao implementadas e na `main`. Esta revisao planeja a US6 (mensagens a outras pessoas). As
+historias 7 a 9 entram depois.
 
 ## Summary
 
@@ -21,54 +22,57 @@ avisos que a Meta recusa. Decisoes R23 a R34.
 **US4, entregue**: conexao com o Google Agenda por pessoa e compromissos pela conversa, com
 convidados, Meet, conflito e lembrete ligado. Decisoes R35 a R46.
 
-**US5, este plano**: quem atende clientes ativa uma pagina publica (`/agendar/<slug>` aleatorio)
-com duracoes, dias, janela, antecedencia e horizonte. O cliente, sem conta, escolhe duracao, dia e
-um horario realmente livre no Google Agenda de quem atende, informa nome, e-mail e WhatsApp e
-confirma; o evento entra no calendario com o cliente convidado. Na vespera, o cliente recebe a
-confirmacao pelo modelo aprovado do WhatsApp e responde 1, 2 ou PARAR, tratados por codigo, sem
-IA e sem acesso aos dados do dono. Pedindo ao assessor, o dono remarca e o cliente escolhe entre
-tres horarios livres. Dois pedidos para o mesmo horario: so um passa. Detalhes em
-[research.md](research.md) R47 a R58.
+**US5, entregue**: pagina publica de agendamento com horarios livres do Google, reserva sem
+sobreposicao, confirmacao na vespera, respostas do cliente sem IA e remarcacao. Decisoes R47 a R58.
+
+**US6, este plano**: o usuario pede "lembra o Joao de pagar o personal todo dia 5" ou "avisa meu
+irmao do aniversario da mae dia 27". O assessor acha o contato (ou pede o numero), mostra a previa
+com destinatario e texto e so grava depois da confirmacao. A mensagem sai pelo agendador, com a
+identificacao "Aqui e o assessor de {usuario}" e a opcao PARAR montadas por codigo. A situacao vem
+dos `statuses` da Meta; falha avisa o usuario. A resposta do contato e repassada literal a quem
+pediu, sem IA; PARAR entra na lista unica de opt-out da US5 e cancela os recorrentes. Limite de 20
+mensagens por conta e 3 por contato por dia. Detalhes em [research.md](research.md) R59 a R70.
 
 ## Technical Context
 
 **Language/Version**: TypeScript 7 em ESM, Node 22
 
-**Primary Dependencies**: Fastify 5, zod 4, better-sqlite3 13; Google Calendar pela camada da US4;
-painel em Vue 3 + Vue Router. Nenhuma dependencia nova.
+**Primary Dependencies**: Fastify 5, zod 4, better-sqlite3 13; WhatsApp Cloud API pela camada
+existente; painel em Vue 3 + Vue Router. Nenhuma dependencia nova.
 
-**Storage**: SQLite: `booking_pages`, `bookings`, `client_optouts`; tipo de aviso `agendamentos`
+**Storage**: SQLite: `contacts`, `contact_sends`, `contact_messages`; `client_optouts` (US5) passa a
+valer para contatos
 
-**Testing**: `node --test` via `npm test`, com `test/agendamento.test.ts` reaproveitando o Google
-simulado; `npm run typecheck`; `vue-tsc` no painel
+**Testing**: `node --test` via `npm test`, com `test/contatos.test.ts` reaproveitando o WhatsApp
+simulado de `test/googleFalso.ts`; `npm run typecheck`; `vue-tsc` no painel
 
-**Target Platform**: servidor Node unico; pagina publica servida pelo painel compilado
+**Target Platform**: servidor Node unico
 
 **Project Type**: web service com painel web (back-end em `src/`, front-end em `web/`)
 
-**Performance Goals**: SC-006 (cliente conclui o agendamento em menos de 1 minuto): uma chamada ao
-Google por dia consultado e duas na reserva (conferencia e criacao), cada uma com limite de 10 s
+**Performance Goals**: envio pedido "agora" sai no proximo ciclo do agendador (ate 30 s); resposta
+do contato repassada no mesmo processamento do webhook
 
-**Constraints**: nunca expor compromissos ou contato do dono na pagina publica; reserva sem
-sobreposicao (R52); mensagem ao cliente so com consentimento e pelo modelo aprovado (R54); resposta
-do cliente nunca chega ao assessor de IA (R55)
+**Constraints**: nunca enviar sem confirmacao (FR-025); identificacao e PARAR por codigo (FR-026);
+zero mensagem a numero em opt-out (FR-027, SC-007); limite diario (FR-028); fala do contato nunca
+passa pelo modelo (R66)
 
-**Scale/Scope**: 3 rotas publicas e 6 privadas, 4 ferramentas, 1 pagina publica nova, 1 bloco na
-mesa de Agenda, roteamento novo no webhook, tarefa nova no agendador
+**Scale/Scope**: 3 ferramentas, 2 rotas privadas, 1 bloco na mesa de Agenda, `statuses` e cartao
+de contato no webhook, roteamento novo de respostas, tarefa nova no agendador
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-| Principio | Avaliacao (US5) | Status |
+| Principio | Avaliacao (US6) | Status |
 | --- | --- | --- |
-| I. Dados financeiros sao do usuario | Pagina publica devolve so horarios livres (R50); `slug` aleatorio e trocavel (R48); cliente nunca conversa com o assessor de IA nem ve dados da conta (R55); dados do cliente com consentimento e apagados em 90 dias (R53, R58); limites contra reserva falsa | Passa |
-| II. Dinheiro so leitura | Agendamento sem cobranca nesta entrega | Passa |
-| III. Provedor de IA intercambiavel | Ferramentas comuns aos dois provedores; fluxo do cliente sem IA | Passa |
-| IV. Custo por conta sob controle | Pagina, reserva, confirmacao e respostas sem IA (R58) | Passa |
-| V. Uma fonte de verdade | O Google Agenda de quem atende decide o que esta livre; a reserva vira evento nele | Passa |
-| VI. Simplicidade de MVP | Janela unica por pagina; conflito resolvido pela transacao sincrona do SQLite, sem trava externa (R52) | Passa |
-| VII. Honestidade | Sem Google, a pagina nao ativa e diz por que; sem modelo aprovado, a confirmacao nao sai e o dono e avisado (R54); horarios mostrados no fuso do cliente com aviso (R51) | Passa |
+| I. Dados financeiros sao do usuario | Contatos e envios por conta; o contato nunca conversa com o assessor nem ve dados (R66); a fala dele nao passa pelo modelo. O webhook continua ignorando numeros fora de `ALLOWED_NUMBERS`, com a mesma excecao estreita da US5: numero com mensagem recente da conta so chega ao interpretador fixo | Passa |
+| II. Dinheiro so leitura | "Lembra o Joao de pagar" e so mensagem; nada de cobranca ou Pix | Passa |
+| III. Provedor de IA intercambiavel | Ferramentas comuns aos dois provedores; previa e envio por codigo | Passa |
+| IV. Custo por conta sob controle | Uma chamada de ferramenta por pedido; envio, situacao e respostas sem IA (R70) | Passa |
+| V. Uma fonte de verdade | WhatsApp e painel leem as mesmas tabelas; cancelar pelos dois | Passa |
+| VI. Simplicidade de MVP | Reaproveita `client_optouts`, `sendNotice`, `nextOccurrence` e a fila do agendador; sem dependencia nova | Passa |
+| VII. Honestidade | Sem modelo aprovado a previa avisa que pode nao chegar; falha e limite viram aviso ao usuario; a situacao mostrada vem da Meta | Passa |
 
 Reavaliado apos a Fase 1: sem violacoes. Complexity Tracking vazio.
 
@@ -79,63 +83,62 @@ Reavaliado apos a Fase 1: sem violacoes. Complexity Tracking vazio.
 ```text
 specs/001-paridade-meu-assessor/
 ├── spec.md
-├── plan.md              # US1 a US4 entregues, US5 planejada
-├── research.md          # R1 a R46 (US1 a US4), R47 a R58 (US5)
-├── data-model.md        # secoes US1 a US5
-├── quickstart.md        # secoes US1 a US5
+├── plan.md              # US1 a US5 entregues, US6 planejada
+├── research.md          # R1 a R58 (US1 a US5), R59 a R70 (US6)
+├── data-model.md        # secoes US1 a US6
+├── quickstart.md        # secoes US1 a US6
 ├── contracts/
 │   ├── api-conta.md, ferramentas-agente.md              # US1
 │   ├── api-documentos.md, ferramentas-documentos.md     # US2
 │   ├── api-avisos.md, ferramentas-avisos.md             # US3
 │   ├── api-google.md, ferramentas-agenda.md             # US4
-│   └── api-agendamento.md, ferramentas-agendamento.md   # US5
+│   ├── api-agendamento.md, ferramentas-agendamento.md   # US5
+│   └── api-contatos.md, ferramentas-contatos.md         # US6
 ├── checklists/
 │   └── requirements.md
-└── tasks.md             # US1 a US4 concluidas; US5 entra via /speckit-tasks
+└── tasks.md             # US1 a US5 concluidas; US6 entra via /speckit-tasks
 ```
 
-### Source Code (repository root), US5
+### Source Code (repository root), US6
 
 ```text
 src/
-├── agendamento.ts   # novo: tabelas, pagina (config, slug), horarios livres, reserva com conflito, remarcacao, textos ao cliente, respostas do cliente, limpeza
-├── avisos.ts        # tipo de aviso agendamentos
-├── scheduler.ts     # confirmacao da vespera as 18h e limpeza de reservas presas e dados antigos
-├── server.ts        # mensagem de cliente com agendamento vai para o interpretador, nunca para o agente
-├── tools.ts         # 4 ferramentas novas
-├── prompt.ts        # regras de remarcar e link
-└── api.ts           # plugin publico /api/agendar e rotas privadas /api/agendamento
+├── contatos.ts      # novo: tabelas, contato por nome, previa, pedido de envio, envio com limites e opt-out, situacao, respostas do contato
+├── whatsapp.ts      # wamid no retorno do envio; statuses e cartao de contato no parseWebhook
+├── scheduler.ts     # envios vencidos a contatos e limpeza das respostas antigas
+├── server.ts        # statuses atualizam mensagens; resposta de contato vai para o interpretador, nunca para o agente
+├── tools.ts         # 3 ferramentas novas
+├── prompt.ts        # regras de previa, confirmacao e cancelamento
+└── api.ts           # rotas privadas /api/contatos
 
 web/src/
-├── views/AgendarPublico.vue   # novo: pagina publica (duracao, dia, horario, dados, confirmado)
-├── views/AgendaMesa.vue       # bloco Pagina de agendamento e lista de agendamentos
-├── router.ts                  # rota publica /agendar/:slug
-└── api.ts                     # tipos
+├── views/AgendaMesa.vue   # bloco Mensagens para outras pessoas
+└── api.ts                 # tipos
 
 test/
-└── agendamento.test.ts
+├── googleFalso.ts         # WhatsApp simulado devolve wamid
+└── contatos.test.ts
 ```
 
-**Structure Decision**: o modulo novo `src/agendamento.ts` segue o estilo dos anteriores e usa
-`src/google.ts` para falar com o calendario. A pagina publica e uma rota do painel com
-`meta.publica`, como entrar e criar conta.
+**Structure Decision**: modulo novo `src/contatos.ts` no estilo de `src/agendamento.ts`. A lista de
+opt-out continua em `client_optouts`, criada pela US5, agora lida pelos dois modulos.
 
-## Ordem sugerida (US5)
+## Ordem sugerida (US6)
 
-1. Tabelas, configuracao da pagina e horarios livres, com testes.
-2. Reserva com conflito, evento e lembrete do dono.
-3. API publica e pagina publica no painel.
-4. Bloco no painel do dono e API privada.
-5. Confirmacao da vespera, interpretador de respostas no webhook e opt-out.
-6. Remarcacao pelo assessor (ferramentas) e avisos ao dono.
-7. README e quickstart com Google e WhatsApp reais.
+1. Tabelas, contato por nome e previa, com testes.
+2. Pedido de envio, agendador com limites, opt-out e `wamid`.
+3. `statuses` no webhook e aviso de falha.
+4. Respostas do contato e cartao de contato compartilhado.
+5. Ferramentas e prompt.
+6. API privada e bloco no painel.
+7. README e quickstart com WhatsApp real.
 
-## Fora desta entrega (US5)
+## Fora desta entrega (US6)
 
-- Janelas diferentes por dia, intervalos entre atendimentos, feriados.
-- Cobranca ou sinal na reserva (US9).
-- Lembrete por e-mail; confirmacao so pelo WhatsApp.
-- Varias paginas por pessoa ou por servico.
+- Criar envio pelo painel (so pelo WhatsApp).
+- Resumo das respostas por IA; o texto e repassado literal.
+- Grupos do WhatsApp, e-mail e SMS.
+- Ler a agenda de contatos do celular ou o Google Contatos.
 
 ## Complexity Tracking
 

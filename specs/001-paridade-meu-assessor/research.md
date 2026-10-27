@@ -1,8 +1,9 @@
 # Research: Paridade com o Meu Assessor
 
 Decisoes por historia. R1 a R10 sao da US1 (conta compartilhada), R11 a R22 da US2 (documentos)
-R23 a R34 da US3 (avisos proativos) e R35 a R46 da US4 (Google Agenda), todas implementadas;
-R47 a R58 sao da US5 (pagina publica de agendamento). As demais historias acrescentam secoes aqui.
+R23 a R34 da US3 (avisos proativos), R35 a R46 da US4 (Google Agenda) e R47 a R58 da US5 (pagina
+publica de agendamento), todas implementadas; R59 a R70 sao da US6 (mensagens a outras pessoas). As
+demais historias acrescentam secoes aqui.
 
 # US1: Conta compartilhada
 
@@ -551,3 +552,108 @@ R47 a R58 sao da US5 (pagina publica de agendamento). As demais historias acresc
 
 - Pagina, reserva e respostas do cliente sem IA. Duas ferramentas do assessor usam o modelo como
   qualquer outra. Dados do cliente ficam na conta do dono e somem 90 dias depois do horario.
+
+# US6: Mensagens a outras pessoas
+
+## R59. Quem e o contato
+
+- **Decision**: tabela `contacts` por conta, com nome e telefone. O assessor acha o contato pelo
+  nome ("o Joao"); sem cadastro, pede o numero ao usuario. Contato compartilhado pelo WhatsApp
+  (mensagem do tipo `contacts`) vira texto para o modelo com nome e numero, para o usuario nao
+  precisar digitar. O contato e salvo no primeiro envio confirmado.
+- **Rationale**: "lembra o Joao" so funciona se o assessor souber quem e o Joao. Pedir o numero uma
+  vez e o caminho mais curto; o cartao de contato e o jeito natural do WhatsApp.
+- **Alternatives considered**: ler a agenda do celular (impossivel pela API da Meta); Google
+  Contatos (escopo novo e sensivel, contra R40).
+
+## R60. Confirmacao antes de enviar
+
+- **Decision**: a ferramenta `mensagem_para_contato` funciona como as de cancelar: com
+  `confirmado` falso devolve a previa exata (destinatario, texto final e quando/recorrencia) e nao
+  envia nada; so com `confirmado` verdadeiro grava e envia ou agenda. Vale para todo envio, nao so
+  o primeiro.
+- **Rationale**: FR-025 e cenario 1. Confirmar sempre e mais simples que lembrar quem ja foi
+  confirmado, e evita mandar texto errado em nome do usuario.
+
+## R61. Formato da mensagem
+
+- **Decision**: texto fixo em volta do pedido: `Oi, {contato}! Aqui e o assessor de {usuario}.
+  {texto} Para nao receber mais mensagens do assessor, responda PARAR.` `{usuario}` e o nome de
+  quem pediu (o membro, nao o titular). O `{texto}` vem do modelo, com ate 500 caracteres.
+- **Rationale**: FR-026 e cenario 2. A identificacao e o PARAR sao de codigo; o modelo nao pode
+  esquecer nem reescrever.
+
+## R62. Janela de 24 horas
+
+- **Decision**: o envio sai por `sendNotice`: com `WHATSAPP_NOTICE_TEMPLATE` usa o modelo
+  aprovado, sem ele tenta texto livre, que a Meta so aceita se o contato escreveu nas ultimas 24
+  horas. Recusa vira situacao `falhou` e o usuario recebe o motivo. Sem modelo configurado, a
+  previa ja avisa que o envio pode nao chegar.
+- **Rationale**: assumption da spec e principio VII. Reaproveita o modelo da US3 (um parametro de
+  texto), sem modelo novo para aprovar.
+
+## R63. Lista de quem pediu para parar
+
+- **Decision**: a tabela `client_optouts` da US5 vira a lista unica de numeros que responderam
+  PARAR ao assessor, de qualquer conta, para agendamento e para contatos. Antes de cada envio o
+  numero e conferido; na lista, a ferramenta responde que a pessoa pediu para nao receber e nada
+  sai. Um PARAR cancela os envios recorrentes para aquele numero e o usuario e avisado.
+- **Rationale**: FR-027, cenario 3 e SC-007 (zero mensagens). Uma lista so: para o contato tanto
+  faz se a mensagem veio de uma pagina de agendamento ou de um pedido.
+
+## R64. Limites por conta
+
+- **Decision**: ate 20 mensagens a contatos por conta por dia e ate 3 por contato por dia,
+  contando as recorrentes. Passou do limite, o envio pedido e recusado com o motivo; o recorrente
+  pula aquele dia e o usuario e avisado uma vez.
+- **Rationale**: FR-028. Muita mensagem a quem nao conhece o numero leva a bloqueios e derruba a
+  qualidade do numero na Meta.
+
+## R65. Situacao do envio
+
+- **Decision**: cada mensagem enviada guarda o id da Meta (`wamid`). O webhook passa a ler os
+  `statuses` (`sent`, `delivered`, `read`, `failed`) e atualiza a mensagem. Falha avisa o usuario na
+  hora; "o Joao respondeu?" consulta a situacao pela ferramenta `consultar_mensagens_contato`.
+  Sem resposta nao gera aviso ativo.
+- **Rationale**: a historia pede "entregue, respondido, sem resposta". Avisar cada leitura seria
+  ruido; a falha e a resposta sao o que importa.
+
+## R66. Resposta do contato
+
+- **Decision**: mensagem de um numero que nao e da casa, sem agendamento ativo e com mensagem
+  enviada nos ultimos 7 dias (ou recorrente ativo) vai para um interpretador sem IA: `PARAR`
+  registra o opt-out e responde uma ultima vez; qualquer outra coisa e repassada a quem pediu o
+  envio, literal e cortada em 500 caracteres (`💬 Joao respondeu: ...`), e o contato recebe uma vez
+  por dia `Recebido! Vou repassar para {usuario}.`. Agendamento ativo tem a vez (US5).
+- **Rationale**: cenario 5 pede um resumo; repassar o texto literal e o resumo mais fiel, sem
+  custo de IA (principio IV) e sem passar a fala de um terceiro pelo modelo (principio I). O
+  contato nunca conversa com o assessor nem ve dados da conta.
+- **Alternatives considered**: resumir com o modelo (custo e dado de terceiro no modelo).
+
+## R67. Envio recorrente e agendado
+
+- **Decision**: o pedido grava um envio (`contact_sends`) com a primeira data e hora e a
+  recorrencia (`diario`, `semanal`, `mensal` ou nenhuma), como os lembretes. O agendador manda os
+  vencidos e calcula o proximo com `nextOccurrence`. "Para de cobrar o Joao" usa
+  `cancelar_mensagem_contato` (por id, com confirmacao quando houver mais de um).
+- **Rationale**: cenario 4 e o exemplo "todo dia 5". Mesmo modelo dos lembretes, ja testado.
+
+## R68. Quem pode pedir
+
+- **Decision**: a capacidade `agenda`: titular, membro completo e membro de agenda e tarefas.
+  Quem so registra gastos nao manda mensagem em nome da conta.
+- **Rationale**: "lembra o Joao" e um lembrete para outra pessoa. Perfis sao fixos nesta versao.
+
+## R69. Painel
+
+- **Decision**: na mesa de Agenda, bloco "Mensagens para outras pessoas": envios agendados e
+  recorrentes com cancelar, e as ultimas mensagens com situacao e resposta. Envio novo so pelo
+  WhatsApp nesta entrega.
+- **Rationale**: conferir e parar pelo painel atende ao principio V; criar pelo painel repetiria a
+  previa e a confirmacao sem ganho real agora.
+
+## R70. Custo e privacidade
+
+- Uma chamada de ferramenta por pedido; envio, agendador, situacao e respostas sem IA. Texto das
+  respostas guardado por 90 dias; o contato fica ate o usuario apagar. O numero do contato nunca
+  aparece para outras contas.
