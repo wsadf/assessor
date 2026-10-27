@@ -25,16 +25,21 @@ const addDays = (date: string, n: number) => {
   return d.toISOString().slice(0, 10);
 };
 
-const gastos: [string, string, number, number, string[]][] = [
-  ["Mercado", "Compra no mercado", 80, 420, ["debito", "credito Nubank"]],
-  ["Alimentação", "Almoço", 25, 70, ["credito Nubank", "pix", "VR"]],
-  ["Alimentação", "iFood", 35, 95, ["credito Nubank"]],
-  ["Transporte", "Uber", 15, 48, ["credito Itau"]],
-  ["Transporte", "Combustível", 150, 280, ["debito"]],
-  ["Saúde", "Farmácia", 20, 160, ["debito", "pix"]],
-  ["Lazer", "Cinema", 40, 90, ["credito Itau"]],
-  ["Padaria", "Padaria café da manhã", 12, 45, ["pix", "debito"]],
-  ["Compras", "Loja online", 60, 600, ["credito Nubank", "credito Itau"]],
+const gastos: [string, string, number, number, string[], string[]][] = [
+  ["Mercado", "Compra no mercado", 80, 420, ["debito", "credito Nubank"], ["Pão de Açúcar", "Assaí", "Carrefour"]],
+  ["Alimentação", "Almoço", 25, 70, ["credito Nubank", "pix", "VR"], ["Restaurante Sabor", "Cantina da Praça"]],
+  ["Alimentação", "iFood", 35, 95, ["credito Nubank"], ["iFood"]],
+  ["Transporte", "Uber", 15, 48, ["credito Itau"], ["Uber"]],
+  ["Transporte", "Combustível", 150, 280, ["debito"], ["Posto Shell", "Posto Ipiranga"]],
+  ["Saúde", "Farmácia", 20, 160, ["debito", "pix"], ["Drogasil", "Pague Menos"]],
+  ["Lazer", "Cinema", 40, 90, ["credito Itau"], ["Cinemark"]],
+  ["Padaria", "Padaria café da manhã", 12, 45, ["pix", "debito"], ["Padaria Pão Quente"]],
+  ["Compras", "Loja online", 60, 600, ["credito Nubank", "credito Itau"], ["Amazon", "Mercado Livre"]],
+];
+const pixPessoas: [string, string, number, number][] = [
+  ["Família", "Pix para a mãe", 300, 300],
+  ["Pessoal", "Pix para o João", 40, 180],
+  ["Pessoal", "Pix para a Ana", 25, 120],
 ];
 const fixos: [string, string, number, number, string][] = [
   ["Moradia", "Aluguel", 1650, 5, "boleto"],
@@ -62,21 +67,53 @@ for (let m = 0; m < 6; m++) {
   const mes = d.toISOString().slice(0, 7);
   const dia = (n: number) => `${mes}-${String(n).padStart(2, "0")}`;
   const ok = (date: string) => date <= today;
-  const add = (kind: "despesa" | "receita", category: string, description: string, valor: number, date: string, pay: string | null) => {
+  const add = (
+    kind: "despesa" | "receita",
+    category: string,
+    description: string,
+    valor: number,
+    date: string,
+    pay: string | null,
+    counterpart: string | null = null,
+  ) => {
     if (!ok(date)) return;
-    repo.addTransaction({ phone, kind, amount_cents: Math.round(valor * 100), category, description, payment_method: pay, occurred_on: date });
+    repo.addTransaction({ phone, kind, amount_cents: Math.round(valor * 100), category, description, payment_method: pay, occurred_on: date, counterpart });
     total++;
   };
   for (const [cat, desc, valor, d1] of receitas) {
     if (cat === "Freela" && rand() < 0.4) continue;
-    add("receita", cat, desc, valor * (cat === "Freela" ? 0.6 + rand() : 1), dia(d1), "pix");
+    const cliente = cat === "Freela" ? pick(["Ótica Vieira", "Studio Lume", "Café Aroma"]) : "Agência Norte";
+    add("receita", cat, desc, valor * (cat === "Freela" ? 0.6 + rand() : 1), dia(d1), "pix", cliente);
   }
   for (const [cat, desc, valor, d1, pay] of fixos) add("despesa", cat, desc, valor, dia(d1), pay);
   const qtd = 22 + Math.floor(rand() * 14);
   for (let i = 0; i < qtd; i++) {
-    const [cat, desc, min, max, pays] = pick(gastos);
-    add("despesa", cat, desc, min + rand() * (max - min), dia(1 + Math.floor(rand() * 28)), pick(pays));
+    const [cat, desc, min, max, pays, lojas] = pick(gastos);
+    add("despesa", cat, desc, min + rand() * (max - min), dia(1 + Math.floor(rand() * 28)), pick(pays), pick(lojas));
   }
+  for (const [cat, desc, min, max] of pixPessoas) {
+    const quem = desc.replace("Pix para a ", "").replace("Pix para o ", "");
+    const vezes = desc.includes("mãe") ? 1 : 1 + Math.floor(rand() * 3);
+    for (let i = 0; i < vezes; i++) add("despesa", cat, desc, min + rand() * (max - min), dia(desc.includes("mãe") ? 10 : 1 + Math.floor(rand() * 28)), "pix", quem[0].toUpperCase() + quem.slice(1));
+  }
+}
+
+// Parcelamentos com parcelas ja pagas e outras por vencer, para o bloco de dinheiro comprometido.
+const mesesAtras = (n: number) => {
+  const d = new Date(`${today.slice(0, 7)}-01T12:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() - n);
+  return d.toISOString().slice(0, 7);
+};
+for (const [desc, cat, valor, parcelas, inicio, dia, loja, pay] of [
+  ["Relógio", "Compras", 249.9, 10, 3, "12", "Relojoaria Central", "credito Nubank"],
+  ["Parcela do carro", "Transporte", 1180, 24, 5, "15", "Banco Auto", "boleto"],
+  ["Notebook", "Compras", 412.5, 8, 1, "07", "Amazon", "credito Itau"],
+] as const) {
+  const criadas = repo.addInstallments(
+    { phone, kind: "despesa", amount_cents: Math.round(valor * 100), category: cat, description: desc, payment_method: pay, occurred_on: `${mesesAtras(inicio)}-${dia}`, counterpart: loja },
+    parcelas,
+  );
+  total += criadas.length;
 }
 
 const at = (days: number, hhmm: string) => fromLocal(`${addDays(today, days)}T${hhmm}`);

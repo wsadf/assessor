@@ -16,7 +16,15 @@ export interface Transaction {
   payment_method: string | null;
   occurred_on: string;
   created_at: string;
+  /** Pessoa ou estabelecimento do outro lado: quem recebeu o Pix, a loja da compra. */
+  counterpart: string | null;
+  installment_group: string | null;
+  installment_number: number | null;
+  installment_total: number | null;
 }
+
+export type NewTransaction = Omit<Transaction, "id" | "created_at" | "counterpart" | "installment_group" | "installment_number" | "installment_total"> &
+  Partial<Pick<Transaction, "counterpart" | "installment_group" | "installment_number" | "installment_total">>;
 
 export interface Reminder {
   id: number;
@@ -122,6 +130,17 @@ export function openDb(file = config.dbPath) {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+  // Bancos criados antes desses campos recebem as colunas sem perder dados.
+  const cols = new Set((db.prepare(`PRAGMA table_info(transactions)`).all() as { name: string }[]).map((c) => c.name));
+  for (const [name, type] of [
+    ["counterpart", "TEXT"],
+    ["installment_group", "TEXT"],
+    ["installment_number", "INTEGER"],
+    ["installment_total", "INTEGER"],
+  ]) {
+    if (!cols.has(name)) db.exec(`ALTER TABLE transactions ADD COLUMN ${name} ${type}`);
+  }
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_tx_counterpart ON transactions (phone, counterpart)`);
   return db;
 }
 
@@ -152,14 +171,37 @@ export function repo(db: Db) {
       return rows.reverse();
     },
 
-    addTransaction(t: Omit<Transaction, "id" | "created_at">): Transaction {
+    addTransaction(t: NewTransaction): Transaction {
       const info = db
         .prepare(
-          `INSERT INTO transactions (phone, kind, amount_cents, category, description, payment_method, occurred_on)
-           VALUES (@phone, @kind, @amount_cents, @category, @description, @payment_method, @occurred_on)`,
+          `INSERT INTO transactions (phone, kind, amount_cents, category, description, payment_method, occurred_on,
+             counterpart, installment_group, installment_number, installment_total)
+           VALUES (@phone, @kind, @amount_cents, @category, @description, @payment_method, @occurred_on,
+             @counterpart, @installment_group, @installment_number, @installment_total)`,
         )
-        .run(t);
+        .run({
+          counterpart: null,
+          installment_group: null,
+          installment_number: null,
+          installment_total: null,
+          ...t,
+        });
       return this.getTransaction(t.phone, Number(info.lastInsertRowid))!;
+    },
+
+    /** Lanca as parcelas de uma compra de uma vez, uma por mes a partir da data da primeira. */
+    addInstallments(t: Omit<NewTransaction, "installment_group" | "installment_number" | "installment_total">, parcelas: number): Transaction[] {
+      const group = `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+      const [y, m, d] = t.occurred_on.split("-").map(Number);
+      const criar = db.transaction(() =>
+        Array.from({ length: parcelas }, (_, i) => {
+          // Dia 31 vira o ultimo dia dos meses mais curtos.
+          const ultimo = new Date(Date.UTC(y, m - 1 + i + 1, 0)).getUTCDate();
+          const data = new Date(Date.UTC(y, m - 1 + i, Math.min(d, ultimo))).toISOString().slice(0, 10);
+          return this.addTransaction({ ...t, occurred_on: data, installment_group: group, installment_number: i + 1, installment_total: parcelas });
+        }),
+      );
+      return criar();
     },
 
     getTransaction(phone: string, id: number): Transaction | undefined {
@@ -169,13 +211,13 @@ export function repo(db: Db) {
     },
 
     updateTransaction(phone: string, id: number, fields: Partial<Omit<Transaction, "id" | "phone" | "created_at">>) {
-      const allowed = ["kind", "amount_cents", "category", "description", "payment_method", "occurred_on"] as const;
+      const allowed = ["kind", "amount_cents", "category", "description", "payment_method", "occurred_on", "counterpart"] as const;
       const sets = allowed.filter((k) => fields[k] !== undefined);
       if (sets.length === 0) return this.getTransaction(phone, id);
       db.prepare(
         `UPDATE transactions SET ${sets.map((k) => `${k} = @${k}`).join(", ")}
          WHERE phone = @phone AND id = @id AND deleted_at IS NULL`,
-      ).run({ ...fields, phone, id });
+      ).run({ ...Object.fromEntries(sets.map((k) => [k, fields[k]])), phone, id });
       return this.getTransaction(phone, id);
     },
 
@@ -187,16 +229,43 @@ export function repo(db: Db) {
       );
     },
 
-    listTransactions(phone: string, from: string, to: string, opts: { kind?: Kind; category?: string } = {}) {
+    listTransactions(
+      phone: string,
+      from: string,
+      to: string,
+      opts: { kind?: Kind; category?: string; counterpart?: string; search?: string } = {},
+    ) {
       return db
         .prepare(
           `SELECT * FROM transactions
            WHERE phone = @phone AND deleted_at IS NULL AND occurred_on BETWEEN @from AND @to
              AND (@kind IS NULL OR kind = @kind)
              AND (@category IS NULL OR lower(category) = lower(@category))
+             AND (@counterpart IS NULL OR lower(counterpart) LIKE '%' || lower(@counterpart) || '%')
+             AND (@search IS NULL OR lower(description || ' ' || COALESCE(counterpart, '') || ' ' || category)
+                  LIKE '%' || lower(@search) || '%')
            ORDER BY occurred_on DESC, id DESC`,
         )
-        .all({ phone, from, to, kind: opts.kind ?? null, category: opts.category ?? null }) as Transaction[];
+        .all({
+          phone,
+          from,
+          to,
+          kind: opts.kind ?? null,
+          category: opts.category ?? null,
+          counterpart: opts.counterpart ?? null,
+          search: opts.search ?? null,
+        }) as Transaction[];
+    },
+
+    counterparts(phone: string): string[] {
+      return (
+        db
+          .prepare(
+            `SELECT DISTINCT counterpart FROM transactions
+             WHERE phone = ? AND deleted_at IS NULL AND counterpart IS NOT NULL ORDER BY counterpart`,
+          )
+          .all(phone) as { counterpart: string }[]
+      ).map((r) => r.counterpart);
     },
 
     /** Saldo (receitas menos despesas) de tudo lancado antes da data, exclusiva. */

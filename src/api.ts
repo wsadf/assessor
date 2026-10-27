@@ -29,6 +29,8 @@ const toTx = (t: Transaction) => ({
   descricao: t.description,
   pagamento: t.payment_method,
   data: t.occurred_on,
+  contraparte: t.counterpart,
+  parcela: t.installment_total ? { numero: t.installment_number!, total: t.installment_total, grupo: t.installment_group! } : null,
 });
 
 const toTask = (t: Task, today: string) => ({
@@ -63,6 +65,8 @@ const txBody = z.object({
   descricao: z.string().trim().min(1),
   pagamento: z.string().trim().min(1).nullable().optional(),
   data: dataSchema,
+  contraparte: z.string().trim().min(1).nullable().optional(),
+  parcelas: z.number().int().min(2).max(60).nullable().optional(),
 });
 
 const taskBody = z.object({
@@ -148,6 +152,26 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
           projecao = { despesas: reais(despesas), saldoFinal: reais(inicio + receitas - despesas), ritmoDiario: reais(despesas / lastDay(mes)) };
         }
 
+        // Renda variavel: com entradas irregulares, a media e a faixa dizem mais que o mes isolado.
+        const ultimos6 = Array.from({ length: 6 }, (_, i) => shiftMonth(mes, i - 5)).map((m) => ({
+          mes: m,
+          receitas: sum(repo.listTransactions(phone, range(m).from, range(m).to, { kind: "receita" }), "receita"),
+        }));
+        const comReceita = ultimos6.filter((m) => m.receitas > 0).map((m) => m.receitas);
+        const media = comReceita.length ? comReceita.reduce((s, v) => s + v, 0) / comReceita.length : 0;
+        const desvio = comReceita.length
+          ? Math.sqrt(comReceita.reduce((s, v) => s + (v - media) ** 2, 0) / comReceita.length)
+          : 0;
+
+        // Parcelas ja lancadas que vencem nos proximos meses: dinheiro que ja tem destino.
+        const futuras = repo
+          .listTransactions(phone, shiftMonth(mes, 1) + "-01", range(shiftMonth(mes, 6)).to, { kind: "despesa" })
+          .filter((t) => t.installment_total);
+        const comprometido = Array.from({ length: 6 }, (_, i) => shiftMonth(mes, i + 1)).map((m) => ({
+          mes: m,
+          valor: reais(futuras.filter((t) => t.occurred_on.startsWith(m)).reduce((s, t) => s + t.amount_cents, 0)),
+        }));
+
         const anterior = shiftMonth(mes, -1);
         const anteriorTx = repo.listTransactions(phone, range(anterior).from, range(anterior).to, { kind: "despesa" });
         const porDia = groupBy(txs, (t) => t.occurred_on, () => 1);
@@ -165,6 +189,15 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
           porCategoria: groupBy(despesasTx, (t) => t.category, (t) => t.amount_cents).map((c) => ({ ...c, total: reais(c.total) })),
           projecao,
           mesAnterior: { mes: anterior, despesas: reais(anteriorTx.reduce((s, t) => s + t.amount_cents, 0)) },
+          renda: {
+            meses: ultimos6.map((m) => ({ mes: m.mes, receitas: reais(m.receitas) })),
+            media: reais(media),
+            menor: reais(comReceita.length ? Math.min(...comReceita) : 0),
+            maior: reais(comReceita.length ? Math.max(...comReceita) : 0),
+            // Coeficiente de variacao: 0 e renda fixa; acima de ~0,25 a renda oscila bastante.
+            variacao: media ? desvio / media : 0,
+          },
+          comprometido,
           pulso: {
             lancamentos: txs.length,
             ticketMedio: despesasTx.length ? reais(despesas / despesasTx.length) : 0,
@@ -178,19 +211,19 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
 
       api.get("/transacoes", async (req, reply) => {
-        const q = req.query as { mes?: string; categoria?: string; tipo?: string };
+        const q = req.query as { mes?: string; categoria?: string; tipo?: string; contraparte?: string };
         const mes = parse(mesSchema, q.mes ?? localDate().slice(0, 7), reply);
         if (!mes) return;
         const tipo = q.tipo === "despesa" || q.tipo === "receita" ? q.tipo : undefined;
         const { from, to } = range(mes);
-        const txs = repo.listTransactions(phone, from, to, { kind: tipo, category: q.categoria || undefined });
-        return { mes, transacoes: txs.map(toTx), categorias: repo.categories(phone) };
+        const txs = repo.listTransactions(phone, from, to, { kind: tipo, category: q.categoria || undefined, counterpart: q.contraparte || undefined });
+        return { mes, transacoes: txs.map(toTx), categorias: repo.categories(phone), contrapartes: repo.counterparts(phone) };
       });
 
       api.post("/transacoes", async (req, reply) => {
         const b = parse(txBody, body(req), reply);
         if (!b) return;
-        const t = repo.addTransaction({
+        const base = {
           phone,
           kind: b.tipo,
           amount_cents: Math.round(b.valor * 100),
@@ -198,8 +231,10 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
           description: b.descricao,
           payment_method: b.pagamento ?? null,
           occurred_on: b.data,
-        });
-        return reply.code(201).send(toTx(t));
+          counterpart: b.contraparte ?? null,
+        };
+        if (b.parcelas) return reply.code(201).send(repo.addInstallments(base, b.parcelas).map(toTx)[0]);
+        return reply.code(201).send(toTx(repo.addTransaction(base)));
       });
 
       api.patch("/transacoes/:id", async (req, reply) => {
@@ -213,6 +248,7 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
           description: b.descricao,
           payment_method: b.pagamento,
           occurred_on: b.data,
+          counterpart: b.contraparte,
         });
         return t ? toTx(t) : reply.code(404).send({ erro: "transacao nao encontrada" });
       });
@@ -232,6 +268,32 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
           return { nome: category, tipo: kind, totalMes: reais(doMes.reduce((s, t) => s + t.amount_cents, 0)), qtdMes: doMes.length };
         });
         return { mes, categorias: categorias.sort((a, b) => b.totalMes - a.totalMes) };
+      });
+
+      api.get("/contrapartes", async (req, reply) => {
+        const q = req.query as { mes?: string; busca?: string };
+        const mes = parse(mesSchema, q.mes ?? localDate().slice(0, 7), reply);
+        if (!mes) return;
+        const { from, to } = range(mes);
+        const txs = repo.listTransactions(phone, from, to).filter((t) => t.counterpart);
+        const semContraparte = repo.listTransactions(phone, from, to).length - txs.length;
+        const nomes = [...new Set(txs.map((t) => t.counterpart!))];
+        const lista = nomes
+          .map((nome) => {
+            const deles = txs.filter((t) => t.counterpart === nome);
+            return {
+              nome,
+              enviado: reais(sum(deles, "despesa")),
+              recebido: reais(sum(deles, "receita")),
+              qtd: deles.length,
+              ultima: deles[0].occurred_on,
+              pix: deles.filter((t) => /pix/i.test(t.payment_method ?? "")).length,
+              transacoes: deles.slice(0, 5).map(toTx),
+            };
+          })
+          .filter((c) => !q.busca || c.nome.toLowerCase().includes(q.busca.toLowerCase()))
+          .sort((a, b) => b.enviado + b.recebido - (a.enviado + a.recebido));
+        return { mes, contrapartes: lista, semContraparte };
       });
 
       api.get("/pagamentos", async (req, reply) => {

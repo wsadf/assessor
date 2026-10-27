@@ -10,7 +10,8 @@ import ListaBarras from "../../components/graficos/ListaBarras.vue";
 import MesPicker from "../../components/MesPicker.vue";
 import StatusCarga from "../../components/StatusCarga.vue";
 import ValorGrande from "../../components/ValorGrande.vue";
-import { brl, brlSinal, dataCurta, mesNome, pagamentoNome, pct } from "../../format";
+import { brl, brlSinal, dataCurta, mesCurto, mesNome, pagamentoNome, pct } from "../../format";
+import GraficoBarras from "../../components/graficos/GraficoBarras.vue";
 import { HOJE, mesSelecionado, useCarregar } from "../../estado";
 import { PALETA } from "../../mesas";
 
@@ -32,6 +33,22 @@ const rosca = computed(() => {
 const maioresSaidas = computed(() =>
   (f.value?.maioresSaidas ?? []).map((t, i) => ({ nome: t.descricao, valor: t.valor, cor: PALETA[i % PALETA.length], detalhe: `${t.categoria} · ${dataCurta(t.data)}` })),
 );
+
+const rendaSerie = computed(() => ({
+  rotulos: (f.value?.renda.meses ?? []).map((m) => mesCurto(m.mes)),
+  series: [{ nome: "Entradas", cor: "#10b981", valores: (f.value?.renda.meses ?? []).map((m) => m.receitas) }],
+}));
+const estabilidade = computed(() => {
+  const v = f.value?.renda.variacao ?? 0;
+  if (!f.value?.renda.media) return { rotulo: "sem entradas registradas", classe: "" };
+  if (v > 0.25) return { rotulo: "renda variável", classe: "warning" };
+  return { rotulo: "renda estável", classe: "ok" };
+});
+const comprometidoSerie = computed(() => ({
+  rotulos: (f.value?.comprometido ?? []).map((m) => mesCurto(m.mes)),
+  series: [{ nome: "Parcelas", cor: "#ee7aa8", valores: (f.value?.comprometido ?? []).map((m) => m.valor) }],
+}));
+const totalComprometido = computed(() => (f.value?.comprometido ?? []).reduce((s, m) => s + m.valor, 0));
 
 const variacaoMes = computed(() => {
   if (!f.value || !f.value.mesAnterior.despesas) return null;
@@ -158,6 +175,33 @@ const pagamentos = computed(() => {
         </template>
       </BlocoMesa>
 
+      <BlocoMesa titulo="Quanto você ganha por mês">
+        <ValorGrande :valor="f.renda.media" />
+        <p class="muted">de entrada média nos meses com receita, entre <b>{{ brl(f.renda.menor) }}</b> e <b>{{ brl(f.renda.maior) }}</b>.</p>
+        <span class="chip" :class="estabilidade.classe">{{ estabilidade.rotulo }}</span>
+        <AssessorBalao mesa="financas">
+          <template v-if="f.renda.variacao > 0.25">sua renda oscila bastante. Planeje o mês pelo <b>menor valor</b> ({{ brl(f.renda.menor) }}), não pela média.</template>
+          <template v-else-if="f.renda.media">sua renda está estável: a média de {{ brl(f.renda.media) }} é uma boa base para o orçamento.</template>
+          <template v-else>registre suas entradas, como “recebi 800 do freela”, para eu calcular quanto você ganha por mês.</template>
+        </AssessorBalao>
+        <template #lado>
+          <GraficoBarras :rotulos="rendaSerie.rotulos" :series="rendaSerie.series" :altura="220" :legenda="false" />
+          <div class="eyebrow faint rodape">Entradas dos últimos 6 meses · a média considera só os meses com receita</div>
+        </template>
+      </BlocoMesa>
+
+      <BlocoMesa titulo="Já comprometido com parcelas">
+        <ValorGrande :valor="totalComprometido" />
+        <p class="muted">em parcelas já lançadas para os próximos 6 meses.</p>
+        <AssessorBalao mesa="financas">
+          <template v-if="totalComprometido">o próximo mês já começa com <b>{{ brl(f.comprometido[0]?.valor ?? 0) }}</b> em parcelas. No WhatsApp: “quanto falta pagar do carro?”.</template>
+          <template v-else>nenhuma parcela futura. Para lançar uma compra parcelada, diga “comprei a TV em 10x de 150”.</template>
+        </AssessorBalao>
+        <template #lado>
+          <GraficoBarras :rotulos="comprometidoSerie.rotulos" :series="comprometidoSerie.series" :altura="220" :legenda="false" />
+        </template>
+      </BlocoMesa>
+
       <BlocoMesa titulo="O pulso do mês">
         <ValorGrande :valor="f.pulso.lancamentos" :moeda="false" sufixo="lançamentos" />
         <AssessorBalao mesa="financas">
@@ -194,6 +238,7 @@ const pagamentos = computed(() => {
 .mini strong { font-size: 18px; }
 .mini .chip { justify-self: start; }
 .muted b { color: var(--text); }
+.esq-chip, :deep(.esq) > .chip { justify-self: start; }
 p { margin: 0; }
 .flex1 { flex: 1; min-width: 0; }
 .ultimos { margin-top: 24px; }

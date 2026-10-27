@@ -5,6 +5,8 @@ Assessor de IA no WhatsApp que registra gastos e receitas e manda lembretes. Voc
 O que já funciona:
 
 - Registrar, consultar, corrigir e excluir gastos e receitas ("gastei 62 na farmácia", "quanto gastei de mercado esse mês?", "o valor é 92")
+- Pessoa ou loja em cada lançamento e consultas por ela, por item e por valor ("quanto mandei de Pix pro João?", "quanto gastei com o relógio?", "onde gastei esses 200?")
+- Compras parceladas, com as parcelas futuras já lançadas ("comprei a TV em 10x de 150")
 - Foto de nota fiscal ou comprovante vira lançamento
 - Mensagem de voz (o Gemini ouve o áudio direto; com o Claude, precisa de uma chave de transcrição)
 - Lembretes únicos ou recorrentes ("me lembra do remédio todo dia 20h")
@@ -38,7 +40,7 @@ O painel mostra os mesmos dados do chat e do WhatsApp, organizados em mesas, cad
 
 | Mesa | Assessor | O que mostra |
 | --- | --- | --- |
-| Finanças | Bento | Saldo do período, maiores saídas, fim do mês projetado, categorias, pulso do mês; telas de Transações (lançar, editar, excluir), Categorias, Formas de pagamento e Análises (gráficos reorganizáveis e pedidos de gráfico) |
+| Finanças | Bento | Saldo do período, maiores saídas, fim do mês projetado, categorias, renda média e variação, parcelas já comprometidas, pulso do mês; telas de Transações (lançar, parcelar, editar, excluir), Categorias, Pessoas e lojas, Formas de pagamento e Análises (gráficos reorganizáveis e pedidos de gráfico) |
 | Fiscal | Clara | Receitas do mês como base de faturamento e o histórico de 6 meses. A emissão de nota fiscal ainda não está ligada |
 | Agenda | Lia | Lembretes por dia, próximos compromissos, as duas próximas semanas e criação de lembretes |
 | Tarefas | Davi | Tarefas por status, atrasadas, projetos; criar, editar, concluir |
@@ -175,6 +177,8 @@ O agente usa o fallback do servidor da Anthropic (`fallbacks: "default"`): se um
 | `src/scheduler.ts` | Envia lembretes vencidos e o resumo da manhã a cada 30 segundos |
 | `src/whatsapp.ts` | Envio de texto e modelo, download de mídia, leitura do webhook |
 | `src/cli.ts` | Mesmo agente no terminal |
+
+Em `docs/aprendizados-meu-assessor.md` está o que veio da entrevista do fundador do Meu Assessor e como cada ponto entrou no projeto.
 
 ## Limites deste MVP
 

@@ -13,13 +13,14 @@ import { PALETA } from "../../mesas";
 import CabecalhoSub from "./CabecalhoSub.vue";
 
 const { dados, carregando, erro, recarregar } = useCarregar(
-  () => api.get<{ transacoes: Transacao[]; categorias: string[] }>("/transacoes", { mes: mesSelecionado.value }),
+  () => api.get<{ transacoes: Transacao[]; categorias: string[]; contrapartes: string[] }>("/transacoes", { mes: mesSelecionado.value }),
   [mesSelecionado],
 );
 
 const route = useRoute();
 const filtroTipo = ref<"" | Tipo>("");
 const filtroCategoria = ref(typeof route.query.categoria === "string" ? route.query.categoria : "");
+const filtroContraparte = ref(typeof route.query.contraparte === "string" ? route.query.contraparte : "");
 const busca = ref("");
 
 const filtradas = computed(() =>
@@ -27,9 +28,11 @@ const filtradas = computed(() =>
     (t) =>
       (!filtroTipo.value || t.tipo === filtroTipo.value) &&
       (!filtroCategoria.value || t.categoria === filtroCategoria.value) &&
-      (!busca.value || `${t.descricao} ${t.categoria}`.toLowerCase().includes(busca.value.toLowerCase())),
+      (!filtroContraparte.value || t.contraparte === filtroContraparte.value) &&
+      (!busca.value || `${t.descricao} ${t.categoria} ${t.contraparte ?? ""}`.toLowerCase().includes(busca.value.toLowerCase())),
   ),
 );
+const totalFiltrado = computed(() => filtradas.value.reduce((s, t) => s + (t.tipo === "receita" ? t.valor : -t.valor), 0));
 
 const dias = computed(() => {
   const mapa = new Map<string, Transacao[]>();
@@ -51,15 +54,15 @@ const editando = ref<Transacao | null>(null);
 const criando = ref(false);
 const salvando = ref(false);
 const erroForm = ref<string | null>(null);
-const form = reactive({ tipo: "despesa" as Tipo, valor: "", descricao: "", categoria: "", pagamento: "", data: HOJE });
+const form = reactive({ tipo: "despesa" as Tipo, valor: "", descricao: "", categoria: "", pagamento: "", data: HOJE, contraparte: "", parcelas: "" });
 
 function abrir(t?: Transacao) {
   erroForm.value = null;
   editando.value = t ?? null;
   criando.value = !t;
   Object.assign(form, t
-    ? { tipo: t.tipo, valor: t.valor.toFixed(2).replace(".", ","), descricao: t.descricao, categoria: t.categoria, pagamento: t.pagamento ?? "", data: t.data }
-    : { tipo: "despesa", valor: "", descricao: "", categoria: "", pagamento: "", data: mesSelecionado.value === HOJE.slice(0, 7) ? HOJE : `${mesSelecionado.value}-01` });
+    ? { tipo: t.tipo, valor: t.valor.toFixed(2).replace(".", ","), descricao: t.descricao, categoria: t.categoria, pagamento: t.pagamento ?? "", data: t.data, contraparte: t.contraparte ?? "", parcelas: "" }
+    : { tipo: "despesa", valor: "", descricao: "", categoria: "", pagamento: "", data: mesSelecionado.value === HOJE.slice(0, 7) ? HOJE : `${mesSelecionado.value}-01`, contraparte: "", parcelas: "" });
 }
 const fechar = () => {
   editando.value = null;
@@ -70,9 +73,20 @@ async function salvar() {
   const valor = Number(form.valor.replace(/\./g, "").replace(",", "."));
   if (!(valor > 0)) return (erroForm.value = "Informe um valor maior que zero.");
   if (!form.descricao.trim() || !form.categoria.trim()) return (erroForm.value = "Preencha descrição e categoria.");
+  const parcelas = form.parcelas ? Number(form.parcelas) : null;
+  if (parcelas !== null && !(Number.isInteger(parcelas) && parcelas >= 2 && parcelas <= 60)) return (erroForm.value = "Parcelas: de 2 a 60.");
   salvando.value = true;
   erroForm.value = null;
-  const corpo = { tipo: form.tipo, valor, descricao: form.descricao, categoria: form.categoria, pagamento: form.pagamento.trim() || null, data: form.data };
+  const corpo = {
+    tipo: form.tipo,
+    valor,
+    descricao: form.descricao,
+    categoria: form.categoria,
+    pagamento: form.pagamento.trim() || null,
+    data: form.data,
+    contraparte: form.contraparte.trim() || null,
+    ...(editando.value ? {} : { parcelas }),
+  };
   try {
     if (editando.value) await api.patch(`/transacoes/${editando.value.id}`, corpo);
     else await api.post("/transacoes", corpo);
@@ -110,7 +124,14 @@ async function excluir() {
         <option value="">Todas as categorias</option>
         <option v-for="c in dados?.categorias ?? []" :key="c" :value="c">{{ c }}</option>
       </select>
-      <input v-model="busca" class="input busca" type="search" placeholder="Buscar descrição" />
+      <input v-model="busca" class="input busca" type="search" placeholder="Buscar descrição, pessoa ou loja" />
+    </div>
+    <div v-if="filtroContraparte || busca || filtroCategoria" class="resumo-filtro">
+      <span v-if="filtroContraparte" class="chip ok">
+        {{ filtroContraparte }}
+        <button class="limpar" aria-label="Limpar filtro de pessoa" @click="filtroContraparte = ''">×</button>
+      </span>
+      <span class="muted">{{ filtradas.length }} lançamentos · total <strong class="num">{{ totalFiltrado >= 0 ? "+" : "-" }}{{ brl(Math.abs(totalFiltrado)) }}</strong></span>
     </div>
 
     <StatusCarga :carregando="carregando && !dados" :erro="erro" @tentar="recarregar" />
@@ -127,11 +148,14 @@ async function excluir() {
           <span class="dot" :style="{ background: corCategoria(t.categoria) }" />
           <span class="corpo">
             <span class="desc">{{ t.descricao }}</span>
-            <span class="eyebrow meta">{{ t.categoria }} · {{ pagamentoNome(t.pagamento) }}</span>
+            <span class="eyebrow meta">
+              {{ t.categoria }}<template v-if="t.contraparte"> · {{ t.tipo === "receita" ? "de" : "para" }} {{ t.contraparte }}</template> · {{ pagamentoNome(t.pagamento) }}
+            </span>
           </span>
           <span class="valor">
             <strong class="num" :class="{ pos: t.tipo === 'receita' }">{{ brlSinal(t.valor, t.tipo) }}</strong>
-            <span v-if="t.pagamento?.toLowerCase().includes('credito')" class="chip warning">na fatura</span>
+            <span v-if="t.parcela" class="chip">parcela {{ t.parcela.numero }}/{{ t.parcela.total }}</span>
+            <span v-else-if="t.pagamento?.toLowerCase().includes('credito')" class="chip warning">na fatura</span>
           </span>
         </button>
       </section>
@@ -153,7 +177,17 @@ async function excluir() {
         <input v-model="form.categoria" class="input" list="lista-categorias" placeholder="Ex.: Alimentação" />
         <datalist id="lista-categorias"><option v-for="c in dados?.categorias ?? []" :key="c" :value="c" /></datalist>
       </label>
+      <label class="field">
+        <span>{{ form.tipo === "receita" ? "De quem veio" : "Para quem foi" }} (pessoa ou loja)</span>
+        <input v-model="form.contraparte" class="input" list="lista-contrapartes" placeholder="Ex.: João, iFood, Posto Shell" />
+        <datalist id="lista-contrapartes"><option v-for="c in dados?.contrapartes ?? []" :key="c" :value="c" /></datalist>
+      </label>
       <label class="field"><span>Pagamento</span><input v-model="form.pagamento" class="input" placeholder="pix, débito, crédito Nubank…" /></label>
+      <label v-if="criando && form.tipo === 'despesa'" class="field">
+        <span>Parcelas (deixe vazio se for à vista; o valor acima é o de cada parcela)</span>
+        <input v-model="form.parcelas" class="input" inputmode="numeric" placeholder="Ex.: 10" />
+      </label>
+      <p v-if="editando?.parcela" class="faint">Parcela {{ editando.parcela.numero }} de {{ editando.parcela.total }}. Editar aqui muda só esta parcela.</p>
       <p v-if="erroForm" class="erro">{{ erroForm }}</p>
       <template #rodape>
         <button class="btn primary" :disabled="salvando" @click="salvar">{{ salvando ? "Salvando…" : "Salvar" }}</button>
@@ -168,6 +202,9 @@ async function excluir() {
 <style scoped>
 .filtros { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
 .filtros select { min-width: 200px; }
+.resumo-filtro { display: flex; align-items: center; gap: 12px; margin: -6px 0 16px; flex-wrap: wrap; }
+.resumo-filtro strong { color: var(--text); }
+.limpar { border: 0; background: none; color: inherit; cursor: pointer; font-size: 15px; line-height: 1; padding: 0 0 0 4px; }
 .busca { flex: 1; min-width: 180px; }
 .segmentos { display: inline-flex; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 3px; }
 .segmentos button { border: 0; background: transparent; padding: 6px 14px; border-radius: 999px; cursor: pointer; color: var(--text-2); font-size: 14px; }

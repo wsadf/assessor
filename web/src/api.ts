@@ -62,6 +62,18 @@ export interface Transacao {
   descricao: string;
   pagamento: string | null;
   data: string;
+  contraparte: string | null;
+  parcela: { numero: number; total: number; grupo: string } | null;
+}
+
+export interface Contraparte {
+  nome: string;
+  enviado: number;
+  recebido: number;
+  qtd: number;
+  ultima: string;
+  pix: number;
+  transacoes: Transacao[];
 }
 
 export interface Grupo {
@@ -83,6 +95,8 @@ export interface Financas {
   porCategoria: Grupo[];
   projecao: { despesas: number; saldoFinal: number; ritmoDiario: number } | null;
   mesAnterior: { mes: string; despesas: number };
+  renda: { meses: { mes: string; receitas: number }[]; media: number; menor: number; maior: number; variacao: number };
+  comprometido: { mes: string; valor: number }[];
   pulso: {
     lancamentos: number;
     ticketMedio: number;

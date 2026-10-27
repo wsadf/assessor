@@ -6,6 +6,7 @@ const PATHS: Record<string, string> = {
   transacoes: "M7 7h13M17 4l3 3-3 3M17 17H4M7 14l-3 3 3 3",
   categorias: "M3 12V4h8l9 9-8 8zM7.5 8.5h.01",
   cartao: "M3 6h18v12H3zM3 10h18M7 15h3",
+  pessoas: "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21v-1a6 6 0 0 1 12 0v1M16 3.5a4 4 0 0 1 0 7M22 21v-1a6 6 0 0 0-4-5.6",
   analises: "M4 20V10M10 20V4M16 20v-7M22 20H2",
   sol: "M12 4V2M12 22v-2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
   lua: "M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z",

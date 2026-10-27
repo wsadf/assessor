@@ -267,7 +267,8 @@ test("API de financas soma o mes e cria, edita e exclui transacoes", async () =>
 
 test("tarefas: ferramenta do agente e API marcam atraso e conclusao", async () => {
   const repo = fresh();
-  const ontem = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+  const [ay, am, ad] = localDate().split("-").map(Number);
+  const ontem = new Date(Date.UTC(ay, am - 1, ad - 1)).toISOString().slice(0, 10);
   assert.match(executeTool(repo, phone, "criar_tarefa", { titulo: "Revisar contrato", prazo: ontem, prioridade: "urgente", projeto: null }), /#1/);
   assert.match(executeTool(repo, phone, "listar_tarefas", { incluir_concluidas: null }), /ATRASADA/);
 
@@ -280,5 +281,76 @@ test("tarefas: ferramenta do agente e API marcam atraso e conclusao", async () =
   assert.equal(depois.resumo.concluidas, 1);
   assert.equal(depois.resumo.atrasadas, 0);
   assert.ok(depois.tarefas[0].concluidaEm);
+  await app.close();
+});
+
+test("contraparte, busca e valor aproximado respondem para quem foi e onde foi o gasto", () => {
+  const repo = fresh();
+  const hoje = localDate();
+  const reg = (valor: number, descricao: string, contraparte: string | null, forma = "pix") =>
+    executeTool(repo, phone, "registrar_transacao", {
+      tipo: "despesa", valor, categoria: "Pessoal", descricao, forma_pagamento: forma, data: hoje, contraparte, parcelas: null,
+    });
+  assert.match(reg(50, "Pix", "João"), /para João/);
+  reg(30, "Pix", "João");
+  reg(200, "Relógio novo", "Relojoaria Central", "credito");
+  reg(80, "Pix", "Ana");
+
+  const consulta = (extra: object) =>
+    executeTool(repo, phone, "consultar_transacoes", {
+      data_inicio: hoje, data_fim: hoje, tipo: null, categoria: null, contraparte: null, busca: null, valor_aproximado: null, ...extra,
+    });
+  assert.match(consulta({ contraparte: "joão" }), /Despesas: R\$\s?80,00/);
+  assert.match(consulta({ busca: "relogio" }), /Nenhuma/);
+  assert.match(consulta({ busca: "Relógio" }), /Despesas: R\$\s?200,00/);
+  assert.match(consulta({ valor_aproximado: 199 }), /Relojoaria Central/);
+  assert.doesNotMatch(consulta({ valor_aproximado: 199 }), /Ana/);
+});
+
+test("compra parcelada cria uma parcela por mes e aparece como comprometida", async () => {
+  const repo = fresh();
+  const hoje = localDate();
+  const out = executeTool(repo, phone, "registrar_transacao", {
+    tipo: "despesa", valor: 150, categoria: "Compras", descricao: "TV", forma_pagamento: "credito", data: `${hoje.slice(0, 7)}-31`.replace(/-31$/, "-28"), contraparte: "Loja X", parcelas: 10,
+  });
+  assert.match(out, /10x de R\$\s?150,00, total R\$\s?1\.500,00/);
+
+  const app = buildServer(repo);
+  const h = { "x-painel-token": "token-teste" };
+  const f = (await app.inject({ method: "GET", url: `/api/financas?mes=${hoje.slice(0, 7)}`, headers: h })).json();
+  assert.equal(f.comprometido.length, 6);
+  assert.ok(f.comprometido.every((m: { valor: number }) => m.valor === 150));
+  const c = (await app.inject({ method: "GET", url: `/api/contrapartes?mes=${hoje.slice(0, 7)}`, headers: h })).json();
+  assert.equal(c.contrapartes[0].nome, "Loja X");
+  assert.equal(c.contrapartes[0].enviado, 150);
+  await app.close();
+});
+
+test("parcela no dia 31 cai no ultimo dia dos meses curtos", () => {
+  const repo = fresh();
+  const parcelas = repo.addInstallments(
+    { phone, kind: "despesa", amount_cents: 1000, category: "x", description: "x", payment_method: null, occurred_on: "2027-01-31" },
+    3,
+  );
+  assert.deepEqual(parcelas.map((p) => p.occurred_on), ["2027-01-31", "2027-02-28", "2027-03-31"]);
+  assert.deepEqual(parcelas.map((p) => `${p.installment_number}/${p.installment_total}`), ["1/3", "2/3", "3/3"]);
+});
+
+test("renda variavel: media, faixa e variacao dos ultimos 6 meses", async () => {
+  const repo = fresh();
+  const mes = localDate().slice(0, 7);
+  const anterior = (n: number) => {
+    const [y, m] = mes.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1 - n, 10)).toISOString().slice(0, 10);
+  };
+  for (const [n, valor] of [[0, 1000], [1, 5000], [2, 3000]] as const) {
+    repo.addTransaction({ phone, kind: "receita", amount_cents: valor * 100, category: "Palestras", description: "Palestra", payment_method: "pix", occurred_on: anterior(n) });
+  }
+  const app = buildServer(repo);
+  const f = (await app.inject({ method: "GET", url: `/api/financas?mes=${mes}`, headers: { "x-painel-token": "token-teste" } })).json();
+  assert.equal(f.renda.media, 3000);
+  assert.equal(f.renda.menor, 1000);
+  assert.equal(f.renda.maior, 5000);
+  assert.ok(f.renda.variacao > 0.25);
   await app.close();
 });
