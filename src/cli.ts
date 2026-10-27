@@ -14,7 +14,8 @@ if (!process.env[keyName]) {
 // Conversa pelo terminal, sem WhatsApp: mesmo agente e mesmo banco, com um telefone ficticio.
 const phone = process.env.CLI_PHONE ?? "5500000000000";
 const repo = makeRepo(openDb());
-repo.ensureUser(phone, "Terminal");
+// So nomeia numero novo: um CLI_PHONE de membro de conta compartilhada ja tem nome proprio.
+if (!repo.getUser(phone)) repo.ensureUser(phone, "Terminal");
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 console.log(`Assessor no terminal (IA: ${config.aiProvider}). Escreva como no WhatsApp; 'sair' encerra.\n`);

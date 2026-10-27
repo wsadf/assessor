@@ -111,6 +111,7 @@ nem pelo assessor nem pela API.
 - [X] T031 [P] Em `README.md`, documentar convites e perfis, a tela Equipe e acesso, o login demo da Bia, que membros precisam estar autorizados pelo titular em `ALLOWED_NUMBERS` e o limite de 5 destinatarios do numero de teste da Meta (principio VII); atualizar a tabela "Como esta organizado" com `src/conta.ts` e `src/permissoes.ts`
 - [X] T032 Rodar `npm run typecheck` e `npm test` e corrigir o que falhar
 - [ ] T033 Executar o roteiro de [quickstart.md](quickstart.md) com `npm run painel:demo` e `npm run chat`, uma vez com `AI_PROVIDER=gemini` e outra com `AI_PROVIDER=claude` (principio III)
+  - 2026-10-27: painel conferido (titular e Bia) e terminal com Gemini (titular e membro so gastos) ok. Falta o Claude: sem `ANTHROPIC_API_KEY` no `.env`.
 
 ---
 
