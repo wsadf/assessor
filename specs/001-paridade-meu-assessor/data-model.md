@@ -428,3 +428,56 @@ nenhuma conta, de pagina de agendamento ou de pedido do usuario.
 `parseWebhook` passa a devolver `contacts` (cartao compartilhado: nome e telefones) e uma lista
 separada de `statuses` (`id`, `status`, `recipient_id`, erro). `sendText` e `sendTemplate` passam a
 devolver o `wamid`.
+
+# US7: Area do contador
+
+Decisoes em [research.md](research.md) R71 a R80.
+
+## accountant_invites (nova)
+
+| Campo | Tipo | Regra |
+| --- | --- | --- |
+| id | INTEGER PK | |
+| account_phone | TEXT NOT NULL | conta do titular |
+| code_hash | TEXT NOT NULL UNIQUE | SHA-256 do codigo `CONT-XXXXXX` |
+| code_hint | TEXT NOT NULL | 2 ultimos caracteres, para a lista |
+| label | TEXT | ate 40 caracteres, ex.: "Escritorio Silva" |
+| expires_at | TEXT NOT NULL | 7 dias depois de criado |
+| accepted_by | TEXT | telefone do contador |
+| accepted_at | TEXT | |
+| canceled_at | TEXT | |
+| created_at | TEXT NOT NULL | |
+
+Ate 3 pendentes por conta. Estado: `pendente`, `aceito`, `cancelado`, `expirado` (calculado, como
+em `account_invites`).
+
+## accountant_access (nova)
+
+| Campo | Tipo | Regra |
+| --- | --- | --- |
+| id | INTEGER PK | |
+| account_phone | TEXT NOT NULL | conta do titular |
+| accountant_phone | TEXT NOT NULL | quem e o contador (tem conta no painel) |
+| invite_id | INTEGER | convite usado |
+| label | TEXT | do convite |
+| joined_at | TEXT NOT NULL | |
+| last_seen_at | TEXT | ultimo mes aberto ou pacote baixado |
+| revoked_at | TEXT | preenchido, o acesso acabou |
+
+Indice unico: `(account_phone, accountant_phone) WHERE revoked_at IS NULL`. O titular nao pode ser
+contador da propria conta, e um membro da conta nao precisa de acesso de contador.
+
+Transicoes: convite `pendente` --contador usa o codigo--> vinculo ativo; ativo --titular
+revoga--> `revoked_at`; um novo convite aceito depois cria outro vinculo.
+
+## Coluna nova
+
+`users.pending_accountant_invite_id`: convite `CONT-` informado no cadastro, aplicado na ativacao
+(como `pending_invite_id` da US1).
+
+## Dossie do mes (so em memoria)
+
+- Lancamentos: `transactions` da conta com `occurred_on` no mes, sem os excluidos.
+- Documentos: `documents` guardados da conta nas pastas `notas_fiscais`, `comprovantes` e
+  `boletos` com data (`document_date`, ou `saved_at` quando nao ha) no mes, mais os ligados
+  (`transaction_id`) a um lancamento do mes, de qualquer pasta.

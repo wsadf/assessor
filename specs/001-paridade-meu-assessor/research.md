@@ -1,9 +1,9 @@
 # Research: Paridade com o Meu Assessor
 
 Decisoes por historia. R1 a R10 sao da US1 (conta compartilhada), R11 a R22 da US2 (documentos)
-R23 a R34 da US3 (avisos proativos), R35 a R46 da US4 (Google Agenda) e R47 a R58 da US5 (pagina
-publica de agendamento), todas implementadas; R59 a R70 sao da US6 (mensagens a outras pessoas). As
-demais historias acrescentam secoes aqui.
+R23 a R34 da US3 (avisos proativos), R35 a R46 da US4 (Google Agenda), R47 a R58 da US5 (pagina publica
+de agendamento) e R59 a R70 da US6 (mensagens a outras pessoas), todas implementadas; R71 a R80 sao
+da US7 (area do contador). As demais historias acrescentam secoes aqui.
 
 # US1: Conta compartilhada
 
@@ -657,3 +657,93 @@ demais historias acrescentam secoes aqui.
 - Uma chamada de ferramenta por pedido; envio, agendador, situacao e respostas sem IA. Texto das
   respostas guardado por 90 dias; o contato fica ate o usuario apagar. O numero do contato nunca
   aparece para outras contas.
+
+# US7: Area do contador
+
+## R71. Vinculo do contador
+
+- **Decision**: tabela propria `accountant_access` (conta do titular, telefone do contador, quando
+  entrou, ultimo acesso, revogado em). Nao usa `account_members`: o contador nao vira membro, nao
+  entra na conversa e pode atender varias contas ao mesmo tempo.
+- **Rationale**: FR-006 liga um WhatsApp a uma so conta, o que serve para membros e impediria um
+  contador com varios clientes. O vinculo separado tambem deixa claro, no codigo, que nenhuma rota
+  existente de membro vale para ele.
+- **Alternatives considered**: perfil `contador` em `account_members` (quebra FR-006 e faria o
+  contador passar por `resolverContexto`, com risco de herdar capacidades).
+
+## R72. Convite proprio
+
+- **Decision**: tabela `accountant_invites` com codigo `CONT-XXXXXX` (mesmo alfabeto do `CONV-`),
+  validade de 7 dias, uso unico, ate 3 pendentes por conta e o mesmo limite de tentativas erradas
+  de `invite_attempts`. So o titular gera (capacidade `acessos`), pelo painel ou pelo WhatsApp
+  ("gera um convite para o meu contador").
+- **Rationale**: "convida o contador com um codigo proprio". O prefixo diferente evita que um
+  codigo de contador vire, por engano, acesso de membro.
+
+## R73. Como o contador entra
+
+- **Decision**: com conta no painel (cadastro e ativacao pelo WhatsApp como qualquer usuario). No
+  cadastro, o campo de convite aceita `CONT-`: sem plano, o codigo fica pendente e vira vinculo na
+  ativacao, como o `CONV-`. Quem ja tem conta digita o codigo na tela Clientes.
+- **Rationale**: reaproveita senha, codigo de ativacao e sessao da US1. O contador nao paga: o
+  acesso e um beneficio da conta do cliente.
+
+## R74. Isolamento
+
+- **Decision**: o contador continua com o proprio contexto (a propria conta, talvez vazia). A area
+  do contador e um conjunto separado de rotas `/api/contador/...`, so de leitura, e cada pedido
+  confere no banco se ha vinculo ativo entre o contador e a conta pedida. Nenhuma rota de escrita
+  recebe uma conta de cliente.
+- **Rationale**: FR-029, cenario 3 e FR-031. Conferir o vinculo a cada pedido faz a revogacao valer
+  na hora (cenario 4), sem cache. O contador nao chega a nenhuma outra rota da conta do cliente,
+  entao nao ha o que esconder na tela: a acao nao existe.
+
+## R75. O que entra no dossie
+
+- **Decision**: por mes: todas as despesas e receitas (data, tipo, valor, categoria, descricao,
+  contraparte, forma de pagamento, parcela, quem lancou) e os documentos guardados das pastas
+  `notas_fiscais`, `comprovantes` e `boletos`, mais qualquer documento ligado a um lancamento do
+  mes. Saude, pessoais, casa, carro, contratos, trabalho e outros ficam de fora, a menos que sejam
+  comprovante de um lancamento. Meses disponiveis: os que tem lancamento ou documento.
+- **Rationale**: FR-029 fala em lancamentos e documentos fiscais. Uma identidade guardada na pasta
+  Pessoais nao e assunto do contador.
+
+## R76. Pacote do mes
+
+- **Decision**: ZIP montado no servidor, sem dependencia nova: `node:zlib` (deflate e `crc32`, que
+  o Node 22 ja tem) e um escritor de ZIP de poucas linhas em `src/zip.ts`. Dentro:
+  `lancamentos-AAAA-MM.csv` (separador `;`, decimal com virgula, BOM UTF-8 para o Excel abrir com
+  acento) e uma pasta por pasta de documento, com nomes sem repeticao. Limite de 200 MB por
+  pacote: acima disso, o ZIP leva a planilha e um `LEIA-ME.txt` listando os arquivos que ficaram
+  de fora, que continuam baixaveis um a um.
+- **Rationale**: FR-030 e SC-008 (300 lancamentos em menos de 30 s). Principio VI: o formato ZIP
+  sem senha e simples o bastante para nao justificar uma biblioteca.
+- **Alternatives considered**: `archiver` ou `jszip` (dependencia nova sem ganho real).
+
+## R77. Painel do contador
+
+- **Decision**: rota `/contador` com a lista de clientes e o campo para usar um codigo; dentro de
+  um cliente, seletor de mes, totais, lista de lancamentos, lista de documentos (abrir um a um) e
+  "Baixar o mes". `GET /api/me` passa a trazer `clientes` (contas em que a pessoa e contador).
+  Quem so e contador (sem plano proprio) entra direto em `/contador`; o menu mostra "Clientes"
+  para quem tem pelo menos um.
+- **Rationale**: cenario 1: o contador ve so a area do contador do titular.
+
+## R78. Lado do titular
+
+- **Decision**: em Operacao > Acessos, secao "Contador": gerar codigo (com texto pronto para
+  mandar), convites pendentes com cancelar, contadores com ultimo acesso e "Revogar". Pelo WhatsApp:
+  ferramenta `convidar_contador`; `listar_acessos` mostra os contadores; `remover_acesso` tambem
+  revoga contador pelo nome.
+- **Rationale**: FR-031 e consistencia com a US1 (FR-005).
+
+## R79. Ultimo acesso
+
+- **Decision**: `last_seen_at` atualizado quando o contador abre um mes ou baixa o pacote, mostrado
+  ao titular.
+- **Rationale**: o titular sabe se o contador esta usando o acesso, e decide revogar com base nisso.
+
+## R80. Custo e privacidade
+
+- Sem IA na area do contador. Arquivos lidos do disco so na hora do download. Revogar nao apaga
+  nada da conta, so o vinculo.
