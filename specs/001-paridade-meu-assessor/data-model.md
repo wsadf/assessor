@@ -285,3 +285,77 @@ Linhas vencidas ha mais de 1 dia sao apagadas pela limpeza do agendador.
 `{ id, titulo, inicio, fim, diaInteiro, convidados: string[], linkVideo, linkGoogle }`. O produto nao
 guarda copia dos eventos: le do Google quando precisa (principio V: o calendario da pessoa e a
 fonte).
+
+# US5: Pagina publica de agendamento
+
+Decisoes em [research.md](research.md) R47 a R58.
+
+## booking_pages (nova)
+
+| Campo | Tipo | Regra |
+| --- | --- | --- |
+| id | INTEGER PK | |
+| phone | TEXT NOT NULL UNIQUE | quem atende (membro); uma pagina por pessoa |
+| conta | TEXT NOT NULL | telefone da conta, para lembretes e avisos |
+| slug | TEXT NOT NULL UNIQUE | 10 caracteres `[a-z0-9]`, aleatorio (R48) |
+| display_name | TEXT NOT NULL | 2 a 60 caracteres, o nome que o cliente ve |
+| durations | TEXT NOT NULL | JSON com 1 a 6 valores de `15, 30, 45, 60, 90, 120` |
+| weekdays | TEXT NOT NULL | JSON com 1 a 7 dias, 0 (domingo) a 6 |
+| window_start | TEXT NOT NULL | `HH:mm` |
+| window_end | TEXT NOT NULL | `HH:mm`, maior que `window_start` |
+| min_notice_hours | INTEGER NOT NULL | 0 a 168, padrao 12 |
+| horizon_days | INTEGER NOT NULL | 1 a 90, padrao 30 |
+| status | TEXT NOT NULL | `ativa` ou `pausada` |
+| created_at | TEXT NOT NULL | |
+
+## bookings (nova)
+
+| Campo | Tipo | Regra |
+| --- | --- | --- |
+| id | INTEGER PK | |
+| page_id | INTEGER NOT NULL | pagina |
+| owner_phone | TEXT NOT NULL | quem atende |
+| client_name | TEXT NOT NULL | 2 a 80 caracteres |
+| client_email | TEXT NOT NULL | e-mail valido |
+| client_phone | TEXT NOT NULL | so digitos, 10 a 15 |
+| client_tz | TEXT | fuso do navegador do cliente (IANA), se for diferente de `TIMEZONE` |
+| starts_at | TEXT NOT NULL | ISO UTC |
+| ends_at | TEXT NOT NULL | ISO UTC |
+| status | TEXT NOT NULL | `reservando`, `agendado`, `confirmado`, `remarcando`, `cancelado` |
+| google_event_id | TEXT | evento criado no calendario de quem atende |
+| reschedule_options | TEXT | JSON com ate 3 `{ inicio, fim }` enquanto `remarcando` |
+| confirmation_sent_at | TEXT | quando a confirmacao da vespera saiu |
+| confirmation_failed | INTEGER NOT NULL | 0 ou 1 (sem modelo aprovado ou recusa da Meta) |
+| client_ip_hash | TEXT | SHA-256 do IP, so para o limite de reservas |
+| created_at | TEXT NOT NULL | |
+
+Indices: `(page_id, status, starts_at)`, `(client_phone, status, starts_at)`.
+
+Transicoes:
+
+```text
+(nova) --reserva--> reservando --Google criou--> agendado
+reservando --Google recusou, horario ocupado ou 2 min--> (apagada)
+agendado --cliente responde 1--> confirmado
+agendado|confirmado --dono pede remarcar--> remarcando (opcoes enviadas)
+remarcando --cliente escolhe opcao--> agendado (novo horario)
+remarcando --cliente responde 0--> agendado (dono avisado para combinar)
+qualquer --dono cancela--> cancelado (evento apagado)
+```
+
+Dados do cliente sao apagados 90 dias depois de `ends_at` (a linha fica sem nome, e-mail e
+telefone).
+
+## client_optouts (nova)
+
+| Campo | Tipo | Regra |
+| --- | --- | --- |
+| client_phone | TEXT PK | quem respondeu PARAR |
+| created_at | TEXT NOT NULL | |
+
+Numero aqui nao recebe mais mensagem de nenhuma pagina; a reserva continua possivel, sem
+confirmacao por WhatsApp.
+
+## Aviso novo
+
+`notice_prefs.kind` ganha `agendamentos` (R57), ligado por padrao para quem tem pagina `ativa`.
