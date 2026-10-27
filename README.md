@@ -14,6 +14,7 @@ O que já funciona:
 - Tarefas com prazo, prioridade e projeto ("cria a tarefa de revisar o contrato até quarta")
 - Painel web em Vue com seis mesas: Finanças, Fiscal, Agenda, Tarefas, Operação e Pesquisas
 - Conta compartilhada: o titular convida família, sócio ou equipe por código; cada pessoa usa o próprio WhatsApp, alimenta a mesma conta e vê só o que o perfil dela libera
+- Documentos: mande um PDF ou foto e diga "guarda esse"; o assessor lê, dá um nome, põe na pasta certa e devolve o arquivo quando você pede ("me manda o contrato do apartamento")
 
 ## Requisito
 
@@ -44,7 +45,7 @@ O painel mostra os mesmos dados do chat e do WhatsApp, organizados em mesas, cad
 | Finanças | Bento | Saldo do período, maiores saídas, fim do mês projetado, categorias, renda média e variação, parcelas já comprometidas, pulso do mês; telas de Transações (lançar, parcelar, editar, excluir), Categorias, Pessoas e lojas, Formas de pagamento e Análises (gráficos reorganizáveis e pedidos de gráfico) |
 | Fiscal | Clara | Receitas do mês como base de faturamento e o histórico de 6 meses. A emissão de nota fiscal ainda não está ligada |
 | Agenda | Lia | Lembretes por dia, próximos compromissos, as duas próximas semanas e criação de lembretes |
-| Tarefas | Davi | Tarefas por status, atrasadas, projetos; criar, editar, concluir |
+| Tarefas | Davi | Tarefas por status, atrasadas, projetos; criar, editar, concluir; tela de Documentos |
 | Operação | Otto | Registros por mês e a equipe de assessores |
 | Pesquisas | Nina | Balcão de pesquisas. A busca na internet ainda não está ligada no assessor |
 
@@ -86,6 +87,19 @@ Em **Operação > Equipe e acesso** (ou pelo WhatsApp: "convida meu sócio só p
 A permissão vale no WhatsApp e no painel: o assessor recusa o que o perfil não libera, sem citar valores. Cada pessoa tem a própria conversa; o lembrete vai para o WhatsApp de quem pediu; Transações mostra quem lançou. Remover alguém derruba a sessão dela no painel, e o que ela lançou continua na conta. Quem já usava o assessor sozinho e entra numa conta compartilhada tem os dados antigos guardados à parte, que voltam se sair.
 
 Ainda não dá para transferir a titularidade, excluir a conta nem entrar na conta por mensagem no WhatsApp.
+
+### Documentos
+
+Pelo WhatsApp, mande um PDF ou uma foto. Com a legenda "guarda esse" (ou respondendo "sim" quando o assessor perguntar), ele lê o arquivo e guarda numa das pastas: Boletos, Notas fiscais, Comprovantes, Contratos, Casa, Carro, Saúde, Trabalho, Pessoais e Outros. A foto de um cupom que vira lançamento já fica guardada como comprovante dele. Para pegar de volta, descreva o documento ("acha o comprovante do aluguel") e o arquivo chega na conversa.
+
+No painel, **Tarefas > Documentos** lista as pastas, busca, abre, renomeia, move e exclui. Em Transações, o lançamento com comprovante mostra "ver comprovante".
+
+- Limites: 20 MB por arquivo e 1 GB por conta, com aviso a partir de 80%.
+- A IA lê PDF e imagem de até 5 MB. Outros formatos (DOCX, XLSX) ou arquivos maiores são guardados, mas o assessor vê só o nome e a legenda.
+- Arquivo que chega e não é guardado em 24 horas é apagado.
+- Os arquivos ficam em `data/assessor-arquivos/` (ou `data/demo-arquivos/` na demonstração), fora do Git.
+- Quem tem acesso completo vê todos os documentos; perfis só gastos e agenda e tarefas não veem a tela, e o só gastos abre apenas o comprovante dos gastos que já enxerga.
+- Ainda não dá para enviar arquivo pelo painel nem criar pastas próprias.
 
 No WhatsApp, o membro é atendido se o titular estiver em `ALLOWED_NUMBERS`. O número de teste da Meta, porém, só entrega para os 5 destinatários cadastrados no app: cadastre também o número de cada membro (seção 2.1, passo 5).
 
@@ -202,6 +216,7 @@ O agente usa o fallback do servidor da Anthropic (`fallbacks: "default"`): se um
 | `src/auth.ts` | Contas, senhas (scrypt), códigos de 6 números e sessões |
 | `src/conta.ts` | Conta compartilhada: convites, membros, contexto de quem fala e a visão dos dados por perfil |
 | `src/permissoes.ts` | Perfis e o que cada um pode ver e fazer |
+| `src/documentos.ts` | Documentos: arquivo no disco, pastas, busca sem acento (FTS5), pendentes e quem vê cada um |
 | `src/painel.ts` | Sobe a API e o painel compilado, sem WhatsApp |
 | `src/seed.ts` | Dados de demonstração em `data/demo.db` |
 | `web/` | Painel em Vue 3 + Vue Router + Vite, gráficos em SVG próprios |
@@ -216,4 +231,5 @@ Em `docs/aprendizados-meu-assessor.md` está o que veio da entrevista do fundado
 - SQLite e fila em memória: um servidor só. Para produção, PostgreSQL e uma fila como BullMQ.
 - Número de teste da Meta: até 5 destinatários cadastrados.
 - O histórico enviado ao modelo são as últimas 20 mensagens de texto.
-- Sem Open Finance, agenda do Google nem documentos; estão nas fases seguintes do plano (`specs/001-paridade-meu-assessor`).
+- Sem Open Finance nem agenda do Google; estão nas fases seguintes do plano (`specs/001-paridade-meu-assessor`).
+- Arquivos no disco do servidor: para mais de um servidor, armazenamento de objetos (S3, R2).

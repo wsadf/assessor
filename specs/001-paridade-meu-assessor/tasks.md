@@ -182,11 +182,11 @@ certa e recuperar um deles descrevendo o conteudo sem citar o nome do arquivo (s
 
 **Painel web**
 
-- [ ] T056 [P] [US2] Em `web/src/api.ts`, tipos `Pasta`, `Documento`, `Documentos` (resposta de `GET /documentos`) e `comprovanteId?: number | null` em `Transacao`; funcao `abrirArquivo(id)` que faz `fetch` com o token da sessao, cria `URL.createObjectURL(blob)`, abre numa nova aba e revoga a URL depois de 60 s (depende de T054)
-- [ ] T057 [US2] Em `web/src/mesas.ts`, cargo do Davi passa a "Projetos e documentos" e a mesa de Tarefas exige `["tarefas", "documentos"]`; em `web/src/router.ts`, rota `/tarefas/documentos` com `meta: { mesa: "tarefas" }` (depende de T056)
-- [ ] T058 [US2] Criar `web/src/views/tarefas/DocumentosView.vue` no padrao de `web/src/views/operacao/AcessosView.vue`: cabecalho com voltar para `/tarefas`, barra de uso (vira aviso a partir de 80%), lista de pastas com quantidade como filtro, campo de busca, lista de documentos (titulo, descricao em uma linha, pasta, data, quem enviou), abrir com `abrirArquivo`, e `PainelLateral` para renomear, mover (select com `PASTAS`), editar descricao e excluir com confirmacao; `EstadoVazio` explicando "mande um PDF ou foto pelo WhatsApp e diga guarda esse"; `StatusCarga` (depende de T057)
-- [ ] T059 [P] [US2] Em `web/src/views/TarefasMesa.vue`, atalho "Documentos →" para `/tarefas/documentos`, visivel so com `pode("documentos")` (depende de T057)
-- [ ] T060 [P] [US2] Em `web/src/views/financas/TransacoesView.vue`, quando `t.comprovanteId`, mostrar o chip "comprovante" na linha e o botao "Ver comprovante" no `PainelLateral` de edicao, ambos chamando `abrirArquivo` (depende de T056)
+- [X] T056 [P] [US2] Em `web/src/api.ts`, tipos `Pasta`, `Documento`, `Documentos` (resposta de `GET /documentos`) e `comprovanteId?: number | null` em `Transacao`; funcao `abrirArquivo(id)` que faz `fetch` com o token da sessao, cria `URL.createObjectURL(blob)`, abre numa nova aba e revoga a URL depois de 60 s (depende de T054)
+- [X] T057 [US2] Em `web/src/mesas.ts`, cargo do Davi passa a "Projetos e documentos" e a mesa de Tarefas exige `["tarefas", "documentos"]`; em `web/src/router.ts`, rota `/tarefas/documentos` com `meta: { mesa: "tarefas" }` (depende de T056)
+- [X] T058 [US2] Criar `web/src/views/tarefas/DocumentosView.vue` no padrao de `web/src/views/operacao/AcessosView.vue`: cabecalho com voltar para `/tarefas`, barra de uso (vira aviso a partir de 80%), lista de pastas com quantidade como filtro, campo de busca, lista de documentos (titulo, descricao em uma linha, pasta, data, quem enviou), abrir com `abrirArquivo`, e `PainelLateral` para renomear, mover (select com `PASTAS`), editar descricao e excluir com confirmacao; `EstadoVazio` explicando "mande um PDF ou foto pelo WhatsApp e diga guarda esse"; `StatusCarga` (depende de T057)
+- [X] T059 [P] [US2] Em `web/src/views/TarefasMesa.vue`, atalho "Documentos →" para `/tarefas/documentos`, visivel so com `pode("documentos")` (depende de T057)
+- [X] T060 [P] [US2] Em `web/src/views/financas/TransacoesView.vue`, quando `t.comprovanteId`, mostrar o chip "comprovante" na linha e o botao "Ver comprovante" no `PainelLateral` de edicao, ambos chamando `abrirArquivo` (depende de T056)
 
 **Checkpoint**: US2 completa; T041 a T044 verdes; roteiro de [quickstart.md](quickstart.md#us2-documentos) passando.
 
@@ -194,9 +194,9 @@ certa e recuperar um deles descrevendo o conteudo sem citar o nome do arquivo (s
 
 ## Phase 8: Polish (US2)
 
-- [ ] T061 [P] Em `src/seed.ts`, guardar na conta demo 6 documentos de exemplo gerados no proprio seed (PDFs minimos de uma pagina escritos a mao, sem biblioteca, e uma imagem PNG pequena): "Contrato de aluguel do apartamento" (contratos, 2026-03-12), "Boleto do condominio" (boletos), "CRLV do carro" (carro), "Nota fiscal do notebook" (notas_fiscais, ligada a parcela do Notebook), "Receita do dentista" (saude) e "Comprovante do aluguel" (comprovantes, ligado ao Aluguel do mes); apagar antes `data/demo-arquivos/<telefone demo>`
-- [ ] T062 [P] Em `README.md`, documentar a guarda de documentos (WhatsApp e painel), pastas, limites (20 MB, 1 GB, aviso em 80%, so PDF e imagem lidos pela IA), pendentes apagados em 24 h, a pasta `data/<banco>-arquivos/` e o que ficou de fora (enviar pelo painel, pastas proprias, ler DOCX); tabela "Como esta organizado" com `src/documentos.ts`
-- [ ] T063 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
+- [X] T061 [P] Em `src/seed.ts`, guardar na conta demo 6 documentos de exemplo gerados no proprio seed (PDFs minimos de uma pagina escritos a mao, sem biblioteca, e uma imagem PNG pequena): "Contrato de aluguel do apartamento" (contratos, 2026-03-12), "Boleto do condominio" (boletos), "CRLV do carro" (carro), "Nota fiscal do notebook" (notas_fiscais, ligada a parcela do Notebook), "Receita do dentista" (saude) e "Comprovante do aluguel" (comprovantes, ligado ao Aluguel do mes); apagar antes `data/demo-arquivos/<telefone demo>`
+- [X] T062 [P] Em `README.md`, documentar a guarda de documentos (WhatsApp e painel), pastas, limites (20 MB, 1 GB, aviso em 80%, so PDF e imagem lidos pela IA), pendentes apagados em 24 h, a pasta `data/<banco>-arquivos/` e o que ficou de fora (enviar pelo painel, pastas proprias, ler DOCX); tabela "Como esta organizado" com `src/documentos.ts`
+- [X] T063 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
 - [ ] T064 Executar o roteiro de [quickstart.md](quickstart.md#us2-documentos) (painel demo, terminal com `DB_PATH=data/demo.db` e, se houver numero de teste, WhatsApp), com `AI_PROVIDER=gemini` e com `AI_PROVIDER=claude` quando houver `ANTHROPIC_API_KEY`
 
 ---

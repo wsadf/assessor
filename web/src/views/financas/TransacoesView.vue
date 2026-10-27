@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
 import { useRoute } from "vue-router";
-import { api, type Tipo, type Transacao } from "../../api";
+import { abrirArquivo, api, type Tipo, type Transacao } from "../../api";
 import AppIcon from "../../components/AppIcon.vue";
 import EstadoVazio from "../../components/EstadoVazio.vue";
 import MesPicker from "../../components/MesPicker.vue";
@@ -99,6 +99,10 @@ async function salvar() {
   }
 }
 
+function verComprovante(id: number) {
+  abrirArquivo(id).catch((e: Error) => (erroForm.value = e.message));
+}
+
 async function excluir() {
   if (!editando.value || !confirm(`Excluir “${editando.value.descricao}” de ${brl(editando.value.valor)}?`)) return;
   await api.del(`/transacoes/${editando.value.id}`);
@@ -154,6 +158,7 @@ async function excluir() {
           </span>
           <span class="valor">
             <strong class="num" :class="{ pos: t.tipo === 'receita' }">{{ brlSinal(t.valor, t.tipo) }}</strong>
+            <span v-if="t.comprovanteId" class="chip ok">comprovante</span>
             <span v-if="t.parcela" class="chip">parcela {{ t.parcela.numero }}/{{ t.parcela.total }}</span>
             <span v-else-if="t.pagamento?.toLowerCase().includes('credito')" class="chip warning">na fatura</span>
           </span>
@@ -188,6 +193,7 @@ async function excluir() {
         <input v-model="form.parcelas" class="input" inputmode="numeric" placeholder="Ex.: 10" />
       </label>
       <p v-if="editando?.parcela" class="faint">Parcela {{ editando.parcela.numero }} de {{ editando.parcela.total }}. Editar aqui muda só esta parcela.</p>
+      <button v-if="editando?.comprovanteId" class="btn" type="button" @click="verComprovante(editando.comprovanteId)">Ver comprovante</button>
       <p v-if="erroForm" class="erro">{{ erroForm }}</p>
       <template #rodape>
         <button class="btn primary" :disabled="salvando" @click="salvar">{{ salvando ? "Salvando…" : "Salvar" }}</button>

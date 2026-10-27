@@ -17,6 +17,7 @@ export const router = createRouter({
     { path: "/fiscal", component: () => import("./views/FiscalMesa.vue"), meta: { mesa: "fiscal" } },
     { path: "/agenda", component: () => import("./views/AgendaMesa.vue"), meta: { mesa: "agenda" } },
     { path: "/tarefas", component: () => import("./views/TarefasMesa.vue"), meta: { mesa: "tarefas" } },
+    { path: "/tarefas/documentos", component: () => import("./views/tarefas/DocumentosView.vue"), meta: { mesa: "tarefas" } },
     { path: "/operacao", component: () => import("./views/OperacaoMesa.vue"), meta: { mesa: "operacao" } },
     { path: "/operacao/acessos", component: () => import("./views/operacao/AcessosView.vue"), meta: { mesa: "operacao" } },
     { path: "/pesquisas", component: () => import("./views/PesquisasMesa.vue"), meta: { mesa: "pesquisas" } },

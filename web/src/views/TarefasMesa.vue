@@ -9,7 +9,7 @@ import PainelLateral from "../components/PainelLateral.vue";
 import StatusCarga from "../components/StatusCarga.vue";
 import ValorGrande from "../components/ValorGrande.vue";
 import { dataCurta, pct, rotuloDia } from "../format";
-import { HOJE, useCarregar } from "../estado";
+import { HOJE, pode, useCarregar } from "../estado";
 
 const { dados: t, carregando, erro, recarregar } = useCarregar(() => api.get<Tarefas>("/tarefas"));
 
@@ -95,6 +95,7 @@ async function excluir() {
         <p>O que você precisa fazer, com prazo e prioridade. Pelo WhatsApp: “cria a tarefa de revisar o contrato até quarta”.</p>
       </div>
       <span class="spacer" />
+      <RouterLink v-if="pode('documentos')" class="btn" to="/tarefas/documentos">Documentos →</RouterLink>
       <button class="btn primary" @click="abrir()"><AppIcon name="mais" :size="16" /> Nova tarefa</button>
     </div>
 

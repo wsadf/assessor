@@ -16,7 +16,7 @@ export const MESAS: Mesa[] = [
   { id: "financas", nome: "Finanças", assessor: "Bento", cargo: "Gerente financeiro", cor: "#10b981", rota: "/financas", exige: ["despesas"] },
   { id: "fiscal", nome: "Fiscal", assessor: "Clara", cargo: "Assistente fiscal", cor: "#22b8cf", rota: "/fiscal", exige: ["receitas"] },
   { id: "agenda", nome: "Agenda", assessor: "Lia", cargo: "Secretária executiva", cor: "#5b9cf6", rota: "/agenda", exige: ["agenda"] },
-  { id: "tarefas", nome: "Tarefas", assessor: "Davi", cargo: "Gerente de projetos", cor: "#f3b23c", rota: "/tarefas", exige: ["tarefas"] },
+  { id: "tarefas", nome: "Tarefas", assessor: "Davi", cargo: "Projetos e documentos", cor: "#f3b23c", rota: "/tarefas", exige: ["tarefas", "documentos"] },
   { id: "operacao", nome: "Operação", assessor: "Otto", cargo: "Diretor de operações", cor: "#a98bf5", rota: "/operacao" },
   { id: "pesquisas", nome: "Pesquisas", assessor: "Nina", cargo: "Estagiária de pesquisas", cor: "#ee7aa8", rota: "/pesquisas", exige: ["agenda", "tarefas"] },
 ];
