@@ -4,7 +4,7 @@ import { sessao } from "./api";
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: "/", redirect: "/financas" },
+    { path: "/", component: () => import("./views/LandingView.vue"), meta: { publica: true } },
     { path: "/entrar", component: () => import("./views/auth/EntrarView.vue"), meta: { publica: true } },
     { path: "/criar-conta", component: () => import("./views/auth/CriarContaView.vue"), meta: { publica: true } },
     { path: "/esqueci", component: () => import("./views/auth/EsqueciView.vue"), meta: { publica: true } },
@@ -19,12 +19,12 @@ export const router = createRouter({
     { path: "/tarefas", component: () => import("./views/TarefasMesa.vue"), meta: { mesa: "tarefas" } },
     { path: "/operacao", component: () => import("./views/OperacaoMesa.vue"), meta: { mesa: "operacao" } },
     { path: "/pesquisas", component: () => import("./views/PesquisasMesa.vue"), meta: { mesa: "pesquisas" } },
-    { path: "/:pathMatch(.*)*", redirect: "/financas" },
+    { path: "/:pathMatch(.*)*", redirect: "/" },
   ],
-  scrollBehavior: () => ({ top: 0 }),
+  scrollBehavior: (to) => (to.hash ? { el: to.hash, behavior: "smooth", top: 72 } : { top: 0 }),
 });
 
 router.beforeEach((to) => {
-  if (!to.meta.publica && !sessao()) return { path: "/entrar", query: to.fullPath === "/" ? {} : { volta: to.fullPath } };
+  if (!to.meta.publica && !sessao()) return { path: "/entrar", query: { volta: to.fullPath } };
   if (to.path === "/entrar" && sessao()) return "/financas";
 });

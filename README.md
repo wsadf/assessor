@@ -61,7 +61,7 @@ npm run painel
 
 No topo, o botão **Conversar no WhatsApp** abre a conversa com o assessor, já com uma mensagem para o assessor da mesa aberta. Ele usa `WHATSAPP_NUMERO` do `.env` ou, se estiver vazio, descobre o número pelo app da Meta (`WHATSAPP_TOKEN` e `WHATSAPP_PHONE_NUMBER_ID`). Sem nenhum dos dois, o botão explica como configurar.
 
-Abra http://localhost:3001. O painel pede login.
+Abra http://localhost:3001. A página inicial apresenta o produto, com equipe, planos e perguntas frequentes, e leva para **Entrar** ou **Criar conta**. As mesas pedem login.
 
 - **Demonstração**: depois de `npm run seed:demo`, entre com `demo@assessor.local` e senha `demo1234`.
 - **Conta nova**: em **Criar conta** são quatro passos: quem é você, plano, pagamento (7 dias grátis, a cobrança ainda não está ligada) e ativação. O número informado no cadastro é o mesmo que conversa com o assessor no WhatsApp, então o painel mostra os dados dele.

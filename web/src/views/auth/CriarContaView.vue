@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, ref } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { api, salvarSessao, type SessaoAberta } from "../../api";
 import AppIcon from "../../components/AppIcon.vue";
 import AuthLayout from "./AuthLayout.vue";
@@ -36,7 +36,9 @@ const PLANOS = [
 ] as const;
 
 const passo = ref(0);
-const form = reactive({ nome: "", ddi: "55", whatsapp: "", email: "", senha: "", aceite: true, plano: "anual" as "mensal" | "anual" });
+// A landing manda ?plano=mensal quando a pessoa clica no plano mensal.
+const planoInicial = useRoute().query.plano === "mensal" ? "mensal" : "anual";
+const form = reactive({ nome: "", ddi: "55", whatsapp: "", email: "", senha: "", aceite: true, plano: planoInicial as "mensal" | "anual" });
 const erro = ref<string | null>(null);
 const enviando = ref(false);
 const telefoneCompleto = computed(() => form.ddi + form.whatsapp.replace(/\D/g, ""));
