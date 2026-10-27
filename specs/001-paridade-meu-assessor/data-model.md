@@ -235,3 +235,53 @@ Chave primaria `(phone, kind, key)`. Linhas com mais de 90 dias sao apagadas pel
 | text | TEXT NOT NULL | texto pronto do aviso ou lembrete |
 | created_at | TEXT NOT NULL | descartado depois de 7 dias |
 | delivered_at | TEXT | preenchido quando sai na proxima conversa |
+# US4: Google Agenda
+
+Decisoes em [research.md](research.md) R35 a R46.
+
+## google_accounts (nova)
+
+| Campo | Tipo | Regra |
+| --- | --- | --- |
+| phone | TEXT PK | telefone da pessoa (membro), nao da conta (R35) |
+| email | TEXT | e-mail da conta Google, so para exibir |
+| refresh_token_enc | TEXT NOT NULL | `iv.tag.cifrado` em base64url, AES-256-GCM com `GOOGLE_TOKEN_KEY` (R38) |
+| scope | TEXT NOT NULL | escopos concedidos, para conferir que `calendar.events` veio |
+| status | TEXT NOT NULL | `conectada` ou `expirada` |
+| connected_at | TEXT NOT NULL | |
+| last_error | TEXT | ultima falha do Google, para o painel |
+
+Transicoes:
+
+```text
+(sem linha) --retorno do OAuth--> conectada
+conectada --invalid_grant--> expirada
+expirada --novo retorno do OAuth--> conectada
+conectada|expirada --desconectar--> (linha apagada, token revogado no Google)
+```
+
+## google_auth (nova)
+
+Guarda os segredos de uso unico do fluxo de conexao.
+
+| Campo | Tipo | Regra |
+| --- | --- | --- |
+| token_hash | TEXT PK | SHA-256 do `state` ou do token do link |
+| kind | TEXT NOT NULL | `state` (10 min) ou `link` (15 min, enviado pelo WhatsApp) |
+| phone | TEXT NOT NULL | quem vai conectar |
+| expires_at | TEXT NOT NULL | |
+| used_at | TEXT | preenchido no primeiro uso; segundo uso e recusado |
+
+Linhas vencidas ha mais de 1 dia sao apagadas pela limpeza do agendador.
+
+## Coluna nova
+
+| Tabela | Coluna | Regra |
+| --- | --- | --- |
+| reminders | google_event_id TEXT | evento do Google que este lembrete acompanha; remarcar move o lembrete e cancelar o cancela |
+
+## Evento (so em memoria, vindo do Google)
+
+`{ id, titulo, inicio, fim, diaInteiro, convidados: string[], linkVideo, linkGoogle }`. O produto nao
+guarda copia dos eventos: le do Google quando precisa (principio V: o calendario da pessoa e a
+fonte).

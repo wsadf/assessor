@@ -163,3 +163,52 @@ disponiveis e desligados.
 
 Com o servidor rodando e um numero de teste: cadastrar uma conta que vence amanha e mudar a hora
 de `vencimentos` para a hora atual; o aviso chega em ate 30 segundos e nao se repete.
+# US4: Google Agenda
+
+Contratos em [contracts/ferramentas-agenda.md](contracts/ferramentas-agenda.md) e
+[contracts/api-google.md](contracts/api-google.md).
+
+## 1. Testes automaticos
+
+Os testes novos (arquivo `test/google.test.ts`), com `fetch` simulado para o Google, devem cobrir:
+
+- cifra do refresh token: o banco nunca guarda o token em claro; trocar `GOOGLE_TOKEN_KEY` impede
+  decifrar;
+- fluxo de conexao: `state` de uso unico e com validade; link do WhatsApp de uso unico; retorno com
+  `state` de outra pessoa, vencido ou repetido nao grava nada; `access_denied` nao grava nada;
+- renovacao do access token so quando faltar menos de 1 minuto;
+- `criar_compromisso`: evento com duracao padrao de 60 min no fuso configurado, convidados com
+  `sendUpdates=all`, Meet com `conferenceDataVersion=1`, lembrete interno ligado ao evento;
+  conflito sem `confirmar_conflito` nao cria;
+- sem conexao: cria so o lembrete interno e devolve o link; sem configuracao: diz que nao esta
+  disponivel;
+- `invalid_grant` marca `expirada`, cria o lembrete interno e avisa uma vez por dia;
+- `remarcar_compromisso` faz `PATCH` e move o lembrete; `cancelar_compromisso` pede confirmacao,
+  apaga e cancela o lembrete; `desconectar_google_agenda` chama o `revoke` e apaga a linha;
+- perfis: so gastos recebe `Sem permissao`; a conexao de um membro nao e usada por outro;
+- resumo da manha com os eventos do dia, e sem eles (com a linha de aviso) quando o Google falha;
+- API: status, conectar, desconectar, `/api/agenda` com `google.eventos`.
+
+## 2. Google Cloud (uma vez)
+
+1. Criar um projeto em console.cloud.google.com, ativar a Google Calendar API.
+2. Tela de consentimento OAuth: tipo externo, modo de teste, adicionar o proprio e-mail como
+   testador, escopos `openid`, `email` e `.../auth/calendar.events`.
+3. Credencial OAuth do tipo "Aplicativo da Web" com o redirect
+   `http://localhost:3001/api/google/retorno` (e o do tunel, se usar).
+4. No `.env`: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_KEY` (32 bytes em base64:
+   `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`) e
+   `PAINEL_URL=http://localhost:3001`.
+
+## 3. Painel e terminal
+
+1. `npm run painel` (banco real, para nao misturar a conta Google com a demonstracao), entrar e em
+   Agenda clicar "Conectar Google Agenda"; autorizar; a pagina de retorno diz que conectou e a
+   Agenda mostra o e-mail.
+2. `npm run chat` com o mesmo `CLI_PHONE`: "marca o dentista quinta as tres da tarde" cria o evento
+   de 1 hora e diz quando lembra; "reuniao com ana@exemplo.com terca 10h com link" cria com convite
+   e Meet; pedir o mesmo horario de novo avisa do conflito; "a reuniao de terca pode virar 11h?"
+   move; "cancela o dentista" pede confirmacao e apaga.
+3. Conferir tudo no Google Agenda pelo navegador.
+4. "desconecta minha agenda do Google": a Agenda do painel volta a mostrar "Conectar".
+5. Repetir o passo 2 com `AI_PROVIDER=gemini` e `AI_PROVIDER=claude`.
