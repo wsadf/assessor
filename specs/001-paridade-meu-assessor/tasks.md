@@ -1,9 +1,9 @@
 ---
 
-description: "Tarefas da feature 001: US1 a US3 (concluidas) e US4 (Google Agenda)"
+description: "Tarefas da feature 001: US1 a US4 (concluidas) e US5 (pagina publica de agendamento)"
 ---
 
-# Tasks: Paridade com o Meu Assessor (US1 a US4)
+# Tasks: Paridade com o Meu Assessor (US1 a US5)
 
 **Input**: Design documents from `/specs/001-paridade-meu-assessor/`
 
@@ -14,13 +14,13 @@ description: "Tarefas da feature 001: US1 a US3 (concluidas) e US4 (Google Agend
 nova, e isolamento por usuario e o principio I.
 
 **Escopo**: fases 1 a 4 sao da US1 (T001 a T033, PR #1); fases 5 a 8 da US2 (T034 a T064, PR #2);
-fases 9 a 12 da US3 (T065 a T097, PR #3); fases 13 a 16 da US4 (T098 em diante). As historias 5 a 9
-entram aqui depois dos proprios planos.
+fases 9 a 12 da US3 (T065 a T097, PR #3); fases 13 a 16 da US4 (T098 a T120, PR #4); fases 17 a 20
+da US5 (T121 em diante). As historias 6 a 9 entram aqui depois dos proprios planos.
 
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: pode rodar em paralelo (arquivos diferentes, sem dependencia de tarefa aberta)
-- **[Story]**: historia da spec (US1 a US4)
+- **[Story]**: historia da spec (US1 a US5)
 - Caminhos relativos a raiz do repositorio: back-end em `src/`, painel em `web/src/`, testes em
   `test/`
 
@@ -371,6 +371,86 @@ link" e conferir o evento no Google Agenda com convidado e link de videochamada 
 
 ---
 
+## Phase 17: Setup (US5)
+
+**Purpose**: arquivo de testes. Decisoes em [research.md](research.md) R47 a R58; tabelas em
+[data-model.md](data-model.md#us5-pagina-publica-de-agendamento).
+
+- [ ] T121 Criar `test/agendamento.test.ts` com o cabecalho de `test/google.test.ts` (inclusive as variaveis do Google) e o mesmo `googleFalso()`, extraido para `test/googleFalso.ts` e importado pelos dois arquivos; incluir `test/agendamento.test.ts` no script `test` de `package.json` depois de `test/google.test.ts`
+
+---
+
+## Phase 18: Foundational (US5)
+
+**Purpose**: tabelas, configuracao da pagina e horarios livres. Bloqueia a Phase 19.
+
+- [ ] T122 Criar `src/agendamento.ts` com `prepararTabelasAgendamento(db)` (chamada no fim de `openDb` em `src/db.ts`), criando exatamente as tabelas de [data-model.md](data-model.md#us5-pagina-publica-de-agendamento): `booking_pages` (`phone TEXT NOT NULL UNIQUE`, `slug TEXT NOT NULL UNIQUE`, `display_name` de 2 a 60 caracteres, `durations` e `weekdays` em JSON, `window_start` e `window_end` em `HH:mm`, `min_notice_hours` de 0 a 168, `horizon_days` de 1 a 90, `status` em `ativa|pausada`), `bookings` (`client_name` de 2 a 80, `client_phone`, `client_tz`, `starts_at`, `ends_at`, `status` em `reservando|agendado|confirmado|remarcando|cancelado`, `reschedule_options`, `confirmation_sent_at`, `confirmation_failed` 0 ou 1, `client_ip_hash`, indices `(page_id, status, starts_at)` e `(client_phone, status, starts_at)`) e `client_optouts`; em `src/avisos.ts`, acrescentar `agendamentos` a `TIPOS_AVISO` ("Agendamentos da pagina", exige `agenda`, hora 0) e, como o `CHECK` de `notice_prefs.kind` foi gravado com a lista antiga, recriar a tabela quando `sqlite_master.sql` nao contiver `'agendamentos'` (criar `notice_prefs_nova`, copiar as linhas, apagar a antiga e renomear, numa transacao)
+- [ ] T123 Em `src/agendamento.ts`, configuracao (R48, R49): `paginaDe(db, phone)`, `paginaPorSlug(db, slug)`, `salvarPagina(db, ctx, dados)` (exige `agenda` e Google `conectada`, senao erro "Conecte o Google Agenda antes de ativar a pagina."; duracoes so de `15, 30, 45, 60, 90, 120`; `window_end` maior que `window_start`; cria o `slug` de 10 caracteres `[a-z0-9]` com `crypto.randomInt` na primeira vez), `novoSlug(db, ctx)` e `linkDaPagina(pagina)` = `<PAINEL_URL>/agendar/<slug>` (depende de T122)
+- [ ] T124 Em `src/agendamento.ts`, horarios (R50, R51): `diasDisponiveis(pagina, agora)` (datas de `agora + antecedencia` ate `agora + horizonte` nos dias da semana da pagina, no fuso `TIMEZONE`) e `horariosLivres(db, pagina, dia, duracao, agora)` (inicios de 15 em 15 min para duracao 15 e de 30 em 30 para as demais, dentro da janela, a partir de `agora + antecedencia`, tirando os que se sobrepoem a eventos com hora de `eventosDoDia` do dono e a reservas `reservando|agendado|confirmado|remarcando`; devolve so `{ inicio, fim }` em UTC) (depende de T123)
+- [ ] T125 Em `test/agendamento.test.ts`, testar a fundacao: sem Google conectado `salvarPagina` recusa; `slug` com 10 caracteres e diferente depois de `novoSlug`; duracao invalida e janela invertida recusadas; `diasDisponiveis` respeita dias, antecedencia e horizonte; `horariosLivres` respeita janela e passo, tira evento do Google sobreposto e reserva existente, mantem horario sob evento de dia inteiro, e a resposta nao contem titulo nem convidados; banco criado com a lista antiga de avisos aceita `agendamentos` depois de `openDb` (depende de T121, T124)
+
+**Checkpoint**: pagina e horarios livres prontos; nada publico ainda.
+
+---
+
+## Phase 19: User Story 5 - Pagina publica de agendamento (Priority: P5)
+
+**Goal**: o cliente marca sozinho um horario livre pela pagina publica, recebe a confirmacao na
+vespera e responde pelo WhatsApp; o dono remarca pelo assessor oferecendo ate tres opcoes.
+
+**Independent Test**: abrir o link publico sem login, marcar um horario, ver o evento na agenda do
+usuario e a mensagem de confirmacao chegar no WhatsApp do cliente de teste (spec, US5).
+
+### Tests for User Story 5
+
+> Escrever antes da implementacao correspondente e ver falhar.
+
+- [ ] T126 [US5] Em `test/agendamento.test.ts`, testar a reserva: cria o evento no Google do dono com o e-mail do cliente como convidado, o lembrete do dono e o aviso `agendamentos`; dois `reservar` para o mesmo horario disparados sem `await` entre eles terminam com um aceito e um `409`; Google falhando nao deixa linha `reservando`; campo `site` preenchido responde como sucesso sem gravar; sem `aceite` recusa; sexta reserva do mesmo IP na hora e quarta do mesmo WhatsApp no dia recebem `429`; WhatsApp com 11 digitos ganha o 55
+- [ ] T127 [US5] Em `test/agendamento.test.ts`, testar vespera e respostas: `confirmarVespera(now)` as 18h manda uma mensagem por agendamento de amanha e nao repete; sem `WHATSAPP_NOTICE_TEMPLATE` marca `confirmation_failed` e avisa o dono; numero em `client_optouts` nao recebe; pelo webhook (fetch simulado), `1` vira `confirmado`, `2` avisa o dono, `PARAR` grava o opt-out, outra coisa recebe a resposta fixa, opcao `2` com remarcacao em aberto move evento e lembrete; nenhum desses caminhos chama o Gemini; numero sem agendamento e fora de `ALLOWED_NUMBERS` continua ignorado
+- [ ] T128 [US5] Em `test/agendamento.test.ts`, testar ferramentas e API privada: `link_de_agendamento`, `consultar_agendamentos`, `remarcar_agendamento` (manda tres opcoes livres a partir de amanha, ou diz que nao ha horario nos proximos 14 dias), `cancelar_agendamento` (pede confirmacao; com ela apaga o evento e avisa o cliente); `GET/PUT /api/agendamento/pagina`, `novo-link`, `GET /api/agendamento`, remarcar e `DELETE`; so gastos recebe `Sem permissao` e `403`
+- [ ] T129 [US5] Em `test/agendamento.test.ts`, testar a API publica: `GET /api/agendar/:slug` com nome, duracoes e dias e sem telefone nem e-mail do dono; `404` para `slug` inexistente, pagina pausada ou dono sem Google; `GET /horarios` com `400` para duracao ou dia invalidos e `503` com o Google fora; `POST` com `201`, `409`, `429` e `400`
+
+### Implementation for User Story 5
+
+**Dominio**
+
+- [ ] T130 [US5] Em `src/agendamento.ts`, `reservar(repo, pagina, dados, ip, agora)` (R52, R53): valida com zod (nome 2 a 80, e-mail, WhatsApp 10 a 15 digitos com DDI 55 acrescentado a 10 ou 11 digitos, `aceite` verdadeiro, `fuso` em `Intl.supportedValuesOf("timeZone")`, duracao da pagina, inicio igual a um horario devolvido por `horariosLivres`); `site` preenchido devolve sucesso sem gravar; limites de 5 por IP (SHA-256) por hora e 3 por WhatsApp por dia; transacao sincrona que confere sobreposicao e grava `reservando`; depois `conflitos` e `criarEvento` no Google do dono com o cliente em `convidados`, grava `google_event_id` e `agendado`, cria o lembrete do dono (60 min antes, `google_event_id` ligado) e entrega o aviso `agendamentos`; em qualquer falha apaga a linha e propaga `409` ou `503` (depende de T124)
+- [ ] T131 [US5] Em `src/agendamento.ts`, os textos de [contracts/ferramentas-agendamento.md](contracts/ferramentas-agendamento.md#mensagens-ao-cliente-texto-fixo-sem-ia) e dos avisos ao dono; `enviarAoCliente(db, send, booking, texto)` que nao envia para quem esta em `client_optouts` e devolve se saiu (depende de T130)
+- [ ] T132 [US5] Em `src/agendamento.ts`, `remarcar(repo, ctx, id, agora)` (ate tres horarios livres a partir de amanha, nos proximos 14 dias, com a duracao original; grava `reschedule_options` e `remarcando`; envia as opcoes) e `cancelar(repo, ctx, id)` (apaga o evento, cancela o lembrete, marca `cancelado`, envia o texto de cancelamento com o link) (depende de T131)
+- [ ] T133 [US5] Em `src/agendamento.ts`, `agendamentoAtivoDe(db, clientPhone, agora)` (o mais proximo com `starts_at` de ate 1 dia atras em diante e situacao nao cancelada) e `responderCliente(repo, send, clientPhone, texto, agora)` (R55): `1|sim|confirmo` confirma; `2|remarcar` avisa o dono; numero de opcao valido em `remarcando` move evento (`moverEvento`) e lembrete, volta a `agendado`, confirma ao cliente e avisa o dono; `0` em `remarcando` avisa o dono; `PARAR` grava o opt-out e responde uma ultima vez; o resto recebe a resposta fixa (depende de T132)
+
+**Agendador e webhook**
+
+- [ ] T134 [US5] Em `src/scheduler.ts`, `confirmarVespera(repo, send, now)` a partir das 18h: agendamentos `agendado` de amanha sem `confirmation_sent_at`; sem `config.whatsapp.noticeTemplate`, marca `confirmation_failed` e avisa o dono em vez de enviar; com modelo, envia e grava `confirmation_sent_at` (erro de envio tambem marca a falha e avisa); na limpeza horaria, apagar `reservando` com mais de 2 minutos e anonimizar (`client_name`, `client_email`, `client_phone` vazios) os agendamentos com `ends_at` ha mais de 90 dias (depende de T131)
+- [ ] T135 [US5] Em `src/server.ts`, antes da conferencia de `ALLOWED_NUMBERS`: se o remetente nao e autorizado (nem membro de conta autorizada) e tem `agendamentoAtivoDe`, a mensagem (so texto; o resto recebe a resposta fixa) vai para `responderCliente` na fila do numero e nunca para `runAgent`; numeros autorizados seguem para o assessor como hoje (depende de T133)
+
+**Assessor**
+
+- [ ] T136 [US5] Em `src/tools.ts`, as 4 ferramentas de [contracts/ferramentas-agendamento.md](contracts/ferramentas-agendamento.md) no conjunto assincrono (`GOOGLE`), com capacidade `agenda` e schemas zod (`id` inteiro, datas `AAAA-MM-DD`, `cliente` opcional de ate 80, `confirmado` booleano); em `src/prompt.ts`, as regras do contrato ("nao vou poder atender a Camila amanha" consulta e remarca; "me manda meu link de agendamento") (depende de T132)
+
+**API**
+
+- [ ] T137 [US5] Em `src/api.ts`, plugin publico com prefixo `/api/agendar` (fora do plugin privado, como o do Google): `GET /:slug`, `GET /:slug/horarios` e `POST /:slug` conforme [contracts/api-agendamento.md](contracts/api-agendamento.md#publicas-sem-sessao-plugin-proprio-com-prefixo-apiagendar); o IP vem de `req.ip`; nunca devolver telefone, e-mail ou compromissos do dono (depende de T130)
+- [ ] T138 [US5] Em `src/api.ts`, rotas privadas de [contracts/api-agendamento.md](contracts/api-agendamento.md#privadas-sessao-do-painel-capacidade-agenda) com `["agenda"]` em `CAPACIDADE_ROTA`, sempre para `ctx.membro` (depende de T132)
+
+**Painel web**
+
+- [ ] T139 [P] [US5] Em `web/src/api.ts`, tipos `PaginaAgendamento`, `Horario`, `Agendamento` e as chamadas publicas sem token (`/agendar/...`) (depende de T137, T138)
+- [ ] T140 [US5] Criar `web/src/views/AgendarPublico.vue` e a rota publica `/agendar/:slug` em `web/src/router.ts` (`meta: { publica: true }`): etapas duracao, dia (calendario do mes so com `dias`), horario (no fuso do navegador, com o aviso de fuso diferente), dados (nome, e-mail, WhatsApp, aceite e o campo escondido `site`) e confirmado; `409` volta para a escolha de horario com a mensagem; sem menu nem dados do painel; layout do `AuthLayout` (depende de T139)
+- [ ] T141 [US5] Em `web/src/views/AgendaMesa.vue`, bloco "Página de agendamento": sem Google, explica e manda conectar; com Google, formulario (nome exibido, duracoes, dias, janela, antecedencia, horizonte, ativa), link com copiar e "gerar novo link" com confirmacao; lista dos proximos agendamentos com cliente, horario, situacao, aviso de confirmacao nao enviada, remarcar e cancelar (depende de T139)
+
+**Checkpoint**: US5 completa; T125 a T129 verdes; roteiro de [quickstart.md](quickstart.md#us5-pagina-publica-de-agendamento) passando.
+
+---
+
+## Phase 20: Polish (US5)
+
+- [ ] T142 [P] Em `README.md`, secao Pagina de agendamento: como ativar (precisa do Google Agenda), o que o cliente ve, o que acontece na reserva, a confirmacao da vespera dependendo do modelo aprovado da Meta, as respostas 1, 2 e PARAR, remarcar pelo assessor, limites contra reservas falsas e o que ficou de fora; tabela "Como esta organizado" com `src/agendamento.ts`
+- [ ] T143 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
+- [ ] T144 Executar o roteiro de [quickstart.md](quickstart.md#us5-pagina-publica-de-agendamento) com Google e WhatsApp reais (depende do Google Cloud da US4 e do modelo aprovado), com `AI_PROVIDER=gemini` e com `AI_PROVIDER=claude` quando houver `ANTHROPIC_API_KEY`
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -391,6 +471,10 @@ link" e conferir o evento no Google Agenda com convidado e link de videochamada 
 - **Foundational US4 (Phase 14)**: depende da Phase 13; bloqueia a US4
 - **US4 (Phase 15)**: depende da Phase 14
 - **Polish US4 (Phase 16)**: depende da US4; T120 depende tambem de um projeto no Google Cloud
+- **Setup US5 (Phase 17)**: depende da US4 na `main` (usa `src/google.ts`)
+- **Foundational US5 (Phase 18)**: depende da Phase 17; bloqueia a US5
+- **US5 (Phase 19)**: depende da Phase 18
+- **Polish US5 (Phase 20)**: depende da US5; T144 depende tambem do Google Cloud e do modelo aprovado
 
 ### Dentro da US1
 
@@ -435,6 +519,16 @@ T017 (webhook) depende so de T006
 - Painel: T113 e T115 > T116 > T117.
 - Testes: T105 antes de T108; T106 antes de T110; T107 antes de T112 a T115.
 
+### Dentro da US5
+
+- Fundacao: T121 > T122 > T123 > T124 > T125.
+- Dominio: T124 > T130 > T131 > T132 > T133.
+- Agendador e webhook: T131 > T134; T133 > T135.
+- Assessor e API: T132 > T136 e T138; T130 > T137.
+- Painel: T137 e T138 > T139 > T140 e T141.
+- Testes: T126 antes de T130; T127 antes de T133 a T135; T128 antes de T136 e T138; T129 antes de
+  T137.
+
 ### Parallel Opportunities
 
 - T002 e T003 em paralelo (arquivos diferentes).
@@ -451,6 +545,9 @@ T017 (webhook) depende so de T006
 - US4: T099 em paralelo com T098; T116 depois da API; T118 em paralelo com qualquer tarefa da
   Phase 15. O resto toca `src/google.ts`, `src/tools.ts` ou `src/api.ts` e e sequencial.
 - T104 a T107 tocam o mesmo arquivo (`test/google.test.ts`): sequenciais.
+- US5: o dominio inteiro fica em `src/agendamento.ts` e a API em `src/api.ts`; T139 depois da API,
+  T140 e T141 em sequencia (`router.ts` e `api.ts` compartilhados), T142 em paralelo com a Phase 19.
+- T125 a T129 tocam o mesmo arquivo (`test/agendamento.test.ts`): sequenciais.
 
 ---
 
@@ -496,6 +593,14 @@ Task: "Bloco google em src/config.ts e variaveis em .env.example"
 
 # Durante a Phase 15:
 Task: "Secao Google Agenda no README.md"
+```
+
+## Parallel Example: User Story 5
+
+```bash
+# Durante a Phase 19, arquivos diferentes:
+Task: "Secao Pagina de agendamento no README.md"
+Task: "Tipos e chamadas publicas em web/src/api.ts (depois da API)"
 ```
 
 ---
@@ -545,6 +650,16 @@ Task: "Secao Google Agenda no README.md"
    precisa de um projeto real no Google Cloud.
 5. Commits por bloco, na branch `001-us4-google-agenda`.
 
+### US5
+
+1. Phases 17 e 18: pagina e horarios livres testados com o Google simulado.
+2. Reserva e API publica (T130, T137) com a pagina publica (T139, T140): ja entrega o agendamento
+   pelo link, com evento no Google e aviso ao dono.
+3. Confirmacao, respostas do cliente e remarcacao (T131 a T136).
+4. Painel do dono (T138, T141).
+5. **Parar e validar** com a [secao US5 do quickstart](quickstart.md#us5-pagina-publica-de-agendamento).
+6. Commits por bloco, na branch `001-us5-agendamento`.
+
 ---
 
 ## Notes
@@ -559,3 +674,5 @@ Task: "Secao Google Agenda no README.md"
   pela pessoa.
 - Fora da US4: Outlook e iCloud, agendas secundarias do Google, aceitar ou recusar convites
   recebidos, sincronizar lembretes antigos, pagina publica de agendamento (US5).
+- Fora da US5: janelas diferentes por dia, intervalo entre atendimentos, feriados, cobranca na
+  reserva (US9), lembrete por e-mail, varias paginas por pessoa.
