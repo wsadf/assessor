@@ -5,6 +5,8 @@ import type { Kind, Repo, Task, Transaction } from "./db.js";
 import { fromLocal, localDate } from "./time.js";
 import { assistantNumber, sendNotice } from "./whatsapp.js";
 import { auth, AuthError } from "./auth.js";
+import { conta as servicoConta, repoDoContexto, resolverContexto } from "./conta.js";
+import { CAPACIDADES, contextoTitular, pode, PERFIS_CONVIDAVEIS, type Capacidade, type Contexto } from "./permissoes.js";
 
 const mesSchema = z.string().regex(/^\d{4}-\d{2}$/);
 const dataSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -96,14 +98,53 @@ function parse<T>(schema: z.ZodType<T>, value: unknown, reply: FastifyReply): T 
   return undefined;
 }
 
-const cadastroBody = z.object({
-  nome: z.string().trim().min(2, "informe seu nome"),
-  telefone: z.string().transform((s) => s.replace(/\D/g, "")).pipe(z.string().min(10, "WhatsApp incompleto").max(15)),
-  email: z.string().trim().email("e-mail invalido"),
-  senha: z.string().min(8, "a senha precisa de pelo menos 8 caracteres"),
-  plano: z.enum(["mensal", "anual"]),
-});
+const cadastroBody = z
+  .object({
+    nome: z.string().trim().min(2, "informe seu nome"),
+    telefone: z.string().transform((s) => s.replace(/\D/g, "")).pipe(z.string().min(10, "WhatsApp incompleto").max(15)),
+    email: z.string().trim().email("e-mail invalido"),
+    senha: z.string().min(8, "a senha precisa de pelo menos 8 caracteres"),
+    plano: z.enum(["mensal", "anual"]).optional(),
+    // Quem entra por convite usa o plano do titular.
+    convite: z.string().trim().min(1).optional(),
+  })
+  .refine((b) => b.plano || b.convite, { message: "escolha um plano", path: ["plano"] });
 const telefoneSchema = z.string().transform((s) => s.replace(/\D/g, "")).pipe(z.string().min(10).max(15));
+
+/** Capacidades aceitas por rota (basta uma). Rota fora da lista vale para qualquer perfil. */
+const FINANCAS: Capacidade[] = ["despesas", "receitas"];
+const CAPACIDADE_ROTA: Record<string, Capacidade[]> = {
+  "GET /api/meses": FINANCAS,
+  "GET /api/financas": ["despesas"],
+  "GET /api/transacoes": FINANCAS,
+  "POST /api/transacoes": FINANCAS,
+  "PATCH /api/transacoes/:id": FINANCAS,
+  "DELETE /api/transacoes/:id": FINANCAS,
+  "GET /api/categorias": FINANCAS,
+  "GET /api/contrapartes": FINANCAS,
+  "GET /api/pagamentos": ["despesas"],
+  "GET /api/analises": ["despesas"],
+  "GET /api/fiscal": ["receitas"],
+  "GET /api/agenda": ["agenda"],
+  "POST /api/lembretes": ["agenda"],
+  "DELETE /api/lembretes/:id": ["agenda"],
+  "GET /api/tarefas": ["tarefas"],
+  "POST /api/tarefas": ["tarefas"],
+  "PATCH /api/tarefas/:id": ["tarefas"],
+  "DELETE /api/tarefas/:id": ["tarefas"],
+  "GET /api/pesquisas": ["agenda", "tarefas"],
+  "GET /api/conta/convites": ["acessos"],
+  "POST /api/conta/convites": ["acessos"],
+  "DELETE /api/conta/convites/:id": ["acessos"],
+  "PATCH /api/conta/membros/:telefone": ["acessos"],
+  "DELETE /api/conta/membros/:telefone": ["acessos"],
+};
+const SEM_ACESSO = { erro: "Seu acesso a esta conta não inclui isso." };
+
+const conviteBody = z.object({
+  perfil: z.enum(PERFIS_CONVIDAVEIS),
+  rotulo: z.string().trim().min(1).max(40).nullable().optional(),
+});
 
 const mascarar = (phone: string) => `+${phone.slice(0, 2)} ••••• ${phone.slice(-4)}`;
 
@@ -127,8 +168,13 @@ async function enviarCodigo(phone: string, codigo: string, log: FastifyInstance[
 
 export function registerApi(app: FastifyInstance, repo: Repo) {
   const contas = auth(repo.db);
-  const telefoneDa = new WeakMap<FastifyRequest, string>();
-  const quem = (req: FastifyRequest) => telefoneDa.get(req)!;
+  const acessos = servicoConta(repo.db);
+  const contextoDa = new WeakMap<FastifyRequest, Contexto>();
+  /** Dados da conta vistos pelo perfil de quem pediu: `phone` e o telefone da conta, nao o de quem esta logado. */
+  const de = (req: FastifyRequest) => {
+    const ctx = contextoDa.get(req)!;
+    return { ctx, phone: ctx.conta, repo: repoDoContexto(repo, ctx) };
+  };
   const bearer = (req: FastifyRequest) => req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
 
   const responderErro = (reply: FastifyReply, err: unknown) => {
@@ -137,17 +183,41 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
   };
   const sessaoPara = (phone: string) => {
     const c = contas.porTelefone(phone)!;
-    return { token: contas.abrirSessao(phone), conta: { nome: c.name, email: c.email, plano: c.plan, testeAte: c.trial_ends_on } };
+    const ctx = resolverContexto(repo.db, phone);
+    return {
+      token: contas.abrirSessao(phone),
+      conta: {
+        nome: c.name,
+        email: c.email,
+        plano: c.plan,
+        testeAte: c.trial_ends_on,
+        titular: ctx.perfil === "titular" ? null : ctx.titular,
+        perfil: ctx.perfil,
+      },
+    };
   };
 
   // Rotas publicas: cadastro, ativacao, entrada e recuperacao de senha.
   app.register(
     async (pub) => {
+      pub.post("/convite", async (req, reply) => {
+        const b = parse(z.object({ codigo: z.string().trim().min(1), telefone: telefoneSchema }), body(req), reply);
+        if (!b) return;
+        try {
+          const v = acessos.validarConvite(b.codigo, b.telefone);
+          return { titular: v.titular, perfil: v.perfil, temDadosProprios: v.temDadosProprios };
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
       pub.post("/cadastro", async (req, reply) => {
         const b = parse(cadastroBody, body(req), reply);
         if (!b) return;
         try {
-          contas.cadastrar(b);
+          const convite = b.convite ? acessos.validarConvite(b.convite, b.telefone).convite : null;
+          contas.cadastrar({ ...b, plano: b.plano ?? null });
+          if (convite) acessos.guardarConvitePendente(b.telefone, convite.id);
           const canal = await enviarCodigo(b.telefone, contas.gerarCodigo(b.telefone, "ativacao"), app.log);
           return reply.code(201).send({ telefone: b.telefone, telefoneMascarado: mascarar(b.telefone), canal });
         } catch (err) {
@@ -173,7 +243,9 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
         try {
           contas.conferirCodigo(b.telefone, "ativacao", b.codigo);
           contas.ativar(b.telefone);
-          return sessaoPara(b.telefone);
+          const convite = acessos.aceitarPendente(b.telefone);
+          const sessao = sessaoPara(b.telefone);
+          return convite && "expirou" in convite ? { ...sessao, aviso: "O convite venceu. Peça um novo a quem convidou." } : sessao;
         } catch (err) {
           return responderErro(reply, err);
         }
@@ -238,43 +310,113 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       // O tunel do webhook deixa o servidor publico: sem sessao (ou o PAINEL_TOKEN de servico), nenhum dado sai.
       api.addHook("onRequest", async (req, reply) => {
         const t = bearer(req);
+        let ctx: Contexto;
         if (t) {
           const phone = contas.sessao(t);
           if (!phone) return reply.code(401).send({ erro: "Sessão expirada. Entre de novo." });
-          telefoneDa.set(req, phone);
-          return;
+          ctx = resolverContexto(repo.db, phone);
+        } else if (config.panel.token && req.headers["x-painel-token"] === config.panel.token) {
+          ctx = contextoTitular(config.panel.phone);
+        } else {
+          return reply.code(401).send({ erro: "Entre para continuar." });
         }
-        if (config.panel.token && req.headers["x-painel-token"] === config.panel.token) {
-          telefoneDa.set(req, config.panel.phone);
-          return;
-        }
-        return reply.code(401).send({ erro: "Entre para continuar." });
+        contextoDa.set(req, ctx);
+        const exige = CAPACIDADE_ROTA[`${req.method} ${req.routeOptions.url}`];
+        if (exige && !exige.some((c) => pode(ctx, c))) return reply.code(403).send(SEM_ACESSO);
       });
 
-      api.get("/me", async (req, reply) => {
-        const phone = quem(req);
-        const user = contas.porTelefone(phone);
+      api.get("/me", async (req) => {
+        const { ctx } = de(req);
+        // Dados pessoais sao de quem esta logado; a conta e a do titular.
+        const user = contas.porTelefone(ctx.membro);
+        const titular = ctx.perfil === "titular" ? user : contas.porTelefone(ctx.conta);
         return {
-          telefone: phone,
+          telefone: ctx.membro,
           nome: user?.name ?? null,
           email: user?.email ?? null,
-          plano: user?.plan ?? null,
-          testeAte: user?.trial_ends_on ?? null,
+          plano: titular?.plan ?? null,
+          testeAte: titular?.trial_ends_on ?? null,
           ia: config.aiProvider,
           hoje: localDate(),
           whatsapp: await assistantNumber(),
+          conta: {
+            titular: ctx.titular,
+            perfil: ctx.perfil,
+            capacidades: [...CAPACIDADES[ctx.perfil]],
+            compartilhada: ctx.compartilhada,
+          },
         };
       });
 
+      api.get("/conta/acessos", async (req) => {
+        const { ctx } = de(req);
+        const titular = contas.porTelefone(ctx.conta);
+        return {
+          titular: { nome: titular?.name ?? null, telefoneMascarado: mascarar(ctx.conta) },
+          membros: acessos.listarMembros(ctx.conta).map((m) => ({
+            telefone: pode(ctx, "acessos") ? m.telefone : null,
+            telefoneMascarado: mascarar(m.telefone),
+            nome: m.nome,
+            perfil: m.perfil,
+            desde: m.desde.slice(0, 10),
+            voce: m.telefone === ctx.membro,
+          })),
+          podeGerir: pode(ctx, "acessos"),
+        };
+      });
+
+      api.get("/conta/convites", async (req) => ({ convites: acessos.listarConvites(de(req).ctx.conta) }));
+
+      api.post("/conta/convites", async (req, reply) => {
+        const { ctx } = de(req);
+        const b = parse(conviteBody, body(req), reply);
+        if (!b) return;
+        try {
+          const c = acessos.gerarConvite(ctx.conta, b.perfil, b.rotulo);
+          const ate = new Date(c.validoAte).toLocaleDateString("pt-BR", { timeZone: config.timezone });
+          const quem = ctx.titular ?? "quem te convidou";
+          return reply.code(201).send({
+            id: c.id,
+            codigo: c.codigo,
+            perfil: c.perfil,
+            validoAte: c.validoAte,
+            mensagemWhatsapp: `Oi! Use o código ${c.codigo} em Criar conta no painel do Assessor para entrar na conta de ${quem}. Vale até ${ate}.`,
+          });
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      api.delete("/conta/convites/:id", async (req, reply) => {
+        const id = Number((req.params as { id: string }).id);
+        return acessos.cancelarConvite(de(req).ctx.conta, id) ? { ok: true } : reply.code(404).send({ erro: "convite nao encontrado ou ja usado" });
+      });
+
+      api.patch("/conta/membros/:telefone", async (req, reply) => {
+        const b = parse(z.object({ perfil: z.enum(PERFIS_CONVIDAVEIS) }), body(req), reply);
+        if (!b) return;
+        const membro = (req.params as { telefone: string }).telefone;
+        return acessos.alterarPerfil(de(req).ctx.conta, membro, b.perfil) ? { ok: true } : reply.code(404).send({ erro: "pessoa nao encontrada" });
+      });
+
+      api.delete("/conta/membros/:telefone", async (req, reply) => {
+        const membro = (req.params as { telefone: string }).telefone;
+        try {
+          return acessos.removerMembro(de(req).ctx.conta, membro) ? { ok: true } : reply.code(404).send({ erro: "pessoa nao encontrada" });
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
       api.get("/meses", async (req, reply) => {
-        const phone = quem(req);
+        const { phone, repo } = de(req);
         const atual = localDate().slice(0, 7);
         const meses = repo.monthsWithData(phone);
         return { meses: meses.includes(atual) ? meses : [atual, ...meses] };
       });
 
       api.get("/financas", async (req, reply) => {
-        const phone = quem(req);
+        const { phone, repo } = de(req);
         const mes = parse(mesSchema, (req.query as { mes?: string }).mes ?? localDate().slice(0, 7), reply);
         if (!mes) return;
         const { from, to } = range(mes);
@@ -334,7 +476,7 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
         const anteriorTx = repo.listTransactions(phone, range(anterior).from, range(anterior).to, { kind: "despesa" });
         const porDia = groupBy(txs, (t) => t.occurred_on, () => 1);
 
-        return {
+        const resposta = {
           mes,
           inicioDoMes: reais(inicio),
           receitas: reais(receitas),
@@ -366,24 +508,38 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
             })),
           },
         };
+        if (pode(de(req).ctx, "receitas")) return resposta;
+        // Sem receitas, saldo e renda nao fazem sentido e revelariam quanto entrou.
+        const { receitas: _r, saldoDoMes: _s, saldoAtual: _a, inicioDoMes: _i, diario: _d, renda: _n, ...soGastos } = resposta;
+        return { ...soGastos, projecao: projecao && { despesas: projecao.despesas, ritmoDiario: projecao.ritmoDiario } };
       });
 
       api.get("/transacoes", async (req, reply) => {
-        const phone = quem(req);
+        const { ctx, phone, repo } = de(req);
         const q = req.query as { mes?: string; categoria?: string; tipo?: string; contraparte?: string };
         const mes = parse(mesSchema, q.mes ?? localDate().slice(0, 7), reply);
         if (!mes) return;
         const tipo = q.tipo === "despesa" || q.tipo === "receita" ? q.tipo : undefined;
         const { from, to } = range(mes);
         const txs = repo.listTransactions(phone, from, to, { kind: tipo, category: q.categoria || undefined, counterpart: q.contraparte || undefined });
-        return { mes, transacoes: txs.map(toTx), categorias: repo.categories(phone), contrapartes: repo.counterparts(phone) };
+        // Autoria so aparece quando ha mais de uma pessoa lancando; nulo e o titular.
+        const nomes = ctx.compartilhada ? acessos.nomes(phone) : null;
+        const criadoPor = (t: Transaction) => (nomes && t.created_by && t.created_by !== phone ? (nomes.get(t.created_by) ?? "Membro") : null);
+        return {
+          mes,
+          transacoes: txs.map((t) => ({ ...toTx(t), criadoPor: criadoPor(t) })),
+          categorias: repo.categories(phone),
+          contrapartes: repo.counterparts(phone),
+        };
       });
 
       api.post("/transacoes", async (req, reply) => {
-        const phone = quem(req);
+        const { ctx, phone, repo } = de(req);
         const b = parse(txBody, body(req), reply);
         if (!b) return;
+        if (!pode(ctx, b.tipo === "receita" ? "receitas" : "despesas")) return reply.code(403).send(SEM_ACESSO);
         const base = {
+          created_by: ctx.membro,
           phone,
           kind: b.tipo,
           amount_cents: Math.round(b.valor * 100),
@@ -398,10 +554,11 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
 
       api.patch("/transacoes/:id", async (req, reply) => {
-        const phone = quem(req);
+        const { ctx, phone, repo } = de(req);
         const id = Number((req.params as { id: string }).id);
         const b = parse(txBody.partial(), body(req), reply);
         if (!b) return;
+        if (b.tipo && !pode(ctx, b.tipo === "receita" ? "receitas" : "despesas")) return reply.code(403).send(SEM_ACESSO);
         const t = repo.updateTransaction(phone, id, {
           kind: b.tipo,
           amount_cents: b.valor !== undefined ? Math.round(b.valor * 100) : undefined,
@@ -415,13 +572,13 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
 
       api.delete("/transacoes/:id", async (req, reply) => {
-        const phone = quem(req);
+        const { phone, repo } = de(req);
         const id = Number((req.params as { id: string }).id);
         return repo.deleteTransaction(phone, id) ? { ok: true } : reply.code(404).send({ erro: "transacao nao encontrada" });
       });
 
       api.get("/categorias", async (req, reply) => {
-        const phone = quem(req);
+        const { phone, repo } = de(req);
         const mes = parse(mesSchema, (req.query as { mes?: string }).mes ?? localDate().slice(0, 7), reply);
         if (!mes) return;
         const { from, to } = range(mes);
@@ -434,7 +591,7 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
 
       api.get("/contrapartes", async (req, reply) => {
-        const phone = quem(req);
+        const { phone, repo } = de(req);
         const q = req.query as { mes?: string; busca?: string };
         const mes = parse(mesSchema, q.mes ?? localDate().slice(0, 7), reply);
         if (!mes) return;
@@ -461,7 +618,7 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
 
       api.get("/pagamentos", async (req, reply) => {
-        const phone = quem(req);
+        const { phone, repo } = de(req);
         const mes = parse(mesSchema, (req.query as { mes?: string }).mes ?? localDate().slice(0, 7), reply);
         if (!mes) return;
         const { from, to } = range(mes);
@@ -478,7 +635,7 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
 
       api.get("/analises", async (req, reply) => {
-        const phone = quem(req);
+        const { phone, repo } = de(req);
         const q = req.query as { mes?: string; meses?: string };
         const mes = parse(mesSchema, q.mes ?? localDate().slice(0, 7), reply);
         if (!mes) return;
@@ -497,10 +654,11 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
           const data = `${mes}-${String(dia).padStart(2, "0")}`;
           porDia.push({ dia, despesas: reais(despesasTx.filter((t) => t.occurred_on === data).reduce((s, t) => s + t.amount_cents, 0)) });
         }
+        const veReceitas = pode(de(req).ctx, "receitas");
         return {
           mes,
-          resumo: { receitas: reais(sum(txs, "receita")), despesas: reais(sum(txs, "despesa")), lancamentos: txs.length },
-          fluxo,
+          resumo: { receitas: veReceitas ? reais(sum(txs, "receita")) : undefined, despesas: reais(sum(txs, "despesa")), lancamentos: txs.length },
+          fluxo: veReceitas ? fluxo : fluxo.map(({ receitas: _r, ...f }) => f),
           porCategoria: groupBy(despesasTx, (t) => t.category, (t) => t.amount_cents).map((c) => ({ ...c, total: reais(c.total) })),
           porReceita: groupBy(txs.filter((t) => t.kind === "receita"), (t) => t.category, (t) => t.amount_cents).map((c) => ({
             ...c,
@@ -515,7 +673,7 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
 
       api.get("/agenda", async (req, reply) => {
-        const phone = quem(req);
+        const { phone, repo } = de(req);
         const dia = parse(dataSchema, (req.query as { dia?: string }).dia ?? localDate(), reply);
         if (!dia) return;
         const ativos = repo.listReminders(phone);
@@ -533,23 +691,23 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
 
       api.post("/lembretes", async (req, reply) => {
-        const phone = quem(req);
+        const { ctx, phone, repo } = de(req);
         const b = parse(reminderBody, body(req), reply);
         if (!b) return;
         const when = fromLocal(b.dataHora);
         if (when.getTime() < Date.now()) return reply.code(400).send({ erro: "esse horario ja passou" });
-        const r = repo.addReminder(phone, b.texto, when, b.recorrencia ?? null);
+        const r = repo.addReminder(phone, b.texto, when, b.recorrencia ?? null, { created_by: ctx.membro, notify_phone: ctx.membro });
         return reply.code(201).send({ id: r.id, texto: r.text, quando: r.next_run_at, recorrencia: r.recurrence });
       });
 
       api.delete("/lembretes/:id", async (req, reply) => {
-        const phone = quem(req);
+        const { phone, repo } = de(req);
         const id = Number((req.params as { id: string }).id);
         return repo.cancelReminder(phone, id) ? { ok: true } : reply.code(404).send({ erro: "lembrete nao encontrado" });
       });
 
       api.get("/tarefas", async (req, reply) => {
-        const phone = quem(req);
+        const { phone, repo } = de(req);
         const today = localDate();
         const tarefas = repo.listTasks(phone).map((t) => toTask(t, today));
         const conta = (f: (t: (typeof tarefas)[number]) => boolean) => tarefas.filter(f).length;
@@ -567,15 +725,15 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
 
       api.post("/tarefas", async (req, reply) => {
-        const phone = quem(req);
+        const { ctx, phone, repo } = de(req);
         const b = parse(taskBody, body(req), reply);
         if (!b) return;
-        const t = repo.addTask(phone, { title: b.titulo, notes: b.notas, project: b.projeto, due_on: b.prazo, priority: b.prioridade });
+        const t = repo.addTask(phone, { created_by: ctx.membro, title: b.titulo, notes: b.notas, project: b.projeto, due_on: b.prazo, priority: b.prioridade });
         return reply.code(201).send(toTask(t, localDate()));
       });
 
       api.patch("/tarefas/:id", async (req, reply) => {
-        const phone = quem(req);
+        const { phone, repo } = de(req);
         const id = Number((req.params as { id: string }).id);
         const b = parse(taskBody.partial(), body(req), reply);
         if (!b) return;
@@ -591,28 +749,31 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
 
       api.delete("/tarefas/:id", async (req, reply) => {
-        const phone = quem(req);
+        const { phone, repo } = de(req);
         const id = Number((req.params as { id: string }).id);
         return repo.deleteTask(phone, id) ? { ok: true } : reply.code(404).send({ erro: "tarefa nao encontrada" });
       });
 
       api.get("/operacao", async (req, reply) => {
-        const phone = quem(req);
+        const { phone, repo } = de(req);
         const atual = localDate().slice(0, 7);
         const meses = Array.from({ length: 12 }, (_, i) => shiftMonth(atual, i - 11));
         const a = repo.activityByMonth(phone, `${meses[0]}-01`);
         const at = (rows: { month: string; total: number }[], m: string) => rows.find((r) => r.month === m)?.total ?? 0;
+        // A contagem tambem segue o perfil: quem nao ve tarefas nao sabe quantas existem.
+        const { ctx } = de(req);
+        const se = (cap: Capacidade, n: number) => (pode(ctx, cap) ? n : 0);
         const porMes = meses.map((m) => ({
           mes: m,
-          lancamentos: at(a.transactions, m),
-          lembretes: at(a.reminders, m),
-          tarefas: at(a.tasks, m),
+          lancamentos: se("despesas", at(a.transactions, m)),
+          lembretes: se("agenda", at(a.reminders, m)),
+          tarefas: se("tarefas", at(a.tasks, m)),
           mensagens: at(a.messages, m),
         }));
         const registros = (p: (typeof porMes)[number]) => p.lancamentos + p.lembretes + p.tarefas;
         const total12 = porMes.reduce((s, p) => s + registros(p), 0);
         const ativos = porMes.filter((p) => registros(p) > 0).length || 1;
-        const tarefas = repo.listTasks(phone);
+        const tarefas = pode(ctx, "tarefas") ? repo.listTasks(phone) : [];
         return {
           registrosNoMes: registros(porMes.at(-1)!),
           mensagensNoMes: porMes.at(-1)!.mensagens,
@@ -620,14 +781,14 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
           mediaMensal: Math.round(total12 / ativos),
           tarefasAbertas: tarefas.filter((t) => t.status !== "concluida").length,
           tarefasConcluidas: tarefas.filter((t) => t.status === "concluida").length,
-          lembretesAtivos: repo.listReminders(phone).length,
+          lembretesAtivos: pode(ctx, "agenda") ? repo.listReminders(phone).length : 0,
           ia: config.aiProvider,
           porMes,
         };
       });
 
       api.get("/fiscal", async (req, reply) => {
-        const phone = quem(req);
+        const { phone, repo } = de(req);
         const mes = parse(mesSchema, (req.query as { mes?: string }).mes ?? localDate().slice(0, 7), reply);
         if (!mes) return;
         const { from, to } = range(mes);
@@ -650,7 +811,7 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
 
       api.get("/pesquisas", async (req, reply) => {
-        const phone = quem(req);
+        const { phone, repo } = de(req);
         const pesquisas = repo.listResearch(phone).map((p) => ({
           id: p.id,
           pergunta: p.question,

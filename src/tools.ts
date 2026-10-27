@@ -1,7 +1,19 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
+import { AuthError } from "./auth.js";
 import { config } from "./config.js";
-import type { Recurrence, Repo, Task, Transaction } from "./db.js";
+import { conta, repoDoContexto, type Membro } from "./conta.js";
+import type { Kind, Recurrence, Repo, Task, Transaction } from "./db.js";
+import {
+  contextoTitular,
+  exigir,
+  NOME_PERFIL,
+  pode,
+  PERFIS_CONVIDAVEIS,
+  SemPermissao,
+  type Capacidade,
+  type Contexto,
+} from "./permissoes.js";
 import { brl, formatLocal, fromLocal, localDate } from "./time.js";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "use YYYY-MM-DD");
@@ -60,7 +72,26 @@ const schemas = {
     prazo: nullableIsoDate,
     prioridade: z.enum(["normal", "alta", "urgente"]).nullish(),
   }),
+  listar_acessos: z.object({}),
+  convidar_pessoa: z.object({ perfil: z.enum(PERFIS_CONVIDAVEIS), rotulo: z.string().min(1).nullish() }),
+  alterar_acesso: z.object({ pessoa: z.string().min(1), perfil: z.enum(PERFIS_CONVIDAVEIS) }),
+  remover_acesso: z.object({ pessoa: z.string().min(1), confirmado: z.boolean() }),
 };
+
+/** Capacidade exigida pelas ferramentas que nao dependem do tipo do lancamento. */
+const CAPACIDADE: Partial<Record<keyof typeof schemas, Capacidade>> = {
+  criar_lembrete: "agenda",
+  listar_lembretes: "agenda",
+  cancelar_lembrete: "agenda",
+  criar_tarefa: "tarefas",
+  listar_tarefas: "tarefas",
+  atualizar_tarefa: "tarefas",
+  convidar_pessoa: "acessos",
+  alterar_acesso: "acessos",
+  remover_acesso: "acessos",
+};
+
+const capDoTipo = (k: Kind): Capacidade => (k === "receita" ? "receitas" : "despesas");
 
 export type ToolName = keyof typeof schemas;
 
@@ -161,7 +192,52 @@ export const toolDefinitions: Anthropic.Tool[] = [
       prioridade: nullable({ type: "string", enum: ["normal", "alta", "urgente"] }),
     },
   ),
+  tool("listar_acessos", "Lista quem tem acesso a conta: o titular e as pessoas convidadas, com o perfil de cada uma.", {}),
+  tool(
+    "convidar_pessoa",
+    "Gera um codigo de convite para outra pessoa entrar na conta com o proprio WhatsApp. So o titular pode convidar.",
+    {
+      perfil: {
+        type: "string",
+        enum: [...PERFIS_CONVIDAVEIS],
+        description: "completo: ve e lanca tudo; so_gastos: registra e ve so despesas; agenda_tarefas: so lembretes e tarefas",
+      },
+      rotulo: nullable({ ...str, description: "Quem e a pessoa, ex.: Bia, socio" }),
+    },
+  ),
+  tool("alterar_acesso", "Muda o perfil de uma pessoa que ja tem acesso a conta. So o titular pode alterar.", {
+    pessoa: { ...str, description: "Nome da pessoa ou final do telefone" },
+    perfil: { type: "string", enum: [...PERFIS_CONVIDAVEIS] },
+  }),
+  tool(
+    "remover_acesso",
+    "Tira o acesso de uma pessoa a conta. Chame primeiro com confirmado false, mostre ao usuario quem sera removido e so chame com true depois que ele confirmar.",
+    {
+      pessoa: { ...str, description: "Nome da pessoa ou final do telefone" },
+      confirmado: { type: "boolean" },
+    },
+  ),
 ];
+
+const semAcento = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+/** Acha a pessoa pelo nome ou pelo final do telefone; mais de uma devolve a lista para o modelo perguntar. */
+function acharMembro(membros: Membro[], pessoa: string): Membro | string {
+  const alvo = semAcento(pessoa.trim());
+  const digitos = pessoa.replace(/\D/g, "");
+  const achados = membros.filter(
+    (m) => (digitos.length >= 4 && m.telefone.endsWith(digitos)) || (!!m.nome && semAcento(m.nome).includes(alvo)),
+  );
+  if (achados.length === 1) return achados[0];
+  if (achados.length === 0) return `Ninguem com acesso a conta corresponde a "${pessoa}". ${listarMembros(membros)}`;
+  return `Mais de uma pessoa corresponde a "${pessoa}". Pergunte qual: ${listarMembros(achados)}`;
+}
+
+const finalTel = (phone: string) => phone.slice(-4);
+const listarMembros = (membros: Membro[]) =>
+  membros.length
+    ? membros.map((m) => `${m.nome ?? "Sem nome"} (final ${finalTel(m.telefone)}): ${NOME_PERFIL[m.perfil]}, desde ${m.desde.slice(0, 10)}`).join("; ")
+    : "Ninguem alem do titular tem acesso.";
 
 function describeTask(t: Task) {
   const prazo = t.due_on ? ` | prazo ${t.due_on}` : "";
@@ -211,18 +287,34 @@ export function nextOccurrence(current: Date, rec: Recurrence): Date | null {
   return fromLocal(`${base.toISOString().slice(0, 10)}T${time}`);
 }
 
-export function executeTool(repo: Repo, phone: string, name: string, rawInput: unknown): string {
+/** `quem` aceita so o telefone para o titular de uma conta sem membros, como no terminal. */
+export function executeTool(repoConta: Repo, quem: string | Contexto, name: string, rawInput: unknown): string {
   if (!(name in schemas)) throw new Error(`Ferramenta desconhecida: ${name}`);
   const toolName = name as ToolName;
   const parsed = schemas[toolName].safeParse(rawInput);
   if (!parsed.success) {
     throw new Error(`Entrada invalida: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
   }
-  const input = parsed.data as any;
+  const ctx = typeof quem === "string" ? contextoTitular(quem) : quem;
+  try {
+    const cap = CAPACIDADE[toolName];
+    if (cap) exigir(ctx, cap);
+    return run(repoDoContexto(repoConta, ctx), ctx, toolName, parsed.data as any);
+  } catch (err) {
+    // Volta como resposta, nao como erro: o modelo precisa repassar a recusa ao usuario.
+    if (err instanceof SemPermissao || err instanceof AuthError) return err.message;
+    throw err;
+  }
+}
 
+function run(repo: Repo, ctx: Contexto, toolName: ToolName, input: any): string {
+  const phone = ctx.conta;
+  const autoria = { created_by: ctx.membro };
   switch (toolName) {
     case "registrar_transacao": {
+      exigir(ctx, capDoTipo(input.tipo));
       const base = {
+        ...autoria,
         phone,
         kind: input.tipo,
         amount_cents: toCents(input.valor),
@@ -250,6 +342,8 @@ export function executeTool(repo: Repo, phone: string, name: string, rawInput: u
     }
 
     case "consultar_transacoes": {
+      if (input.tipo) exigir(ctx, capDoTipo(input.tipo));
+      else if (!pode(ctx, "receitas")) exigir(ctx, "despesas");
       const alvo = input.valor_aproximado ? toCents(input.valor_aproximado) : null;
       const rows = repo
         .listTransactions(phone, input.data_inicio, input.data_fim, {
@@ -279,7 +373,11 @@ export function executeTool(repo: Repo, phone: string, name: string, rawInput: u
       const latest = rows.slice(0, 15).map(describe);
       return [
         `Periodo ${input.data_inicio} a ${input.data_fim}: ${rows.length} transacoes.`,
-        `Despesas: ${brl(sum("despesa"))}. Receitas: ${brl(sum("receita"))}. Saldo: ${brl(sum("receita") - sum("despesa"))}.`,
+        pode(ctx, "receitas") && pode(ctx, "despesas")
+          ? `Despesas: ${brl(sum("despesa"))}. Receitas: ${brl(sum("receita"))}. Saldo: ${brl(sum("receita") - sum("despesa"))}.`
+          : pode(ctx, "receitas")
+            ? `Receitas: ${brl(sum("receita"))}.`
+            : `Despesas: ${brl(sum("despesa"))}.`,
         cats.length ? `Despesas por categoria: ${cats.join("; ")}.` : "",
         contrapartes.length ? `Por pessoa ou loja: ${contrapartes.slice(0, 10).join("; ")}.` : "",
         parcelasFuturas.length
@@ -292,6 +390,7 @@ export function executeTool(repo: Repo, phone: string, name: string, rawInput: u
     }
 
     case "editar_transacao": {
+      if (input.tipo) exigir(ctx, capDoTipo(input.tipo));
       const before = repo.getTransaction(phone, input.id);
       if (!before) return `Transacao #${input.id} nao encontrada.`;
       const after = repo.updateTransaction(phone, input.id, {
@@ -315,7 +414,7 @@ export function executeTool(repo: Repo, phone: string, name: string, rawInput: u
     case "criar_lembrete": {
       const when = fromLocal(input.data_hora);
       if (when.getTime() < Date.now() - 60_000) return `Esse horario (${formatLocal(when)}) ja passou. Confirme a data com o usuario.`;
-      const r = repo.addReminder(phone, input.texto, when, input.recorrencia);
+      const r = repo.addReminder(phone, input.texto, when, input.recorrencia, { ...autoria, notify_phone: ctx.membro });
       return `Lembrete #${r.id} criado para ${formatLocal(when)}${r.recurrence ? `, repete ${r.recurrence}` : ""}: ${r.text}`;
     }
 
@@ -334,6 +433,7 @@ export function executeTool(repo: Repo, phone: string, name: string, rawInput: u
 
     case "criar_tarefa": {
       const t = repo.addTask(phone, {
+        ...autoria,
         title: input.titulo,
         due_on: input.prazo,
         priority: input.prioridade ?? "normal",
@@ -356,6 +456,39 @@ export function executeTool(repo: Repo, phone: string, name: string, rawInput: u
         priority: input.prioridade ?? undefined,
       });
       return t ? `Atualizada: ${describeTask(t)}` : `Tarefa #${input.id} nao encontrada.`;
+    }
+
+    case "listar_acessos": {
+      const membros = conta(repo.db).listarMembros(phone);
+      return `Titular: ${ctx.titular ?? "sem nome"}. ${listarMembros(membros)}`;
+    }
+
+    case "convidar_pessoa": {
+      const c = conta(repo.db).gerarConvite(phone, input.perfil, input.rotulo);
+      const ate = new Date(c.validoAte).toLocaleDateString("pt-BR", { timeZone: config.timezone });
+      return [
+        `Convite criado: ${c.codigo}, perfil ${NOME_PERFIL[c.perfil]}, vale ate ${ate} e serve uma vez.`,
+        `Texto para o usuario encaminhar: "Use o codigo ${c.codigo} em Criar conta no painel do Assessor para entrar na conta de ${ctx.titular ?? "quem te convidou"}. Vale ate ${ate}."`,
+      ].join("\n");
+    }
+
+    case "alterar_acesso": {
+      const c = conta(repo.db);
+      const m = acharMembro(c.listarMembros(phone), input.pessoa);
+      if (typeof m === "string") return m;
+      c.alterarPerfil(phone, m.telefone, input.perfil);
+      return `${m.nome ?? "A pessoa"} agora tem perfil ${NOME_PERFIL[input.perfil as Membro["perfil"]]}.`;
+    }
+
+    case "remover_acesso": {
+      const c = conta(repo.db);
+      const m = acharMembro(c.listarMembros(phone), input.pessoa);
+      if (typeof m === "string") return m;
+      if (!input.confirmado) {
+        return `Confirme com o usuario antes: remover ${m.nome ?? "a pessoa"} (final ${finalTel(m.telefone)}, ${NOME_PERFIL[m.perfil]})? O que ela lancou continua na conta.`;
+      }
+      c.removerMembro(phone, m.telefone);
+      return `${m.nome ?? "A pessoa"} nao tem mais acesso a conta. Os lancamentos dela continuam aqui.`;
     }
   }
 }

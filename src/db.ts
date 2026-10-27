@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 import { config } from "./config.js";
+import { prepararTabelasConta } from "./conta.js";
 
 export type Kind = "despesa" | "receita";
 export type Recurrence = "diario" | "semanal" | "mensal" | null;
@@ -21,10 +22,12 @@ export interface Transaction {
   installment_group: string | null;
   installment_number: number | null;
   installment_total: number | null;
+  /** Telefone de quem lancou; nulo nos registros anteriores a conta compartilhada, que sao do titular. */
+  created_by: string | null;
 }
 
-export type NewTransaction = Omit<Transaction, "id" | "created_at" | "counterpart" | "installment_group" | "installment_number" | "installment_total"> &
-  Partial<Pick<Transaction, "counterpart" | "installment_group" | "installment_number" | "installment_total">>;
+type Opcionais = "counterpart" | "installment_group" | "installment_number" | "installment_total" | "created_by";
+export type NewTransaction = Omit<Transaction, "id" | "created_at" | Opcionais> & Partial<Pick<Transaction, Opcionais>>;
 
 export interface Reminder {
   id: number;
@@ -33,6 +36,9 @@ export interface Reminder {
   next_run_at: string;
   recurrence: Recurrence;
   status: "ativo" | "concluido" | "cancelado";
+  created_by: string | null;
+  /** Quem recebe o aviso; nulo = o telefone da conta. */
+  notify_phone: string | null;
 }
 
 export type TaskStatus = "pendente" | "andamento" | "concluida";
@@ -49,6 +55,7 @@ export interface Task {
   status: TaskStatus;
   created_at: string;
   done_at: string | null;
+  created_by: string | null;
 }
 
 export interface Research {
@@ -131,16 +138,21 @@ export function openDb(file = config.dbPath) {
     );
   `);
   // Bancos criados antes desses campos recebem as colunas sem perder dados.
-  const cols = new Set((db.prepare(`PRAGMA table_info(transactions)`).all() as { name: string }[]).map((c) => c.name));
-  for (const [name, type] of [
-    ["counterpart", "TEXT"],
-    ["installment_group", "TEXT"],
-    ["installment_number", "INTEGER"],
-    ["installment_total", "INTEGER"],
+  for (const [table, name, type] of [
+    ["transactions", "counterpart", "TEXT"],
+    ["transactions", "installment_group", "TEXT"],
+    ["transactions", "installment_number", "INTEGER"],
+    ["transactions", "installment_total", "INTEGER"],
+    ["transactions", "created_by", "TEXT"],
+    ["reminders", "created_by", "TEXT"],
+    ["reminders", "notify_phone", "TEXT"],
+    ["tasks", "created_by", "TEXT"],
   ]) {
-    if (!cols.has(name)) db.exec(`ALTER TABLE transactions ADD COLUMN ${name} ${type}`);
+    const cols = (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
+    if (!cols.includes(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
   }
   db.exec(`CREATE INDEX IF NOT EXISTS idx_tx_counterpart ON transactions (phone, counterpart)`);
+  prepararTabelasConta(db);
   return db;
 }
 
@@ -178,15 +190,16 @@ export function repo(db: Db) {
       const info = db
         .prepare(
           `INSERT INTO transactions (phone, kind, amount_cents, category, description, payment_method, occurred_on,
-             counterpart, installment_group, installment_number, installment_total)
+             counterpart, installment_group, installment_number, installment_total, created_by)
            VALUES (@phone, @kind, @amount_cents, @category, @description, @payment_method, @occurred_on,
-             @counterpart, @installment_group, @installment_number, @installment_total)`,
+             @counterpart, @installment_group, @installment_number, @installment_total, @created_by)`,
         )
         .run({
           counterpart: null,
           installment_group: null,
           installment_number: null,
           installment_total: null,
+          created_by: null,
           ...t,
         });
       return this.getTransaction(t.phone, Number(info.lastInsertRowid))!;
@@ -310,10 +323,16 @@ export function repo(db: Db) {
       ).map((r) => r.category);
     },
 
-    addReminder(phone: string, text: string, nextRunAt: Date, recurrence: Recurrence): Reminder {
+    addReminder(
+      phone: string,
+      text: string,
+      nextRunAt: Date,
+      recurrence: Recurrence,
+      quem: { created_by?: string | null; notify_phone?: string | null } = {},
+    ): Reminder {
       const info = db
-        .prepare(`INSERT INTO reminders (phone, text, next_run_at, recurrence) VALUES (?, ?, ?, ?)`)
-        .run(phone, text, nextRunAt.toISOString(), recurrence);
+        .prepare(`INSERT INTO reminders (phone, text, next_run_at, recurrence, created_by, notify_phone) VALUES (?, ?, ?, ?, ?, ?)`)
+        .run(phone, text, nextRunAt.toISOString(), recurrence, quem.created_by ?? null, quem.notify_phone ?? null);
       return db.prepare(`SELECT * FROM reminders WHERE id = ?`).get(info.lastInsertRowid) as Reminder;
     },
 
@@ -354,10 +373,13 @@ export function repo(db: Db) {
         .all(phone) as (Reminder & { created_at: string })[];
     },
 
-    addTask(phone: string, t: { title: string; notes?: string | null; project?: string | null; due_on?: string | null; priority?: TaskPriority }): Task {
+    addTask(
+      phone: string,
+      t: { title: string; notes?: string | null; project?: string | null; due_on?: string | null; priority?: TaskPriority; created_by?: string | null },
+    ): Task {
       const info = db
-        .prepare(`INSERT INTO tasks (phone, title, notes, project, due_on, priority) VALUES (?, ?, ?, ?, ?, ?)`)
-        .run(phone, t.title, t.notes ?? null, t.project ?? null, t.due_on ?? null, t.priority ?? "normal");
+        .prepare(`INSERT INTO tasks (phone, title, notes, project, due_on, priority, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .run(phone, t.title, t.notes ?? null, t.project ?? null, t.due_on ?? null, t.priority ?? "normal", t.created_by ?? null);
       return this.getTask(phone, Number(info.lastInsertRowid))!;
     },
 
@@ -422,7 +444,11 @@ export function repo(db: Db) {
     usersForSummary(today: string): string[] {
       return (
         db
-          .prepare(`SELECT phone FROM users WHERE last_summary_on IS NULL OR last_summary_on < ?`)
+          // Membro de conta compartilhada nao recebe o resumo da conta: so o titular.
+          .prepare(
+            `SELECT phone FROM users WHERE (last_summary_on IS NULL OR last_summary_on < ?)
+               AND phone NOT IN (SELECT member_phone FROM account_members WHERE removed_at IS NULL)`,
+          )
           .all(today) as { phone: string }[]
       ).map((r) => r.phone);
     },
