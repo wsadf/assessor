@@ -362,3 +362,101 @@ test("API informa o numero do assessor para o botao do WhatsApp, so com digitos"
   assert.equal(me.whatsapp, "5511988887777");
   await app.close();
 });
+
+/** O codigo de acesso vai para o terminal quando o WhatsApp nao esta configurado; o teste o captura de la. */
+async function capturarCodigo(acao: () => Promise<unknown>): Promise<string> {
+  const original = console.log;
+  let codigo = "";
+  console.log = (...args: unknown[]) => {
+    const m = /\[codigo de acesso\].*-> (\d{6})/.exec(args.join(" "));
+    if (m) codigo = m[1];
+    else original(...args);
+  };
+  try {
+    await acao();
+  } finally {
+    console.log = original;
+  }
+  return codigo;
+}
+
+test("cadastro, ativacao pelo codigo e login com sessao propria", async () => {
+  const repo = fresh();
+  const app = buildServer(repo);
+  const json = { "content-type": "application/json" };
+  const post = (url: string, body: object, headers: Record<string, string> = {}) =>
+    app.inject({ method: "POST", url, headers: { ...json, ...headers }, payload: JSON.stringify(body) });
+
+  let resposta: Awaited<ReturnType<typeof post>> | undefined;
+  const codigo = await capturarCodigo(async () => {
+    resposta = await post("/api/auth/cadastro", { nome: "Ana", telefone: "+55 (21) 98888-1111", email: "Ana@Teste.com", senha: "senha-forte-1", plano: "mensal" });
+  });
+  assert.equal(resposta!.statusCode, 201);
+  assert.equal(resposta!.json().canal, "terminal");
+  assert.match(codigo, /^\d{6}$/);
+
+  // Antes de ativar, o login e recusado.
+  assert.equal((await post("/api/auth/entrar", { email: "ana@teste.com", senha: "senha-forte-1" })).statusCode, 403);
+  assert.equal((await post("/api/auth/ativar", { telefone: "5521988881111", codigo: codigo === "000000" ? "111111" : "000000" })).statusCode, 400);
+
+  const ativado = await post("/api/auth/ativar", { telefone: "5521988881111", codigo });
+  assert.equal(ativado.statusCode, 200);
+  // O mesmo codigo nao vale duas vezes.
+  assert.equal((await post("/api/auth/ativar", { telefone: "5521988881111", codigo })).statusCode, 400);
+
+  assert.equal((await post("/api/auth/entrar", { email: "ana@teste.com", senha: "errada123" })).statusCode, 401);
+  const login = await post("/api/auth/entrar", { email: "ANA@teste.com", senha: "senha-forte-1" });
+  assert.equal(login.statusCode, 200);
+  const token = login.json().token as string;
+
+  // A sessao enxerga so os dados da propria conta.
+  repo.addTransaction({ phone: "5521988881111", kind: "despesa", amount_cents: 1000, category: "Teste", description: "da Ana", payment_method: null, occurred_on: localDate() });
+  repo.addTransaction({ phone: "5511777776666", kind: "despesa", amount_cents: 99900, category: "Outro", description: "de outra pessoa", payment_method: null, occurred_on: localDate() });
+  const me = (await app.inject({ method: "GET", url: "/api/me", headers: { authorization: `Bearer ${token}` } })).json();
+  assert.equal(me.telefone, "5521988881111");
+  assert.equal(me.email, "ana@teste.com");
+  const tx = (await app.inject({ method: "GET", url: "/api/transacoes", headers: { authorization: `Bearer ${token}` } })).json();
+  assert.deepEqual(tx.transacoes.map((t: { descricao: string }) => t.descricao), ["da Ana"]);
+
+  assert.equal((await app.inject({ method: "GET", url: "/api/me", headers: { authorization: "Bearer inventado" } })).statusCode, 401);
+  await post("/api/auth/sair", {}, { authorization: `Bearer ${token}` });
+  assert.equal((await app.inject({ method: "GET", url: "/api/me", headers: { authorization: `Bearer ${token}` } })).statusCode, 401);
+  await app.close();
+});
+
+test("recuperacao de senha troca a senha e derruba sessoes antigas", async () => {
+  const repo = fresh();
+  const app = buildServer(repo);
+  const json = { "content-type": "application/json" };
+  const post = (url: string, body: object, headers: Record<string, string> = {}) =>
+    app.inject({ method: "POST", url, headers: { ...json, ...headers }, payload: JSON.stringify(body) });
+
+  const c1 = await capturarCodigo(() => post("/api/auth/cadastro", { nome: "Bia", telefone: "5531977772222", email: "bia@teste.com", senha: "antiga-123", plano: "anual" }));
+  const antiga = (await post("/api/auth/ativar", { telefone: "5531977772222", codigo: c1 })).json().token as string;
+
+  // E-mail sem conta responde igual, sem revelar nada.
+  assert.equal((await post("/api/auth/esqueci", { email: "ninguem@teste.com" })).statusCode, 200);
+  const c2 = await capturarCodigo(() => post("/api/auth/esqueci", { email: "bia@teste.com" }));
+  assert.match(c2, /^\d{6}$/);
+  assert.equal((await post("/api/auth/redefinir", { email: "bia@teste.com", codigo: c2, senha: "curta" })).statusCode, 400);
+  assert.equal((await post("/api/auth/redefinir", { email: "bia@teste.com", codigo: c2, senha: "nova-senha-9" })).statusCode, 200);
+
+  assert.equal((await app.inject({ method: "GET", url: "/api/me", headers: { authorization: `Bearer ${antiga}` } })).statusCode, 401);
+  assert.equal((await post("/api/auth/entrar", { email: "bia@teste.com", senha: "antiga-123" })).statusCode, 401);
+  assert.equal((await post("/api/auth/entrar", { email: "bia@teste.com", senha: "nova-senha-9" })).statusCode, 200);
+  await app.close();
+});
+
+test("limite de codigos por telefone e de tentativas por codigo", async () => {
+  const repo = fresh();
+  const app = buildServer(repo);
+  const json = { "content-type": "application/json" };
+  const post = (url: string, body: object) => app.inject({ method: "POST", url, headers: json, payload: JSON.stringify(body) });
+  await capturarCodigo(() => post("/api/auth/cadastro", { nome: "Caio", telefone: "5541966663333", email: "caio@teste.com", senha: "senha-1234", plano: "mensal" }));
+  for (let i = 0; i < 4; i++) await capturarCodigo(() => post("/api/auth/reenviar", { telefone: "5541966663333" }));
+  assert.equal((await post("/api/auth/reenviar", { telefone: "5541966663333" })).statusCode, 429);
+
+  for (let i = 0; i < 5; i++) await post("/api/auth/ativar", { telefone: "5541966663333", codigo: "999999" });
+  assert.equal((await post("/api/auth/ativar", { telefone: "5541966663333", codigo: "999999" })).statusCode, 429);
+  await app.close();
+});

@@ -1,20 +1,23 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { useRoute } from "vue-router";
-import { api, precisaToken, salvarToken } from "./api";
+import { useRoute, useRouter } from "vue-router";
+import { api, limparSessao } from "./api";
 import AppIcon from "./components/AppIcon.vue";
 import AssessorAvatar from "./components/AssessorAvatar.vue";
 import BotaoWhatsapp from "./components/BotaoWhatsapp.vue";
 import { MESAS, SUBMENU_FINANCAS, mesaPorId } from "./mesas";
 
 const route = useRoute();
+const router = useRouter();
+const publica = computed(() => Boolean(route.meta.publica));
 const mesaAtual = computed(() => mesaPorId(String(route.meta.mesa ?? "financas")));
 const menuAberto = ref(false);
 const tema = ref(document.documentElement.dataset.theme === "light" ? "light" : "dark");
-const me = ref<{ nome: string | null; telefone: string; ia: string; whatsapp: string | null } | null>(null);
-const tokenDigitado = ref("");
+const me = ref<{ nome: string | null; email: string | null; telefone: string; ia: string; whatsapp: string | null } | null>(null);
 
 watch(() => route.fullPath, () => (menuAberto.value = false));
+// Carrega a conta ao entrar na area logada (inclusive logo depois do login).
+watch(publica, (p) => !p && !me.value && carregarMe());
 
 function alternarTema() {
   tema.value = tema.value === "dark" ? "light" : "dark";
@@ -34,17 +37,23 @@ async function carregarMe() {
   }
 }
 
-function entrar() {
-  if (!tokenDigitado.value.trim()) return;
-  salvarToken(tokenDigitado.value);
-  location.reload();
+async function sair() {
+  await api.post("/auth/sair", {}).catch(() => undefined);
+  limparSessao();
+  me.value = null;
+  router.replace("/entrar");
 }
 
-onMounted(carregarMe);
+// Antes de o roteador resolver a primeira rota, meta.publica ainda nao reflete a pagina aberta.
+onMounted(async () => {
+  await router.isReady();
+  if (!publica.value) carregarMe();
+});
 </script>
 
 <template>
-  <div class="shell" :style="{ '--mesa': mesaAtual.cor }">
+  <RouterView v-if="publica" />
+  <div v-else class="shell" :style="{ '--mesa': mesaAtual.cor }">
     <aside class="lateral" :class="{ aberto: menuAberto }">
       <div class="marca">
         <span class="logo">
@@ -75,12 +84,12 @@ onMounted(carregarMe);
       <div class="rodape">
         <div class="usuario">
           <span class="iniciais">{{ (me?.nome ?? "Você")[0] }}</span>
-          <div>
+          <div class="quem">
             <div class="nome">{{ me?.nome ?? "Você" }}</div>
-            <div class="faint tel num">{{ me?.telefone ?? "" }}</div>
+            <div class="faint tel">{{ me?.email ?? me?.telefone ?? "" }}</div>
           </div>
         </div>
-        <span v-if="me" class="chip ok">IA {{ me.ia }}</span>
+        <button class="icon-btn sair" title="Sair" aria-label="Sair" @click="sair"><AppIcon name="sair" :size="17" /></button>
       </div>
     </aside>
     <div v-if="menuAberto" class="veu" @click="menuAberto = false" />
@@ -115,15 +124,6 @@ onMounted(carregarMe);
           <component :is="Component" :key="route.path" />
         </RouterView>
       </main>
-    </div>
-
-    <div v-if="precisaToken" class="token-veu">
-      <form class="card token" @submit.prevent="entrar">
-        <h2>Token do painel</h2>
-        <p class="muted">A API pede o <code>PAINEL_TOKEN</code> do arquivo <code>.env</code>. Ele fica salvo só neste navegador.</p>
-        <input v-model="tokenDigitado" class="input" type="password" placeholder="Cole o token" autofocus />
-        <button class="btn primary" type="submit">Entrar</button>
-      </form>
     </div>
   </div>
 </template>
@@ -173,9 +173,12 @@ nav { flex: 1; overflow: auto; }
 .item-sub.ativo :deep(svg) { color: var(--mesa); }
 .rodape { border-top: 1px solid var(--line); padding-top: 14px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .usuario { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.quem { min-width: 0; }
+.sair { width: 34px; height: 34px; flex: none; color: var(--text-2); }
+.sair:hover { color: var(--danger); border-color: var(--danger); }
 .iniciais { width: 34px; height: 34px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--line-strong); display: grid; place-items: center; font-weight: 600; }
 .nome { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tel { font-size: 12px; }
+.tel { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .principal { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .topo {
@@ -223,10 +226,6 @@ nav { flex: 1; overflow: auto; }
 .so-mobile { display: none; }
 .veu { display: none; }
 
-.token-veu { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: grid; place-items: center; z-index: 50; padding: 16px; }
-.token { width: min(420px, 100%); padding: 24px; display: grid; gap: 14px; }
-.token h2 { margin: 0; }
-.token p { margin: 0; }
 
 @media (max-width: 900px) {
   .lateral { position: fixed; left: 0; top: 0; z-index: 40; transform: translateX(-100%); transition: transform 0.2s; }

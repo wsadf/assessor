@@ -1,3 +1,4 @@
+import { auth } from "./auth.js";
 import { config, DEMO_DB_PATH } from "./config.js";
 import { openDb, repo as makeRepo } from "./db.js";
 import { fromLocal, localDate } from "./time.js";
@@ -12,6 +13,14 @@ for (const table of ["transactions", "reminders", "tasks", "history", "research"
   db.prepare(`DELETE FROM ${table} WHERE phone = ?`).run(phone);
 }
 repo.ensureUser(phone, "Demonstração");
+
+// Conta de teste para entrar no painel de demonstracao; credenciais ficticias, so deste banco.
+const DEMO_EMAIL = "demo@assessor.local";
+const DEMO_SENHA = "demo1234";
+const contas = auth(db);
+db.prepare(`DELETE FROM sessions WHERE phone = ?`).run(phone);
+contas.cadastrar({ nome: "Demonstração", telefone: phone, email: DEMO_EMAIL, senha: DEMO_SENHA, plano: "anual" });
+contas.ativar(phone);
 
 // Gerador deterministico: a demonstracao sai igual a cada execucao.
 let seed = 42;
@@ -149,4 +158,5 @@ for (const [role, text] of [
   repo.addHistory(phone, role, text);
 }
 
-console.log(`Demonstracao gravada em ${file}: ${total} lancamentos, 6 lembretes, ${tarefas.length} tarefas (telefone ${phone}).`);
+console.log(`Demonstracao gravada em ${file}: ${total} lancamentos, 6 lembretes, ${tarefas.length} tarefas.`);
+console.log(`Para entrar no painel de demonstracao: ${DEMO_EMAIL} / ${DEMO_SENHA}`);

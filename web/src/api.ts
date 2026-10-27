@@ -1,6 +1,6 @@
-import { ref } from "vue";
-
-const TOKEN_KEY = "assessor-painel-token";
+const SESSAO_KEY = "assessor-sessao";
+// Sem localStorage (janela privada bloqueada), a sessao vale ate recarregar a pagina.
+let sessaoEmMemoria: string | null = null;
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -8,36 +8,51 @@ export class ApiError extends Error {
   }
 }
 
-/** Fica true quando a API recusa o token; o App mostra a tela de token. */
-export const precisaToken = ref(false);
-
-function token(): string | null {
+export function sessao(): string | null {
   try {
-    return localStorage.getItem(TOKEN_KEY);
+    return localStorage.getItem(SESSAO_KEY) ?? sessaoEmMemoria;
   } catch {
-    return null;
+    return sessaoEmMemoria;
   }
 }
 
-export function salvarToken(valor: string) {
+export function salvarSessao(token: string) {
+  sessaoEmMemoria = token;
   try {
-    localStorage.setItem(TOKEN_KEY, valor.trim());
+    localStorage.setItem(SESSAO_KEY, token);
   } catch {
-    // Sem localStorage (janela privada), o token vale so ate recarregar.
+    // Fica so na memoria.
   }
-  precisaToken.value = false;
+}
+
+export function limparSessao() {
+  sessaoEmMemoria = null;
+  try {
+    localStorage.removeItem(SESSAO_KEY);
+  } catch {
+    // Nada guardado.
+  }
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = {};
-  const t = token();
-  if (t) headers["x-painel-token"] = t;
+  const t = sessao();
+  if (t) headers.authorization = `Bearer ${t}`;
   if (body !== undefined) headers["content-type"] = "application/json";
   const res = await fetch(`/api${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
-  if (res.status === 401 || res.status === 503) precisaToken.value = true;
+  // So redireciona quando havia sessao e ela venceu; sem sessao, quem decide e a guarda do roteador.
+  if (res.status === 401 && t && !path.startsWith("/auth/")) {
+    limparSessao();
+    if (location.pathname !== "/entrar") location.assign(`/entrar?volta=${encodeURIComponent(location.pathname + location.search)}`);
+  }
   if (!res.ok) throw new ApiError(res.status, (data as { erro?: string }).erro ?? `Erro ${res.status}`);
   return data as T;
+}
+
+export interface SessaoAberta {
+  token: string;
+  conta: { nome: string | null; email: string | null; plano: string | null; testeAte: string | null };
 }
 
 const qs = (params: Record<string, string | number | undefined | null>) => {

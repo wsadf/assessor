@@ -148,6 +148,9 @@ export type Db = ReturnType<typeof openDb>;
 
 export function repo(db: Db) {
   return {
+    /** Conexao crua, para modulos com tabelas proprias (como o de autenticacao). */
+    db,
+
     ensureUser(phone: string, name?: string) {
       db.prepare(
         `INSERT INTO users (phone, name) VALUES (?, ?)

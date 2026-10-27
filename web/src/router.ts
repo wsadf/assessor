@@ -1,9 +1,13 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { sessao } from "./api";
 
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: "/", redirect: "/financas" },
+    { path: "/entrar", component: () => import("./views/auth/EntrarView.vue"), meta: { publica: true } },
+    { path: "/criar-conta", component: () => import("./views/auth/CriarContaView.vue"), meta: { publica: true } },
+    { path: "/esqueci", component: () => import("./views/auth/EsqueciView.vue"), meta: { publica: true } },
     { path: "/financas", component: () => import("./views/financas/FinancasPainel.vue"), meta: { mesa: "financas" } },
     { path: "/financas/transacoes", component: () => import("./views/financas/TransacoesView.vue"), meta: { mesa: "financas" } },
     { path: "/financas/categorias", component: () => import("./views/financas/CategoriasView.vue"), meta: { mesa: "financas" } },
@@ -18,4 +22,9 @@ export const router = createRouter({
     { path: "/:pathMatch(.*)*", redirect: "/financas" },
   ],
   scrollBehavior: () => ({ top: 0 }),
+});
+
+router.beforeEach((to) => {
+  if (!to.meta.publica && !sessao()) return { path: "/entrar", query: to.fullPath === "/" ? {} : { volta: to.fullPath } };
+  if (to.path === "/entrar" && sessao()) return "/financas";
 });

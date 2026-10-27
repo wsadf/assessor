@@ -61,7 +61,15 @@ npm run painel
 
 No topo, o botão **Conversar no WhatsApp** abre a conversa com o assessor, já com uma mensagem para o assessor da mesa aberta. Ele usa `WHATSAPP_NUMERO` do `.env` ou, se estiver vazio, descobre o número pelo app da Meta (`WHATSAPP_TOKEN` e `WHATSAPP_PHONE_NUMBER_ID`). Sem nenhum dos dois, o botão explica como configurar.
 
-Abra http://localhost:3001. Na primeira vez, o painel pede o `PAINEL_TOKEN` do `.env`. Ele protege a API, que fica pública quando o túnel do WhatsApp está aberto. Por padrão o painel mostra o telefone do chat do terminal; para ver o do WhatsApp, coloque seu número em `PAINEL_TELEFONE`.
+Abra http://localhost:3001. O painel pede login.
+
+- **Demonstração**: depois de `npm run seed:demo`, entre com `demo@assessor.local` e senha `demo1234`.
+- **Conta nova**: em **Criar conta** são quatro passos: quem é você, plano, pagamento (7 dias grátis, a cobrança ainda não está ligada) e ativação. O número informado no cadastro é o mesmo que conversa com o assessor no WhatsApp, então o painel mostra os dados dele.
+- **Esqueceu a senha**: o código chega no WhatsApp da conta e a senha nova já entra.
+
+Os códigos de 6 números vão pelo WhatsApp quando `WHATSAPP_TOKEN` e `WHATSAPP_PHONE_NUMBER_ID` estão preenchidos. Sem eles, aparecem no terminal onde o painel está rodando, como `[codigo de acesso] +55 ••••• 1111 -> 123456`. Cada código vale 10 minutos e aceita 5 tentativas.
+
+`PAINEL_TOKEN` é opcional: serve como chave de serviço no cabeçalho `x-painel-token` e enxerga os dados de `PAINEL_TELEFONE`.
 
 Para desenvolver com recarga automática, em dois terminais:
 
@@ -73,7 +81,7 @@ npm run painel:api:demo
 npm run dev --prefix web
 ```
 
-E abra http://localhost:5173. Nesse modo o token é injetado pelo Vite e não é pedido.
+E abra http://localhost:5173.
 
 ## 2. Ligar ao seu WhatsApp
 
@@ -172,7 +180,8 @@ O agente usa o fallback do servidor da Anthropic (`fallbacks: "default"`): se um
 | `src/providers/claude.ts` | Laço de ferramentas com o Claude (SDK da Anthropic) |
 | `src/tools.ts` | Definição e execução das ferramentas de transações, lembretes e tarefas |
 | `src/db.ts` | SQLite: usuários, histórico, transações, lembretes, tarefas, pesquisas |
-| `src/api.ts` | API do painel, uma rota por mesa, protegida por token |
+| `src/api.ts` | API do painel: cadastro e login em `/api/auth`, uma rota por mesa para quem tem sessão |
+| `src/auth.ts` | Contas, senhas (scrypt), códigos de 6 números e sessões |
 | `src/painel.ts` | Sobe a API e o painel compilado, sem WhatsApp |
 | `src/seed.ts` | Dados de demonstração em `data/demo.db` |
 | `web/` | Painel em Vue 3 + Vue Router + Vite, gráficos em SVG próprios |

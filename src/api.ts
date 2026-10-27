@@ -3,7 +3,8 @@ import { z } from "zod";
 import { config } from "./config.js";
 import type { Kind, Repo, Task, Transaction } from "./db.js";
 import { fromLocal, localDate } from "./time.js";
-import { assistantNumber } from "./whatsapp.js";
+import { assistantNumber, sendNotice } from "./whatsapp.js";
+import { auth, AuthError } from "./auth.js";
 
 const mesSchema = z.string().regex(/^\d{4}-\d{2}$/);
 const dataSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -95,29 +96,185 @@ function parse<T>(schema: z.ZodType<T>, value: unknown, reply: FastifyReply): T 
   return undefined;
 }
 
+const cadastroBody = z.object({
+  nome: z.string().trim().min(2, "informe seu nome"),
+  telefone: z.string().transform((s) => s.replace(/\D/g, "")).pipe(z.string().min(10, "WhatsApp incompleto").max(15)),
+  email: z.string().trim().email("e-mail invalido"),
+  senha: z.string().min(8, "a senha precisa de pelo menos 8 caracteres"),
+  plano: z.enum(["mensal", "anual"]),
+});
+const telefoneSchema = z.string().transform((s) => s.replace(/\D/g, "")).pipe(z.string().min(10).max(15));
+
+const mascarar = (phone: string) => `+${phone.slice(0, 2)} ••••• ${phone.slice(-4)}`;
+
+/**
+ * Envia o codigo pelo WhatsApp quando o app da Meta esta configurado. Sem ele (ou se a Meta
+ * recusar), o codigo vai para o terminal do servidor, o que basta para testar localmente.
+ */
+async function enviarCodigo(phone: string, codigo: string, log: FastifyInstance["log"]): Promise<"whatsapp" | "terminal"> {
+  const texto = `Seu código do Assessor é ${codigo}. Ele vale por 10 minutos. Não compartilhe com ninguém.`;
+  if (process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID) {
+    try {
+      await sendNotice(phone, texto);
+      return "whatsapp";
+    } catch (err) {
+      log.warn({ err }, "falha ao enviar o codigo pelo WhatsApp; usando o terminal");
+    }
+  }
+  console.log(`\n[codigo de acesso] ${mascarar(phone)} -> ${codigo}\n`);
+  return "terminal";
+}
+
 export function registerApi(app: FastifyInstance, repo: Repo) {
-  const phone = config.panel.phone;
+  const contas = auth(repo.db);
+  const telefoneDa = new WeakMap<FastifyRequest, string>();
+  const quem = (req: FastifyRequest) => telefoneDa.get(req)!;
+  const bearer = (req: FastifyRequest) => req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+
+  const responderErro = (reply: FastifyReply, err: unknown) => {
+    if (err instanceof AuthError) return reply.code(err.status).send({ erro: err.message });
+    throw err;
+  };
+  const sessaoPara = (phone: string) => {
+    const c = contas.porTelefone(phone)!;
+    return { token: contas.abrirSessao(phone), conta: { nome: c.name, email: c.email, plano: c.plan, testeAte: c.trial_ends_on } };
+  };
+
+  // Rotas publicas: cadastro, ativacao, entrada e recuperacao de senha.
+  app.register(
+    async (pub) => {
+      pub.post("/cadastro", async (req, reply) => {
+        const b = parse(cadastroBody, body(req), reply);
+        if (!b) return;
+        try {
+          contas.cadastrar(b);
+          const canal = await enviarCodigo(b.telefone, contas.gerarCodigo(b.telefone, "ativacao"), app.log);
+          return reply.code(201).send({ telefone: b.telefone, telefoneMascarado: mascarar(b.telefone), canal });
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      pub.post("/reenviar", async (req, reply) => {
+        const b = parse(z.object({ telefone: telefoneSchema }), body(req), reply);
+        if (!b) return;
+        if (!contas.porTelefone(b.telefone)) return reply.code(404).send({ erro: "Cadastro não encontrado. Comece de novo." });
+        try {
+          const canal = await enviarCodigo(b.telefone, contas.gerarCodigo(b.telefone, "ativacao"), app.log);
+          return { canal, telefoneMascarado: mascarar(b.telefone) };
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      pub.post("/ativar", async (req, reply) => {
+        const b = parse(z.object({ telefone: telefoneSchema, codigo: z.string().regex(/^\d{6}$/, "o código tem 6 números") }), body(req), reply);
+        if (!b) return;
+        try {
+          contas.conferirCodigo(b.telefone, "ativacao", b.codigo);
+          contas.ativar(b.telefone);
+          return sessaoPara(b.telefone);
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      pub.post("/entrar", async (req, reply) => {
+        const b = parse(z.object({ email: z.string().trim().min(3), senha: z.string().min(1) }), body(req), reply);
+        if (!b) return;
+        try {
+          return sessaoPara(contas.entrar(b.email, b.senha).phone);
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      pub.post("/esqueci", async (req, reply) => {
+        const b = parse(z.object({ email: z.string().trim().email("e-mail invalido") }), body(req), reply);
+        if (!b) return;
+        const conta = contas.porEmail(b.email);
+        // Resposta igual com ou sem conta, para nao revelar quais e-mails estao cadastrados.
+        if (conta) {
+          try {
+            await enviarCodigo(conta.phone, contas.gerarCodigo(conta.phone, "senha"), app.log);
+          } catch (err) {
+            return responderErro(reply, err);
+          }
+        }
+        return { ok: true };
+      });
+
+      pub.post("/redefinir", async (req, reply) => {
+        const b = parse(
+          z.object({ email: z.string().trim().email(), codigo: z.string().regex(/^\d{6}$/, "o código tem 6 números"), senha: z.string().min(8, "a senha precisa de pelo menos 8 caracteres") }),
+          body(req),
+          reply,
+        );
+        if (!b) return;
+        const conta = contas.porEmail(b.email);
+        if (!conta) return reply.code(400).send({ erro: "Código incorreto." });
+        try {
+          contas.conferirCodigo(conta.phone, "senha", b.codigo);
+          contas.trocarSenha(conta.phone, b.senha);
+          // O codigo chegou no WhatsApp da conta: isso tambem comprova o numero.
+          contas.ativar(conta.phone);
+          return sessaoPara(conta.phone);
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      pub.post("/sair", async (req) => {
+        const t = bearer(req);
+        if (t) contas.fecharSessao(t);
+        return { ok: true };
+      });
+    },
+    { prefix: "/api/auth" },
+  );
 
   app.register(
     async (api) => {
-      // O tunel do webhook deixa o servidor publico; sem token, nenhum dado financeiro sai.
+      // O tunel do webhook deixa o servidor publico: sem sessao (ou o PAINEL_TOKEN de servico), nenhum dado sai.
       api.addHook("onRequest", async (req, reply) => {
-        if (!config.panel.token) return reply.code(503).send({ erro: "PAINEL_TOKEN nao configurado no .env" });
-        if (req.headers["x-painel-token"] !== config.panel.token) return reply.code(401).send({ erro: "token invalido" });
+        const t = bearer(req);
+        if (t) {
+          const phone = contas.sessao(t);
+          if (!phone) return reply.code(401).send({ erro: "Sessão expirada. Entre de novo." });
+          telefoneDa.set(req, phone);
+          return;
+        }
+        if (config.panel.token && req.headers["x-painel-token"] === config.panel.token) {
+          telefoneDa.set(req, config.panel.phone);
+          return;
+        }
+        return reply.code(401).send({ erro: "Entre para continuar." });
       });
 
-      api.get("/me", async () => {
-        const user = repo.getUser(phone);
-        return { telefone: phone, nome: user?.name ?? null, ia: config.aiProvider, hoje: localDate(), whatsapp: await assistantNumber() };
+      api.get("/me", async (req, reply) => {
+        const phone = quem(req);
+        const user = contas.porTelefone(phone);
+        return {
+          telefone: phone,
+          nome: user?.name ?? null,
+          email: user?.email ?? null,
+          plano: user?.plan ?? null,
+          testeAte: user?.trial_ends_on ?? null,
+          ia: config.aiProvider,
+          hoje: localDate(),
+          whatsapp: await assistantNumber(),
+        };
       });
 
-      api.get("/meses", async () => {
+      api.get("/meses", async (req, reply) => {
+        const phone = quem(req);
         const atual = localDate().slice(0, 7);
         const meses = repo.monthsWithData(phone);
         return { meses: meses.includes(atual) ? meses : [atual, ...meses] };
       });
 
       api.get("/financas", async (req, reply) => {
+        const phone = quem(req);
         const mes = parse(mesSchema, (req.query as { mes?: string }).mes ?? localDate().slice(0, 7), reply);
         if (!mes) return;
         const { from, to } = range(mes);
@@ -212,6 +369,7 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
 
       api.get("/transacoes", async (req, reply) => {
+        const phone = quem(req);
         const q = req.query as { mes?: string; categoria?: string; tipo?: string; contraparte?: string };
         const mes = parse(mesSchema, q.mes ?? localDate().slice(0, 7), reply);
         if (!mes) return;
@@ -222,6 +380,7 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
 
       api.post("/transacoes", async (req, reply) => {
+        const phone = quem(req);
         const b = parse(txBody, body(req), reply);
         if (!b) return;
         const base = {
@@ -239,6 +398,7 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
 
       api.patch("/transacoes/:id", async (req, reply) => {
+        const phone = quem(req);
         const id = Number((req.params as { id: string }).id);
         const b = parse(txBody.partial(), body(req), reply);
         if (!b) return;
@@ -255,11 +415,13 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
 
       api.delete("/transacoes/:id", async (req, reply) => {
+        const phone = quem(req);
         const id = Number((req.params as { id: string }).id);
         return repo.deleteTransaction(phone, id) ? { ok: true } : reply.code(404).send({ erro: "transacao nao encontrada" });
       });
 
       api.get("/categorias", async (req, reply) => {
+        const phone = quem(req);
         const mes = parse(mesSchema, (req.query as { mes?: string }).mes ?? localDate().slice(0, 7), reply);
         if (!mes) return;
         const { from, to } = range(mes);
@@ -272,6 +434,7 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
 
       api.get("/contrapartes", async (req, reply) => {
+        const phone = quem(req);
         const q = req.query as { mes?: string; busca?: string };
         const mes = parse(mesSchema, q.mes ?? localDate().slice(0, 7), reply);
         if (!mes) return;
@@ -298,6 +461,7 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
 
       api.get("/pagamentos", async (req, reply) => {
+        const phone = quem(req);
         const mes = parse(mesSchema, (req.query as { mes?: string }).mes ?? localDate().slice(0, 7), reply);
         if (!mes) return;
         const { from, to } = range(mes);
@@ -314,6 +478,7 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
 
       api.get("/analises", async (req, reply) => {
+        const phone = quem(req);
         const q = req.query as { mes?: string; meses?: string };
         const mes = parse(mesSchema, q.mes ?? localDate().slice(0, 7), reply);
         if (!mes) return;
@@ -350,6 +515,7 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
 
       api.get("/agenda", async (req, reply) => {
+        const phone = quem(req);
         const dia = parse(dataSchema, (req.query as { dia?: string }).dia ?? localDate(), reply);
         if (!dia) return;
         const ativos = repo.listReminders(phone);
@@ -367,6 +533,7 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
 
       api.post("/lembretes", async (req, reply) => {
+        const phone = quem(req);
         const b = parse(reminderBody, body(req), reply);
         if (!b) return;
         const when = fromLocal(b.dataHora);
@@ -376,11 +543,13 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
 
       api.delete("/lembretes/:id", async (req, reply) => {
+        const phone = quem(req);
         const id = Number((req.params as { id: string }).id);
         return repo.cancelReminder(phone, id) ? { ok: true } : reply.code(404).send({ erro: "lembrete nao encontrado" });
       });
 
-      api.get("/tarefas", async () => {
+      api.get("/tarefas", async (req, reply) => {
+        const phone = quem(req);
         const today = localDate();
         const tarefas = repo.listTasks(phone).map((t) => toTask(t, today));
         const conta = (f: (t: (typeof tarefas)[number]) => boolean) => tarefas.filter(f).length;
@@ -398,6 +567,7 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
 
       api.post("/tarefas", async (req, reply) => {
+        const phone = quem(req);
         const b = parse(taskBody, body(req), reply);
         if (!b) return;
         const t = repo.addTask(phone, { title: b.titulo, notes: b.notas, project: b.projeto, due_on: b.prazo, priority: b.prioridade });
@@ -405,6 +575,7 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
 
       api.patch("/tarefas/:id", async (req, reply) => {
+        const phone = quem(req);
         const id = Number((req.params as { id: string }).id);
         const b = parse(taskBody.partial(), body(req), reply);
         if (!b) return;
@@ -420,11 +591,13 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
 
       api.delete("/tarefas/:id", async (req, reply) => {
+        const phone = quem(req);
         const id = Number((req.params as { id: string }).id);
         return repo.deleteTask(phone, id) ? { ok: true } : reply.code(404).send({ erro: "tarefa nao encontrada" });
       });
 
-      api.get("/operacao", async () => {
+      api.get("/operacao", async (req, reply) => {
+        const phone = quem(req);
         const atual = localDate().slice(0, 7);
         const meses = Array.from({ length: 12 }, (_, i) => shiftMonth(atual, i - 11));
         const a = repo.activityByMonth(phone, `${meses[0]}-01`);
@@ -454,6 +627,7 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
 
       api.get("/fiscal", async (req, reply) => {
+        const phone = quem(req);
         const mes = parse(mesSchema, (req.query as { mes?: string }).mes ?? localDate().slice(0, 7), reply);
         if (!mes) return;
         const { from, to } = range(mes);
@@ -475,7 +649,8 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
         };
       });
 
-      api.get("/pesquisas", async () => {
+      api.get("/pesquisas", async (req, reply) => {
+        const phone = quem(req);
         const pesquisas = repo.listResearch(phone).map((p) => ({
           id: p.id,
           pergunta: p.question,
