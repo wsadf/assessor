@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
-import { api, type Agenda, type Agendamento, type GoogleStatus, type Lembrete, type MinhaPagina } from "../api";
+import { api, type Agenda, type Agendamento, type EnvioContato, type GoogleStatus, type Lembrete, type MensagemContato, type MinhaPagina } from "../api";
 import AppIcon from "../components/AppIcon.vue";
 import AssessorBalao from "../components/AssessorBalao.vue";
 import BlocoMesa from "../components/BlocoMesa.vue";
@@ -114,6 +114,23 @@ async function cancelarCliente(b: Agendamento) {
     erroLista.value = (e as Error).message;
   }
   await Promise.all([recarregarLista(), recarregar()]);
+}
+
+const { dados: recados, recarregar: recarregarRecados } = useCarregar(() =>
+  api.get<{ envios: EnvioContato[]; mensagens: MensagemContato[] }>("/contatos/mensagens"),
+);
+const SITUACAO_RECADO = { enviada: "enviada", entregue: "entregue", lida: "lida", falhou: "não entregue", pulada: "não saiu (limite do dia)" } as const;
+const erroRecado = ref<string | null>(null);
+
+async function cancelarRecado(e: EnvioContato) {
+  if (!confirm(`Parar de mandar “${e.texto}” para ${e.contato}?`)) return;
+  erroRecado.value = null;
+  try {
+    await api.del(`/contatos/envios/${e.id}`);
+  } catch (err) {
+    erroRecado.value = (err as Error).message;
+  }
+  await recarregarRecados();
 }
 
 const REC = { diario: "todo dia", semanal: "toda semana", mensal: "todo mês" } as const;
@@ -306,6 +323,46 @@ async function cancelar(l: Lembrete) {
         </template>
       </BlocoMesa>
 
+      <BlocoMesa v-if="recados" titulo="Mensagens para outras pessoas">
+        <AssessorBalao mesa="agenda">
+          peça pelo WhatsApp, como “lembra o João de pagar o personal todo dia 5”. Eu mostro a mensagem antes, mando em seu nome com a opção de parar
+          e te conto quando a pessoa responder.
+        </AssessorBalao>
+        <template #lado>
+          <EstadoVazio v-if="!recados.envios.length && !recados.mensagens.length" titulo="Nenhuma mensagem ainda" texto="Os recados agendados e as respostas aparecem aqui." />
+          <template v-if="recados.envios.length">
+            <div class="eyebrow">Agendadas</div>
+            <div v-for="e in recados.envios" :key="e.id" class="list-row">
+              <span class="dot" style="background: var(--mesa)" />
+              <div class="flex1">
+                <div class="titulo">{{ e.contato }}</div>
+                <div class="faint recado">{{ e.texto }}</div>
+                <div class="eyebrow meta">
+                  <template v-if="e.proximo">{{ rotuloDia(dataLocal(e.proximo), HOJE) }} · {{ horaLocal(e.proximo) }}</template>
+                  <template v-if="e.recorrencia"> · {{ REC[e.recorrencia] }}</template>
+                  <template v-if="e.pedidoPor"> · pedido por {{ e.pedidoPor }}</template>
+                </div>
+              </div>
+              <button class="icon-btn mini" title="Parar de mandar" @click="cancelarRecado(e)"><AppIcon name="lixo" :size="15" /></button>
+            </div>
+          </template>
+          <template v-if="recados.mensagens.length">
+            <div class="eyebrow agendados">Últimas mensagens</div>
+            <div v-for="m in recados.mensagens" :key="m.id" class="list-row">
+              <div class="flex1">
+                <div class="titulo">{{ m.contato }}</div>
+                <div class="eyebrow meta">{{ rotuloDia(dataLocal(m.enviadaEm), HOJE) }} · {{ horaLocal(m.enviadaEm) }}</div>
+                <div v-if="m.resposta" class="resposta">“{{ m.resposta }}”</div>
+              </div>
+              <span class="chip" :class="m.situacao === 'falhou' || m.situacao === 'pulada' ? 'warning' : m.resposta ? 'ok' : ''" :title="m.erro ?? undefined">
+                {{ m.resposta ? "respondeu" : SITUACAO_RECADO[m.situacao] }}
+              </span>
+            </div>
+          </template>
+          <p v-if="erroRecado" class="erro">{{ erroRecado }}</p>
+        </template>
+      </BlocoMesa>
+
       <BlocoMesa titulo="As próximas duas semanas">
         <AssessorBalao mesa="agenda">cada coluna é um dia; as mais altas são onde a agenda aperta.</AssessorBalao>
         <template #lado>
@@ -382,6 +439,8 @@ async function cancelar(l: Lembrete) {
 .link { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--mesa); }
 .agendados { margin-top: 18px; }
+.recado { font-size: 13px; margin-top: 2px; }
+.resposta { font-size: 13px; margin-top: 4px; color: var(--text-2); font-style: italic; }
 .aviso-linha { font-size: 12.5px; color: var(--warning); margin-top: 2px; }
 @media (max-width: 600px) {
   .linha-form { grid-template-columns: 1fr 1fr; }

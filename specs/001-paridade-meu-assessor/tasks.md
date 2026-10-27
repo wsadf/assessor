@@ -515,8 +515,8 @@ recebida, a identificacao do remetente, a opcao de parar e o relato devolvido ao
 
 **Painel web**
 
-- [ ] T162 [P] [US6] Em `web/src/api.ts`, tipos `EnvioContato` e `MensagemContato` do contrato (depende de T161)
-- [ ] T163 [US6] Em `web/src/views/AgendaMesa.vue`, bloco "Mensagens para outras pessoas": balao explicando que o pedido e pelo WhatsApp ("lembra o Joao de pagar o personal todo dia 5"); envios ativos com contato, proximo, recorrencia e cancelar com confirmacao; ultimas mensagens com situacao (chip para `falhou` e `pulada`) e resposta; vazio com `EstadoVazio` (depende de T162)
+- [X] T162 [P] [US6] Em `web/src/api.ts`, tipos `EnvioContato` e `MensagemContato` do contrato (depende de T161)
+- [X] T163 [US6] Em `web/src/views/AgendaMesa.vue`, bloco "Mensagens para outras pessoas": balao explicando que o pedido e pelo WhatsApp ("lembra o Joao de pagar o personal todo dia 5"); envios ativos com contato, proximo, recorrencia e cancelar com confirmacao; ultimas mensagens com situacao (chip para `falhou` e `pulada`) e resposta; vazio com `EstadoVazio` (depende de T162)
 
 **Checkpoint**: US6 completa; T150 a T153 verdes; roteiro de [quickstart.md](quickstart.md#us6-mensagens-a-outras-pessoas) passando.
 
@@ -524,8 +524,8 @@ recebida, a identificacao do remetente, a opcao de parar e o relato devolvido ao
 
 ## Phase 24: Polish (US6)
 
-- [ ] T164 [P] Em `README.md`, secao Mensagens para outras pessoas: como pedir, a previa e a confirmacao, o texto com identificacao e PARAR, envio agendado e recorrente, a janela de 24 horas e o modelo aprovado, situacao e repasse da resposta, limites por dia, quem pode pedir e o que ficou de fora; tabela "Como esta organizado" com `src/contatos.ts`
-- [ ] T165 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
+- [X] T164 [P] Em `README.md`, secao Mensagens para outras pessoas: como pedir, a previa e a confirmacao, o texto com identificacao e PARAR, envio agendado e recorrente, a janela de 24 horas e o modelo aprovado, situacao e repasse da resposta, limites por dia, quem pode pedir e o que ficou de fora; tabela "Como esta organizado" com `src/contatos.ts`
+- [X] T165 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
 - [ ] T166 Executar o roteiro de [quickstart.md](quickstart.md#us6-mensagens-a-outras-pessoas) com WhatsApp real e um segundo numero cadastrado como destinatario, com `AI_PROVIDER=gemini` e com `AI_PROVIDER=claude` quando houver `ANTHROPIC_API_KEY`
 ---
 

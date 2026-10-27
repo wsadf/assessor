@@ -350,6 +350,25 @@ export interface Agendamento {
   opcoes: Horario[] | null;
 }
 
+export interface EnvioContato {
+  id: number;
+  contato: string;
+  texto: string;
+  proximo: string | null;
+  recorrencia: "diario" | "semanal" | "mensal" | null;
+  pedidoPor: string | null;
+}
+
+export interface MensagemContato {
+  id: number;
+  contato: string;
+  enviadaEm: string;
+  situacao: "enviada" | "entregue" | "lida" | "falhou" | "pulada";
+  erro: string | null;
+  resposta: string | null;
+  respondidaEm: string | null;
+}
+
 /** O que o cliente ve da pagina de quem atende: nada alem do nome e dos horarios livres. */
 export interface PaginaPublica {
   nome: string;

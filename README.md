@@ -165,6 +165,22 @@ Quem atende clientes ativa uma página pública em que o cliente marca sozinho u
 
 Fora desta versão: janelas diferentes por dia, intervalo entre atendimentos, feriados, cobrança na reserva, lembrete por e-mail e mais de uma página por pessoa. Com o número de teste da Meta, o cliente também precisa estar entre os 5 destinatários cadastrados no app.
 
+### Mensagens para outras pessoas
+
+O assessor manda recados pelo WhatsApp em seu nome: "lembra o João de pagar o personal todo dia 5", "avisa meu irmão que o aniversário da mãe é dia 27".
+
+- **Contato:** na primeira vez, o assessor pergunta o número (ou você compartilha o contato pelo WhatsApp). Depois, basta o nome.
+- **Prévia:** antes de qualquer envio, o assessor mostra para quem vai, quando e o texto exato. Só grava depois do seu "pode mandar".
+- **Texto:** toda mensagem começa com "Oi, João! Aqui é o assessor de {seu nome}." e termina com a opção de responder PARAR. Essas partes são fixas; o assessor só escreve o recado.
+- **Quando:** agora (sai em até 30 segundos), numa data e hora, ou repetindo todo dia, toda semana ou todo mês. "Para de cobrar o João" cancela os próximos.
+- **Janela de 24 horas:** quem nunca falou com o número só recebe pelo modelo aprovado (`WHATSAPP_NOTICE_TEMPLATE`, seção 4). Sem ele, a prévia avisa que pode não chegar.
+- **Situação e resposta:** a Meta informa se a mensagem foi entregue, lida ou não chegou; se não chegar, você é avisado. A resposta da pessoa chega para você do jeito que ela escreveu ("💬 João respondeu: ..."), e ela recebe uma vez por dia "Recebido! Vou repassar". Ela nunca conversa com a IA nem vê nada da sua conta.
+- **PARAR:** o número entra na mesma lista da página de agendamento e não recebe mais nada de nenhuma conta. Os envios repetidos para ele são cancelados e você é avisado.
+- **Limites:** até 20 mensagens por conta e 3 por pessoa por dia, para proteger o número.
+- **Quem pode pedir:** titular, acesso completo e agenda e tarefas. No painel, a mesa de **Agenda** mostra os envios agendados (com cancelar) e as últimas mensagens com situação e resposta.
+
+Fora desta versão: criar recado pelo painel, resumo da resposta por IA, grupos do WhatsApp, e-mail, SMS e a agenda de contatos do celular. Com o número de teste da Meta, a pessoa também precisa estar entre os 5 destinatários cadastrados no app.
+
 Para desenvolver com recarga automática, em dois terminais:
 
 ```bash
@@ -267,7 +283,7 @@ O agente usa o fallback do servidor da Anthropic (`fallbacks: "default"`): se um
 
 | Arquivo | Papel |
 | --- | --- |
-| `src/server.ts` | Webhook: valida assinatura, ignora números não autorizados e duplicados, manda o cliente com agendamento para as respostas fixas, processa cada usuário em ordem |
+| `src/server.ts` | Webhook: valida assinatura, ignora números não autorizados e duplicados, manda o cliente com agendamento e o contato que recebeu recado para as respostas fixas, atualiza a situação das mensagens, processa cada usuário em ordem |
 | `src/agent.ts` | Monta a mensagem, escolhe o provedor de IA e grava o histórico |
 | `src/prompt.ts` | Prompt de sistema comum aos dois provedores |
 | `src/providers/gemini.ts` | Laço de chamadas de função com o Gemini (REST) |
@@ -281,11 +297,12 @@ O agente usa o fallback do servidor da Anthropic (`fallbacks: "default"`): se um
 | `src/documentos.ts` | Documentos: arquivo no disco, pastas, busca sem acento (FTS5), pendentes e quem vê cada um |
 | `src/google.ts` | Google Agenda: conexão com código e link de uso único, acesso cifrado, renovação, e eventos (listar, conflito, criar com Meet, mover, apagar) por REST |
 | `src/agendamento.ts` | Página de agendamento: configuração e link, horários livres, reserva sem sobreposição, remarcação, textos ao cliente e respostas dele sem IA |
+| `src/contatos.ts` | Mensagens para outras pessoas: contatos, prévia, envio com limites e PARAR, situação pela Meta e repasse das respostas sem IA |
 | `src/avisos.ts` | Contas a pagar, recorrências, categoria acima do normal, comparativo, preferências de aviso, registro contra repetição e fila de avisos não entregues |
 | `src/painel.ts` | Sobe a API e o painel compilado, sem WhatsApp |
 | `src/seed.ts` | Dados de demonstração em `data/demo.db` |
 | `web/` | Painel em Vue 3 + Vue Router + Vite, gráficos em SVG próprios |
-| `src/scheduler.ts` | A cada 30 segundos: lembretes vencidos, lançamentos recorrentes, os avisos de cada pessoa no horário dela e a confirmação da véspera aos clientes |
+| `src/scheduler.ts` | A cada 30 segundos: lembretes vencidos, lançamentos recorrentes, os avisos de cada pessoa no horário dela, a confirmação da véspera aos clientes e os recados agendados para outras pessoas |
 | `src/whatsapp.ts` | Envio de texto e modelo, download de mídia, leitura do webhook |
 | `src/cli.ts` | Mesmo agente no terminal |
 
