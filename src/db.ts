@@ -6,6 +6,7 @@ import { prepararTabelasConta } from "./conta.js";
 import { prepararTabelasDocumentos } from "./documentos.js";
 import { prepararTabelasAvisos } from "./avisos.js";
 import { prepararTabelasGoogle } from "./google.js";
+import { prepararTabelasAgendamento } from "./agendamento.js";
 
 export type Kind = "despesa" | "receita";
 export type Recurrence = "diario" | "semanal" | "mensal" | null;
@@ -172,6 +173,7 @@ export function openDb(file = config.dbPath) {
   prepararTabelasDocumentos(db);
   prepararTabelasAvisos(db);
   prepararTabelasGoogle(db);
+  prepararTabelasAgendamento(db);
   return db;
 }
 

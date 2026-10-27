@@ -36,6 +36,24 @@ import {
   type Evento,
 } from "./google.js";
 import { documentos as servicoDocumentos, nomeParaDownload, PASTA_IDS, podeVerDocumento, type Documento } from "./documentos.js";
+import {
+  cancelar as cancelarAgendamento,
+  consultarHorarios,
+  diasDa,
+  diasDisponiveis,
+  duracoesDa,
+  linkDaPagina,
+  listarAgendamentos,
+  novoSlug,
+  paginaDe,
+  paginaPublica,
+  remarcar as remarcarAgendamento,
+  reservar,
+  salvarPagina,
+  type Agendamento,
+  type Pagina,
+} from "./agendamento.js";
+import { GoogleExpirado, GoogleIndisponivel, GoogleNaoConectado, GoogleNaoConfigurado } from "./google.js";
 
 const contaPagarBody = z.object({
   descricao: z.string().trim().min(1).max(80),
@@ -234,6 +252,12 @@ const CAPACIDADE_ROTA: Record<string, Capacidade[]> = {
   "GET /api/google": ["agenda"],
   "POST /api/google/conectar": ["agenda"],
   "DELETE /api/google": ["agenda"],
+  "GET /api/agendamento/pagina": ["agenda"],
+  "PUT /api/agendamento/pagina": ["agenda"],
+  "POST /api/agendamento/pagina/novo-link": ["agenda"],
+  "GET /api/agendamento": ["agenda"],
+  "POST /api/agendamento/:id/remarcar": ["agenda"],
+  "DELETE /api/agendamento/:id": ["agenda"],
 };
 const SEM_ACESSO = { erro: "Seu acesso a esta conta não inclui isso." };
 
@@ -241,6 +265,33 @@ const conviteBody = z.object({
   perfil: z.enum(PERFIS_CONVIDAVEIS),
   rotulo: z.string().trim().min(1).max(40).nullable().optional(),
 });
+
+const toPagina = (p: Pagina) => ({
+  slug: p.slug,
+  nome: p.display_name,
+  duracoes: duracoesDa(p),
+  dias: diasDa(p),
+  inicio: p.window_start,
+  fim: p.window_end,
+  antecedenciaHoras: p.min_notice_hours,
+  horizonteDias: p.horizon_days,
+  ativa: p.status === "ativa",
+});
+
+const toAgendamento = (b: Agendamento) => ({
+  id: b.id,
+  cliente: b.client_name,
+  email: b.client_email,
+  whatsapp: b.client_phone,
+  inicio: b.starts_at,
+  fim: b.ends_at,
+  situacao: b.status,
+  confirmacaoFalhou: b.confirmation_failed === 1,
+  opcoes: b.reschedule_options ? (JSON.parse(b.reschedule_options) as { inicio: string; fim: string }[]) : null,
+});
+
+const erroDoGoogle = (err: unknown) =>
+  err instanceof GoogleIndisponivel || err instanceof GoogleExpirado || err instanceof GoogleNaoConectado || err instanceof GoogleNaoConfigurado;
 
 const mascarar = (phone: string) => `+${phone.slice(0, 2)} ••••• ${phone.slice(-4)}`;
 
@@ -438,6 +489,44 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
     },
     { prefix: "/api/google" },
+  );
+
+  // Pagina publica de agendamento: o cliente nao tem conta. So sai o nome exibido e horarios livres.
+  app.register(
+    async (pub) => {
+      const NAO_ACHEI = { erro: "Pagina de agendamento nao encontrada." };
+      const publica = (req: FastifyRequest) => paginaPublica(repo.db, (req.params as { slug: string }).slug);
+
+      pub.get("/:slug", async (req, reply) => {
+        const p = publica(req);
+        if (!p) return reply.code(404).send(NAO_ACHEI);
+        return { nome: p.display_name, duracoes: duracoesDa(p), dias: diasDisponiveis(p, new Date()), fusoDoProfissional: config.timezone };
+      });
+
+      pub.get("/:slug/horarios", async (req, reply) => {
+        const p = publica(req);
+        if (!p) return reply.code(404).send(NAO_ACHEI);
+        const q = req.query as { dia?: string; duracao?: string };
+        const dia = parse(dataSchema, q.dia, reply);
+        if (!dia) return;
+        try {
+          return { horarios: await consultarHorarios(repo.db, p, dia, Number(q.duracao), new Date()) };
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      pub.post("/:slug", async (req, reply) => {
+        const p = publica(req);
+        if (!p) return reply.code(404).send(NAO_ACHEI);
+        try {
+          return reply.code(201).send(await reservar(repo, p, body(req), req.ip, new Date(), sendNotice));
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+    },
+    { prefix: "/api/agendar" },
   );
 
   app.register(
@@ -970,6 +1059,65 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
         await desconectarGoogle(repo.db, de(req).ctx.membro);
         return { ok: true };
       });
+
+      // A pagina e de quem esta logado (ctx.membro), nao do titular.
+      const comGoogle = async <T>(reply: FastifyReply, f: () => Promise<T>) => {
+        try {
+          return await f();
+        } catch (err) {
+          if (erroDoGoogle(err)) return reply.code(503).send({ erro: (err as Error).message || "Nao consegui falar com o Google Agenda agora." });
+          return responderErro(reply, err);
+        }
+      };
+
+      api.get("/agendamento/pagina", async (req) => {
+        const { ctx } = de(req);
+        const p = paginaDe(repo.db, ctx.membro);
+        const googleConectado = estadoGoogle(repo.db, ctx.membro).conectada;
+        return { pagina: p ? toPagina(p) : null, link: p ? linkDaPagina(p) : null, googleConectado, podeAtivar: googleConectado };
+      });
+
+      api.put("/agendamento/pagina", async (req, reply) => {
+        try {
+          return toPagina(salvarPagina(repo.db, de(req).ctx, body(req) as never));
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      api.post("/agendamento/pagina/novo-link", async (req, reply) => {
+        try {
+          const p = novoSlug(repo.db, de(req).ctx);
+          return { ...toPagina(p), link: linkDaPagina(p) };
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      api.get("/agendamento", async (req, reply) => {
+        const q = req.query as { de?: string; ate?: string };
+        const hoje = localDate();
+        const deDia = parse(dataSchema, q.de ?? hoje, reply);
+        const ateDia = deDia && parse(dataSchema, q.ate ?? addDias(hoje, 90), reply);
+        if (!deDia || !ateDia) return;
+        const lista = listarAgendamentos(repo.db, de(req).ctx, fromLocal(`${deDia}T00:00`), fromLocal(`${addDias(ateDia, 1)}T00:00`));
+        return { agendamentos: lista.map(toAgendamento) };
+      });
+
+      api.post("/agendamento/:id/remarcar", async (req, reply) =>
+        comGoogle(reply, async () => {
+          const r = await remarcarAgendamento(repo, de(req).ctx, Number((req.params as { id: string }).id), new Date(), sendNotice);
+          if (!r.opcoes.length) return reply.code(409).send({ erro: "Não há horário livre nos próximos 14 dias. Nada foi enviado ao cliente." });
+          return { ...toAgendamento(r.agendamento), enviado: r.enviado };
+        }),
+      );
+
+      api.delete("/agendamento/:id", async (req, reply) =>
+        comGoogle(reply, async () => {
+          const r = await cancelarAgendamento(repo, de(req).ctx, Number((req.params as { id: string }).id), sendNotice);
+          return { ...toAgendamento(r.agendamento), enviado: r.enviado };
+        }),
+      );
 
       api.get("/agenda", async (req, reply) => {
         const { ctx, phone, repo } = de(req);

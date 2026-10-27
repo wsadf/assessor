@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import { runAgent, type UserInput } from "./agent.js";
+import { agendamentoAtivoDe, responderCliente } from "./agendamento.js";
 import { registerApi } from "./api.js";
 import { AuthError } from "./auth.js";
 import { retirarPendentes } from "./avisos.js";
@@ -110,7 +111,23 @@ export function buildServer(repo: Repo) {
     for (const msg of parseWebhook(json)) {
       // Membro ativo entra pela autorizacao do titular, sem precisar estar na lista.
       const autorizado = (phone: string) => config.allowedNumbers.includes(phone);
-      if (config.allowedNumbers.length && !autorizado(msg.from) && !autorizado(resolverContexto(repo.db, msg.from).conta)) {
+      const contaDoRemetente = resolverContexto(repo.db, msg.from).conta;
+      const daCasa = config.allowedNumbers.length
+        ? autorizado(msg.from) || autorizado(contaDoRemetente)
+        : !!repo.getUser(msg.from) || contaDoRemetente !== msg.from;
+      // Cliente de uma pagina de agendamento nunca chega ao assessor de IA nem aos dados de quem atende.
+      if (!daCasa && agendamentoAtivoDe(repo.db, msg.from, new Date())) {
+        if (!repo.markProcessed(msg.id)) continue;
+        enqueue(msg.from, async () => {
+          try {
+            await responderCliente(repo, sendText, msg.from, msg.type === "text" ? msg.text : "", new Date());
+          } catch (err) {
+            app.log.error({ err, from: msg.from }, "falha ao responder cliente de agendamento");
+          }
+        });
+        continue;
+      }
+      if (config.allowedNumbers.length && !daCasa) {
         req.log.info({ from: msg.from }, "numero fora de ALLOWED_NUMBERS, ignorado");
         continue;
       }

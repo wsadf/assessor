@@ -55,7 +55,7 @@ test("fundacao: preferencias padrao, registro unico e fila de pendentes", async 
   const doTitular = Object.fromEntries(av.preferencias(db, ctxDe(repo, titular)).map((p) => [p.tipo, p]));
   assert.deepEqual(
     Object.fromEntries(Object.entries(doTitular).map(([k, p]) => [k, [p.ligado, p.hora, p.disponivel]])),
-    { vencimentos: [true, 9, true], categoria: [true, 9, true], recorrentes: [true, 9, true], resumo_manha: [true, 7, true], resumo_noite: [false, 21, true] },
+    { vencimentos: [true, 9, true], categoria: [true, 9, true], recorrentes: [true, 9, true], resumo_manha: [true, 7, true], resumo_noite: [false, 21, true], agendamentos: [false, 0, true] },
   );
   const daBia = Object.fromEntries(av.preferencias(db, ctxDe(repo, bia)).map((p) => [p.tipo, p]));
   assert.ok(Object.values(daBia).every((p) => !p.ligado));
