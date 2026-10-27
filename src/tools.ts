@@ -13,6 +13,7 @@ import {
 import { AuthError } from "./auth.js";
 import { config } from "./config.js";
 import { cancelarEnvio, envioDaConta, listarEnvios, pedirEnvio, ultimasMensagens } from "./contatos.js";
+import { contadoresDe, gerarConviteContador, revogarContador, type ContadorDaConta } from "./contador.js";
 import { conta, repoDoContexto, type Membro } from "./conta.js";
 import type { Kind, Recurrence, Repo, Task, Transaction } from "./db.js";
 import { documentos, nomePasta, PASTA_IDS, PASTAS, podeVerDocumento, type Documento } from "./documentos.js";
@@ -204,6 +205,7 @@ const schemas = {
     confirmado: z.boolean(),
   }),
   consultar_mensagens_contato: z.object({ contato: z.string().min(1).max(60).nullish() }),
+  convidar_contador: z.object({ rotulo: z.string().min(1).max(40).nullish() }),
   cancelar_mensagem_contato: z.object({ id: z.number().int(), confirmado: z.boolean() }),
 };
 
@@ -248,6 +250,7 @@ const CAPACIDADE: Partial<Record<keyof typeof schemas, Capacidade>> = {
   consultar_agendamentos: "agenda",
   remarcar_agendamento: "agenda",
   cancelar_agendamento: "agenda",
+  convidar_contador: "acessos",
   mensagem_para_contato: "agenda",
   consultar_mensagens_contato: "agenda",
   cancelar_mensagem_contato: "agenda",
@@ -537,6 +540,11 @@ export const toolDefinitions: Anthropic.Tool[] = [
     { id: { type: "integer" }, confirmado: { type: "boolean" } },
   ),
   tool(
+    "convidar_contador",
+    "Gera um codigo para o contador ver, so para leitura, os lancamentos e os documentos fiscais de cada mes no painel. So o titular pode.",
+    { rotulo: nullable({ ...str, description: "Quem e o contador, ex.: Escritorio Silva" }) },
+  ),
+  tool(
     "mensagem_para_contato",
     "Manda uma mensagem pelo WhatsApp para outra pessoa em nome de quem fala, agora, numa data ou repetindo, ex.: 'lembra o Joao de pagar o personal todo dia 5'. Chame primeiro com confirmado false, mostre a previa ao usuario e so chame com true depois que ele confirmar.",
     {
@@ -608,6 +616,20 @@ function acharMembro(membros: Membro[], pessoa: string): Membro | string {
   if (achados.length === 1) return achados[0];
   if (achados.length === 0) return `Ninguem com acesso a conta corresponde a "${pessoa}". ${listarMembros(membros)}`;
   return `Mais de uma pessoa corresponde a "${pessoa}". Pergunte qual: ${listarMembros(achados)}`;
+}
+
+/** Contador pelo nome, rotulo ou final do telefone, ou pela palavra "contador" quando ha um so. */
+function acharContador(contadores: ContadorDaConta[], pessoa: string) {
+  const alvo = semAcento(pessoa.trim());
+  const digitos = pessoa.replace(/\D/g, "");
+  const achados = contadores.filter(
+    (c) =>
+      (digitos.length >= 4 && c.telefone.endsWith(digitos)) ||
+      (!!c.nome && semAcento(c.nome).includes(alvo)) ||
+      (!!c.rotulo && semAcento(c.rotulo).includes(alvo)),
+  );
+  if (achados.length === 1) return achados[0];
+  return /contador/.test(alvo) && contadores.length === 1 ? contadores[0] : null;
 }
 
 const finalTel = (phone: string) => phone.slice(-4);
@@ -843,7 +865,19 @@ function run(repo: Repo, ctx: Contexto, toolName: ToolName, input: any, extras: 
 
     case "listar_acessos": {
       const membros = conta(repo.db).listarMembros(phone);
-      return `Titular: ${ctx.titular ?? "sem nome"}. ${listarMembros(membros)}`;
+      const contadores = contadoresDe(repo.db, phone).map(
+        (c) =>
+          `Contador: ${c.nome ?? "sem nome"}${c.rotulo ? ` (${c.rotulo})` : ""}, desde ${c.desde.slice(0, 10)}, ultimo acesso ${c.ultimoAcesso ? formatLocal(new Date(c.ultimoAcesso)) : "nunca"}`,
+      );
+      return [`Titular: ${ctx.titular ?? "sem nome"}. ${listarMembros(membros)}`, ...contadores].join("\n");
+    }
+
+    case "convidar_contador": {
+      const c = gerarConviteContador(repo.db, ctx, input.rotulo);
+      return [
+        `Convite de contador criado: ${c.codigo}, vale ate ${new Date(c.validoAte).toLocaleDateString("pt-BR", { timeZone: config.timezone })} e serve uma vez.`,
+        `Texto para o usuario encaminhar: "${c.mensagemWhatsapp}"`,
+      ].join("\n");
     }
 
     case "convidar_pessoa": {
@@ -865,6 +899,13 @@ function run(repo: Repo, ctx: Contexto, toolName: ToolName, input: any, extras: 
 
     case "remover_acesso": {
       const c = conta(repo.db);
+      const contador = acharContador(contadoresDe(repo.db, phone), input.pessoa);
+      if (contador) {
+        const nome = contador.nome ?? contador.rotulo ?? "o contador";
+        if (!input.confirmado) return `Confirme com o usuario antes: tirar o acesso de contador de ${nome}? Ele deixa de ver o dossie na hora.`;
+        revogarContador(repo.db, ctx, contador.id);
+        return `${nome} nao e mais contador desta conta.`;
+      }
       const m = acharMembro(c.listarMembros(phone), input.pessoa);
       if (typeof m === "string") return m;
       if (!input.confirmado) {

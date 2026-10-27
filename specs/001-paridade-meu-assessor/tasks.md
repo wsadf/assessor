@@ -1,9 +1,9 @@
 ---
 
-description: "Tarefas da feature 001: US1 a US5 (concluidas) e US6 (mensagens a outras pessoas)"
+description: "Tarefas da feature 001: US1 a US6 (concluidas) e US7 (area do contador)"
 ---
 
-# Tasks: Paridade com o Meu Assessor (US1 a US6)
+# Tasks: Paridade com o Meu Assessor (US1 a US7)
 
 **Input**: Design documents from `/specs/001-paridade-meu-assessor/`
 
@@ -15,13 +15,13 @@ nova, e isolamento por usuario e o principio I.
 
 **Escopo**: fases 1 a 4 sao da US1 (T001 a T033, PR #1); fases 5 a 8 da US2 (T034 a T064, PR #2);
 fases 9 a 12 da US3 (T065 a T097, PR #3); fases 13 a 16 da US4 (T098 a T120, PR #4); fases 17 a 20
-da US5 (T121 a T144, PR #5); fases 21 a 24 da US6 (T145 em diante). As historias 7 a 9 entram aqui
-depois dos proprios planos.
+da US5 (T121 a T144, PR #5); fases 21 a 24 da US6 (T145 a T166, PR #6); fases 25 a 28 da US7 (T167 em
+diante). As historias 8 e 9 entram aqui depois dos proprios planos.
 
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: pode rodar em paralelo (arquivos diferentes, sem dependencia de tarefa aberta)
-- **[Story]**: historia da spec (US1 a US6)
+- **[Story]**: historia da spec (US1 a US7)
 - Caminhos relativos a raiz do repositorio: back-end em `src/`, painel em `web/src/`, testes em
   `test/`
 
@@ -529,6 +529,79 @@ recebida, a identificacao do remetente, a opcao de parar e o relato devolvido ao
 - [ ] T166 Executar o roteiro de [quickstart.md](quickstart.md#us6-mensagens-a-outras-pessoas) com WhatsApp real e um segundo numero cadastrado como destinatario, com `AI_PROVIDER=gemini` e com `AI_PROVIDER=claude` quando houver `ANTHROPIC_API_KEY`
 ---
 
+## Phase 25: Setup (US7)
+
+**Purpose**: arquivo de testes. Decisoes em [research.md](research.md) R71 a R80; tabelas em
+[data-model.md](data-model.md#us7-area-do-contador).
+
+- [X] T167 Criar `test/contador.test.ts` com o cabecalho de `test/contatos.test.ts`, o helper `contaCom(perfil?)` (titular `5511999990000` "Wesley", Bia `5511912345678`) e um helper `contador(db, phone, nome)` que cadastra e ativa uma conta de painel sem plano pelo `auth(db)`; incluir o arquivo no script `test` de `package.json` depois de `test/contatos.test.ts`
+
+---
+
+## Phase 26: Foundational (US7)
+
+**Purpose**: tabelas, ZIP, convite e vinculo. Bloqueia a Phase 27.
+
+- [X] T168 Criar `src/contador.ts` com `prepararTabelasContador(db)` (chamada em `openDb` de `src/db.ts`, depois de `prepararTabelasContatos`), criando exatamente as tabelas de [data-model.md](data-model.md#us7-area-do-contador): `accountant_invites` (`code_hash TEXT NOT NULL UNIQUE`, `code_hint` "2 ultimos caracteres", `label` "ate 40 caracteres", `expires_at` "7 dias depois de criado", `accepted_by`, `accepted_at`, `canceled_at`, `created_at`) e `accountant_access` (`account_phone`, `accountant_phone`, `invite_id`, `label`, `joined_at`, `last_seen_at`, `revoked_at`, indice unico `(account_phone, accountant_phone) WHERE revoked_at IS NULL`), e a coluna `users.pending_accountant_invite_id` quando faltar
+- [X] T169 [P] Criar `src/zip.ts` com `criarZip(arquivos: { nome: string; dados: Buffer }[]): Buffer` (R76): para cada arquivo, cabecalho local, dados com `zlib.deflateRawSync` (ou guardados sem compressao quando nao diminuirem), `zlib.crc32`, data e hora DOS do momento, flag de UTF-8 no nome (bit 11); depois o diretorio central e o registro final; sem ZIP64 (o limite de 200 MB fica abaixo dos 4 GB)
+- [X] T170 Em `src/contador.ts`, convite e vinculo (R71 a R74, R78): `normalizarConviteContador(texto)` (aceita `cont-7qf3zd`, `CONT 7QF3ZD`; devolve `CONT-XXXXXX` ou `null`); `gerarConviteContador(db, ctx, rotulo?)` (exige `acessos`; ate 3 pendentes, senao `AuthError(409)`; devolve `{ id, codigo, validoAte, mensagemWhatsapp }` com o texto de [contracts/api-contador.md](contracts/api-contador.md#lado-do-titular-sessao-do-painel-capacidade-acessos)); `validarConviteContador(db, codigo, phone)` (mesmo limite de `invite_attempts` e mesma mensagem de convite invalido da US1; recusa a propria conta e quem ja e contador ativo dela); `aceitarConviteContador(db, codigo, phone)`; `guardarConviteContadorPendente` e `aceitarConviteContadorPendente(db, phone)` (como `aceitarPendente` de `src/conta.ts`); `listarConvitesContador`, `cancelarConviteContador`, `contadoresDe(db, conta)`, `revogarContador(db, ctx, id)` (exige `acessos`), `clientesDe(db, phone)` e `exigirVinculo(db, phone, conta)` que lanca `AuthError(403, "Seu acesso a este cliente foi encerrado.")` (depende de T168)
+- [X] T171 Em `test/contador.test.ts`, testar a fundacao: `criarZip` com dois arquivos (um com acento no nome) lido de volta pelo proprio teste (diretorio central, `inflateRawSync` e `crc32` conferidos); `CONT-` gerado so pelo titular (membro `completo` recebe `Sem permissao`); quarto pendente recusado; codigo errado conta tentativa e o sexto erro em 15 min recebe `429`; `CONV-` nao serve em `validarConviteContador` e `CONT-` nao serve em `validarConvite` da US1; vencido e cancelado recusados; aceito cria vinculo; contador com dois clientes; revogar faz `exigirVinculo` lancar `403` (depende de T167, T169, T170)
+
+**Checkpoint**: convite, vinculo e ZIP prontos; nada visivel ainda.
+
+---
+
+## Phase 27: User Story 7 - Area do contador (Priority: P7)
+
+**Goal**: o titular convida o contador, que ve e baixa o dossie mensal so para leitura, e perde o
+acesso na hora quando o titular revoga.
+
+**Independent Test**: convidar uma conta de contador, entrar com ela e confirmar que ve o mes,
+baixa os arquivos e nao consegue editar nada nem conversar como membro da conta (spec, US7).
+
+### Tests for User Story 7
+
+> Escrever antes da implementacao correspondente e ver falhar.
+
+- [X] T172 [US7] Em `test/contador.test.ts`, testar dossie e pacote: `mesesDe` com os meses que tem lancamento ou documento; `dossieDoMes` com despesas, receitas e quem lancou; documento em `notas_fiscais`, `comprovantes` e `boletos` do mes entra; documento de `saude` sem lancamento nao entra; comprovante em `pessoais` ligado a um lancamento do mes entra; `pacoteDoMes` gera ZIP com `lancamentos-AAAA-MM.csv` (BOM, `;`, `1.234,56` vira `1234,56`, aspas quando ha `;`), pastas por tipo e nomes repetidos com sufixo; com limite reduzido no teste, o que nao cabe vai para `LEIA-ME.txt`; 300 lancamentos em menos de 30 s
+- [X] T173 [US7] Em `test/contador.test.ts`, testar a API: titular gera, lista, cancela convite e revoga por `/api/conta/contador`; so gastos recebe `403`; cadastro com `CONT-` sem plano vira vinculo na ativacao e `/api/me` traz `clientes`; `POST /api/contador/aceitar` para quem ja tem conta; `GET /api/contador/:conta/meses`, `/mes/:mes`, `/documentos/:id/arquivo` (`404` para documento fora do dossie) e `/pacote` (`content-type` e `content-disposition`); contador sem vinculo, revogado ou de outro cliente recebe `403`; o contador recebe `401` ou `403` (nunca dados do cliente) em `/api/transacoes`, `/api/documentos` e nas demais rotas com a sessao dele; mensagem do contador pelo webhook nao vira conversa na conta do cliente
+- [X] T174 [US7] Em `test/contador.test.ts`, testar ferramentas: `convidar_contador` devolve `CONT-` e o texto pronto; membro recebe `Sem permissao`; `listar_acessos` mostra o contador com ultimo acesso; `remover_acesso` acha o contador pelo nome ou rotulo, pede confirmacao e revoga
+
+### Implementation for User Story 7
+
+**Dominio**
+
+- [X] T175 [US7] Em `src/contador.ts`, dossie (R75, R79): `mesesDe(db, conta)` (meses `AAAA-MM` com lancamento ou documento fiscal, do mais recente); `dossieDoMes(db, conta, mes)` com `{ receitas, despesas, lancamentos, documentos }` conforme [data-model.md](data-model.md#dossie-do-mes-so-em-memoria) e os tipos `Lancamento` e `DocContador` do contrato (`lancadoPor` com o nome de `created_by`); `documentoDoDossie(db, conta, id)` que so devolve documento que esteja no dossie de algum mes; `marcarAcesso(db, phone, conta, agora)` grava `last_seen_at` (depende de T170)
+- [X] T176 [US7] Em `src/contador.ts`, `pacoteDoMes(db, conta, mes, limiteBytes = 200 * 1024 * 1024)` (R76): CSV `data;tipo;valor;categoria;descricao;contraparte;pagamento;parcela;lancado_por` com BOM UTF-8, valor com virgula decimal e aspas duplas quando o campo tiver `;`, `"` ou quebra de linha; arquivos de `notas_fiscais`, `comprovantes` e `boletos` nas pastas de mesmo nome e os demais comprovantes em `outros-comprovantes/`, com nome `{data} {titulo}.{ext}` sem caracteres invalidos e sufixo ` (2)` quando repetir; arquivo ausente no disco ou acima do limite vai para `LEIA-ME.txt`; devolve o Buffer de `criarZip` (depende de T169, T175)
+
+**API**
+
+- [X] T177 [US7] Em `src/api.ts`, rotas do titular de [contracts/api-contador.md](contracts/api-contador.md#lado-do-titular-sessao-do-painel-capacidade-acessos) com `["acessos"]` em `CAPACIDADE_ROTA` e zod (`rotulo` ate 40) (depende de T170)
+- [X] T178 [US7] Em `src/api.ts`, rotas do contador de [contracts/api-contador.md](contracts/api-contador.md#lado-do-contador-sessao-do-painel-sem-capacidade-vale-o-vinculo) no plugin privado: `:conta` so digitos; cada uma chama `exigirVinculo(db, ctx.membro, conta)` antes de qualquer leitura; `mes` em `AAAA-MM`; arquivo com o `content-type` do documento e `content-disposition` com o nome para download; pacote com `application/zip` e `filename="dossie-AAAA-MM.zip"`; `marcarAcesso` ao abrir o mes e ao baixar (depende de T175, T176)
+- [X] T179 [US7] Em `src/api.ts`, cadastro e sessao: `POST /api/auth/cadastro` com `convite` `CONT-` valida por `validarConviteContador` e guarda como pendente (sem plano, como o `CONV-`); `POST /api/auth/ativar` chama `aceitarConviteContadorPendente`, com o mesmo aviso de convite vencido; `GET /api/me` ganha `clientes` de `clientesDe` (depende de T170)
+
+**Assessor**
+
+- [X] T180 [US7] Em `src/tools.ts`, `convidar_contador` (capacidade `acessos`, `rotulo` ate 40, sincrona) conforme [contracts/ferramentas-contador.md](contracts/ferramentas-contador.md); `listar_acessos` acrescenta os contadores de `contadoresDe` com ultimo acesso; `remover_acesso` procura tambem nos contadores (nome, rotulo ou final do telefone) e revoga com `confirmado`; em `src/prompt.ts`, a regra do contrato (depende de T170)
+
+**Painel web**
+
+- [X] T181 [P] [US7] Em `web/src/api.ts`, tipos `ConviteContador`, `Contador`, `Lancamento`, `DocContador` e `Me.clientes`, e `baixarArquivo(caminho, nome)` que baixa com o token como blob (o pacote e os arquivos do contador) (depende de T177 a T179)
+- [X] T182 [US7] Em `web/src/views/operacao/AcessosView.vue`, secao "Contador" para o titular: gerar codigo com rotulo opcional e mostrar o codigo e o texto com copiar; convites pendentes com cancelar; contadores com rotulo, desde, ultimo acesso e "Revogar" com confirmacao; balao explicando o que o contador ve e o que nao ve (depende de T181)
+- [X] T183 [US7] Em `web/src/views/auth/CriarContaView.vue`, convite `CONT-` dispensa a escolha de plano e mostra "Conta de contador: voce vai ver o dossie de quem te convidou" (depende de T181)
+- [X] T184 [US7] Criar `web/src/views/ContadorView.vue` e a rota `/contador` em `web/src/router.ts`: lista de clientes e campo para usar um codigo; cliente escolhido com seletor de mes, totais, lancamentos, documentos (abrir um a um por `baixarArquivo`) e "Baixar o mes"; `403` volta para a lista com "Seu acesso a este cliente foi encerrado."; sem botao de editar ou excluir; em `web/src/App.vue`, "Clientes" no menu para quem tem `clientes` e entrada direto em `/contador` para quem nao tem plano proprio nem conta compartilhada (depende de T181)
+
+**Checkpoint**: US7 completa; T171 a T174 verdes; roteiro de [quickstart.md](quickstart.md#us7-area-do-contador) passando.
+
+---
+
+## Phase 28: Polish (US7)
+
+- [X] T185 [P] Em `README.md`, secao Area do contador: como convidar (painel e WhatsApp), como o contador entra, o que ve e o que nao ve, o pacote do mes, revogar e o que ficou de fora; tabela "Como esta organizado" com `src/contador.ts` e `src/zip.ts`
+- [X] T186 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
+- [ ] T187 Executar o roteiro de [quickstart.md](quickstart.md#us7-area-do-contador) no painel demo (ZIP aberto no Explorer) e pelo WhatsApp, com `AI_PROVIDER=gemini` e com `AI_PROVIDER=claude` quando houver `ANTHROPIC_API_KEY`
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -557,6 +630,10 @@ recebida, a identificacao do remetente, a opcao de parar e o relato devolvido ao
 - **Foundational US6 (Phase 22)**: depende da Phase 21; bloqueia a US6
 - **US6 (Phase 23)**: depende da Phase 22
 - **Polish US6 (Phase 24)**: depende da US6; T166 depende tambem do WhatsApp real com dois numeros
+- **Setup US7 (Phase 25)**: depende da US6 na `main` (cabecalho de `test/contatos.test.ts`)
+- **Foundational US7 (Phase 26)**: depende da Phase 25; bloqueia a US7
+- **US7 (Phase 27)**: depende da Phase 26
+- **Polish US7 (Phase 28)**: depende da US7
 
 ### Dentro da US1
 
@@ -620,6 +697,15 @@ T017 (webhook) depende so de T006
 - Painel: T161 > T162 > T163.
 - Testes: T151 antes de T154 e T155; T152 antes de T156, T157 e T159; T153 antes de T160 e T161.
 
+### Dentro da US7
+
+- Fundacao: T167 > T168 > T170 > T171; T169 em paralelo com T168 e T170.
+- Dominio: T170 > T175 > T176 (T176 depende tambem de T169).
+- API: T170 > T177 e T179; T175 e T176 > T178.
+- Assessor: T170 > T180.
+- Painel: T177 a T179 > T181 > T182, T183 e T184.
+- Testes: T172 antes de T175 e T176; T173 antes de T177 a T179; T174 antes de T180.
+
 ### Parallel Opportunities
 
 - T002 e T003 em paralelo (arquivos diferentes).
@@ -642,6 +728,10 @@ T017 (webhook) depende so de T006
 - US6: T147 (`src/whatsapp.ts`) e T148 (`src/time.ts`, `src/tools.ts`) em paralelo com T146; o dominio
   fica em `src/contatos.ts` e e sequencial; T164 em paralelo com a Phase 23.
 - T150 a T153 tocam o mesmo arquivo (`test/contatos.test.ts`): sequenciais.
+- US7: T169 (`src/zip.ts`) em paralelo com a fundacao; T182, T183 e T184 em arquivos diferentes,
+  mas T184 toca `App.vue` e `router.ts`: T182 e T183 em paralelo, T184 depois; T185 em paralelo com
+  a Phase 27.
+- T171 a T174 tocam o mesmo arquivo (`test/contador.test.ts`): sequenciais.
 
 ---
 
@@ -707,6 +797,18 @@ Task: "nextOccurrence para src/time.ts"
 
 # Durante a Phase 23:
 Task: "Secao Mensagens para outras pessoas no README.md"
+```
+
+## Parallel Example: User Story 7
+
+```bash
+# Fundacao, arquivos diferentes:
+Task: "Tabelas e convite em src/contador.ts"
+Task: "Escritor de ZIP em src/zip.ts"
+
+# Painel, depois de T181:
+Task: "Secao Contador em web/src/views/operacao/AcessosView.vue"
+Task: "Convite CONT- em web/src/views/auth/CriarContaView.vue"
 ```
 
 ---
@@ -776,6 +878,16 @@ Task: "Secao Mensagens para outras pessoas no README.md"
 5. **Parar e validar** com a [secao US6 do quickstart](quickstart.md#us6-mensagens-a-outras-pessoas).
 6. Commits por bloco, na branch `001-us6-falar-por-voce`.
 
+### US7
+
+1. Phases 25 e 26: convite, vinculo e ZIP testados, sem nada visivel.
+2. Dossie e pacote (T175, T176) com as rotas (T177 a T179): ja entrega a area do contador pela
+   API, com revogacao.
+3. Assessor (T180).
+4. Painel (T181 a T184).
+5. **Parar e validar** com a [secao US7 do quickstart](quickstart.md#us7-area-do-contador).
+6. Commits por bloco, na branch `001-us7-contador`.
+
 ---
 
 ## Notes
@@ -794,3 +906,5 @@ Task: "Secao Mensagens para outras pessoas no README.md"
   reserva (US9), lembrete por e-mail, varias paginas por pessoa.
 - Fora da US6: criar envio pelo painel, resumo das respostas por IA, grupos do WhatsApp, e-mail e
   SMS, agenda do celular e Google Contatos.
+- Fora da US7: liberar outras pastas ao contador, exportar para sistema contabil (OFX, SPED),
+  comentarios ou pedidos do contador, varios meses num pacote.

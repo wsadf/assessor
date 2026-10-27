@@ -55,6 +55,24 @@ import {
 } from "./agendamento.js";
 import { GoogleExpirado, GoogleIndisponivel, GoogleNaoConectado, GoogleNaoConfigurado } from "./google.js";
 import { cancelarEnvio, listarEnvios, ultimasMensagens } from "./contatos.js";
+import {
+  aceitarConviteContador,
+  aceitarConviteContadorPendente,
+  cancelarConviteContador,
+  clientesDe,
+  contadoresDe,
+  documentoDoDossie,
+  dossieDoMes,
+  exigirVinculo,
+  gerarConviteContador,
+  guardarConviteContadorPendente,
+  listarConvitesContador,
+  marcarAcesso,
+  mesesDe,
+  pacoteDoMes,
+  revogarContador,
+  validarConviteContador,
+} from "./contador.js";
 
 const contaPagarBody = z.object({
   descricao: z.string().trim().min(1).max(80),
@@ -259,6 +277,10 @@ const CAPACIDADE_ROTA: Record<string, Capacidade[]> = {
   "GET /api/agendamento": ["agenda"],
   "POST /api/agendamento/:id/remarcar": ["agenda"],
   "DELETE /api/agendamento/:id": ["agenda"],
+  "GET /api/conta/contador": ["acessos"],
+  "POST /api/conta/contador/convites": ["acessos"],
+  "DELETE /api/conta/contador/convites/:id": ["acessos"],
+  "DELETE /api/conta/contador/:id": ["acessos"],
   "GET /api/contatos/mensagens": ["agenda"],
   "DELETE /api/contatos/envios/:id": ["agenda"],
 };
@@ -355,6 +377,10 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
         const b = parse(z.object({ codigo: z.string().trim().min(1), telefone: telefoneSchema }), body(req), reply);
         if (!b) return;
         try {
+          if (/^\s*cont/i.test(b.codigo)) {
+            const v = validarConviteContador(repo.db, b.codigo, b.telefone);
+            return { titular: v.titular, perfil: "contador", temDadosProprios: false };
+          }
           const v = acessos.validarConvite(b.codigo, b.telefone);
           return { titular: v.titular, perfil: v.perfil, temDadosProprios: v.temDadosProprios };
         } catch (err) {
@@ -366,9 +392,13 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
         const b = parse(cadastroBody, body(req), reply);
         if (!b) return;
         try {
-          const convite = b.convite ? acessos.validarConvite(b.convite, b.telefone).convite : null;
+          // CONT- e convite de contador: nao vira membro, vira acesso de leitura ao dossie.
+          const deContador = !!b.convite && /^\s*cont/i.test(b.convite);
+          const conviteContador = deContador ? validarConviteContador(repo.db, b.convite!, b.telefone).convite : null;
+          const convite = b.convite && !deContador ? acessos.validarConvite(b.convite, b.telefone).convite : null;
           contas.cadastrar({ ...b, plano: b.plano ?? null });
           if (convite) acessos.guardarConvitePendente(b.telefone, convite.id);
+          if (conviteContador) guardarConviteContadorPendente(repo.db, b.telefone, conviteContador.id);
           const canal = await enviarCodigo(b.telefone, contas.gerarCodigo(b.telefone, "ativacao"), app.log);
           return reply.code(201).send({ telefone: b.telefone, telefoneMascarado: mascarar(b.telefone), canal });
         } catch (err) {
@@ -395,8 +425,10 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
           contas.conferirCodigo(b.telefone, "ativacao", b.codigo);
           contas.ativar(b.telefone);
           const convite = acessos.aceitarPendente(b.telefone);
+          const deContador = aceitarConviteContadorPendente(repo.db, b.telefone);
           const sessao = sessaoPara(b.telefone);
-          return convite && "expirou" in convite ? { ...sessao, aviso: "O convite venceu. Peça um novo a quem convidou." } : sessao;
+          const venceu = (convite && "expirou" in convite) || (deContador && "expirou" in deContador);
+          return venceu ? { ...sessao, aviso: "O convite venceu. Peça um novo a quem convidou." } : sessao;
         } catch (err) {
           return responderErro(reply, err);
         }
@@ -572,7 +604,107 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
             capacidades: [...CAPACIDADES[ctx.perfil]],
             compartilhada: ctx.compartilhada,
           },
+          clientes: clientesDe(repo.db, ctx.membro).map((c) => ({ conta: c.conta, nome: c.nome })),
         };
+      });
+
+      // Contador: a conta do cliente vem na rota e o vinculo e conferido a cada pedido, sem cache.
+      const contaDoCliente = (req: FastifyRequest) => {
+        const conta = String((req.params as { conta: string }).conta);
+        if (!/^\d{10,15}$/.test(conta)) throw new AuthError(403, "Seu acesso a este cliente foi encerrado.");
+        exigirVinculo(repo.db, de(req).ctx.membro, conta);
+        return conta;
+      };
+      const mesDaRota = (req: FastifyRequest) => {
+        const mes = String((req.params as { mes: string }).mes);
+        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) throw new AuthError(400, "Mês inválido; use AAAA-MM.");
+        return mes;
+      };
+
+      api.get("/conta/contador", async (req) => {
+        const { ctx } = de(req);
+        return {
+          convites: listarConvitesContador(repo.db, ctx.conta),
+          contadores: contadoresDe(repo.db, ctx.conta).map((c) => ({ id: c.id, nome: c.nome, rotulo: c.rotulo, desde: c.desde, ultimoAcesso: c.ultimoAcesso })),
+        };
+      });
+
+      api.post("/conta/contador/convites", async (req, reply) => {
+        const b = parse(z.object({ rotulo: z.string().trim().min(1).max(40).nullable().optional() }), body(req) ?? {}, reply);
+        if (!b) return;
+        try {
+          return reply.code(201).send(gerarConviteContador(repo.db, de(req).ctx, b.rotulo));
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      api.delete("/conta/contador/convites/:id", async (req, reply) =>
+        cancelarConviteContador(repo.db, de(req).ctx, Number((req.params as { id: string }).id))
+          ? { ok: true }
+          : reply.code(404).send({ erro: "Convite não encontrado ou já usado." }),
+      );
+
+      api.delete("/conta/contador/:id", async (req, reply) =>
+        revogarContador(repo.db, de(req).ctx, Number((req.params as { id: string }).id))
+          ? { ok: true }
+          : reply.code(404).send({ erro: "Contador não encontrado." }),
+      );
+
+      api.post("/contador/aceitar", async (req, reply) => {
+        const b = parse(z.object({ codigo: z.string().trim().min(1) }), body(req), reply);
+        if (!b) return;
+        try {
+          return aceitarConviteContador(repo.db, b.codigo, de(req).ctx.membro);
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      api.get("/contador/clientes", async (req) => ({ clientes: clientesDe(repo.db, de(req).ctx.membro) }));
+
+      api.get("/contador/:conta/meses", async (req, reply) => {
+        try {
+          return { meses: mesesDe(repo.db, contaDoCliente(req)) };
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      api.get("/contador/:conta/mes/:mes", async (req, reply) => {
+        try {
+          const conta = contaDoCliente(req);
+          const { docs: _docs, ...dossie } = dossieDoMes(repo.db, conta, mesDaRota(req));
+          marcarAcesso(repo.db, de(req).ctx.membro, conta);
+          return dossie;
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      api.get("/contador/:conta/documentos/:id/arquivo", async (req, reply) => {
+        try {
+          const doc = documentoDoDossie(repo.db, contaDoCliente(req), Number((req.params as { id: string }).id));
+          if (!doc) return reply.code(404).send({ erro: "Documento não encontrado." });
+          return reply
+            .type(doc.mime_type)
+            .header("content-disposition", `attachment; filename*=UTF-8''${encodeURIComponent(nomeParaDownload(doc))}`)
+            .send(arquivos.ler(doc));
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      api.get("/contador/:conta/mes/:mes/pacote", async (req, reply) => {
+        try {
+          const conta = contaDoCliente(req);
+          const mes = mesDaRota(req);
+          const zip = pacoteDoMes(repo.db, conta, mes);
+          marcarAcesso(repo.db, de(req).ctx.membro, conta);
+          return reply.type("application/zip").header("content-disposition", `attachment; filename="dossie-${mes}.zip"`).send(zip);
+        } catch (err) {
+          return responderErro(reply, err);
+        }
       });
 
       api.get("/conta/acessos", async (req) => {

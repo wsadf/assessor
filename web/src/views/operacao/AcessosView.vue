@@ -1,6 +1,16 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
-import { api, PERFIS, type Acessos, type Convite, type ConviteCriado, type PerfilMembro } from "../../api";
+import {
+  api,
+  PERFIS,
+  type Acessos,
+  type ContadorDaConta,
+  type Convite,
+  type ConviteContador,
+  type ConviteContadorCriado,
+  type ConviteCriado,
+  type PerfilMembro,
+} from "../../api";
 import AppIcon from "../../components/AppIcon.vue";
 import AssessorBalao from "../../components/AssessorBalao.vue";
 import EstadoVazio from "../../components/EstadoVazio.vue";
@@ -68,6 +78,59 @@ async function cancelar(c: Convite) {
   await api.del(`/conta/convites/${c.id}`).catch((e: Error) => alert(e.message));
   await convites.recarregar();
 }
+
+const contador = useCarregar(
+  async () => (a.value?.podeGerir ? api.get<{ convites: ConviteContador[]; contadores: ContadorDaConta[] }>("/conta/contador") : null),
+  [a],
+);
+const contadorPendentes = computed(() => (contador.dados.value?.convites ?? []).filter((c) => c.estado === "pendente"));
+const convidandoContador = ref(false);
+const rotuloContador = ref("");
+const criadoContador = ref<ConviteContadorCriado | null>(null);
+
+function abrirContador() {
+  rotuloContador.value = "";
+  criadoContador.value = null;
+  erroAcao.value = null;
+  convidandoContador.value = true;
+}
+
+async function gerarContador() {
+  enviando.value = true;
+  erroAcao.value = null;
+  try {
+    criadoContador.value = await api.post<ConviteContadorCriado>("/conta/contador/convites", { rotulo: rotuloContador.value.trim() || null });
+    await contador.recarregar();
+  } catch (e) {
+    erroAcao.value = (e as Error).message;
+  } finally {
+    enviando.value = false;
+  }
+}
+
+async function copiarTexto(texto: string) {
+  try {
+    await navigator.clipboard.writeText(texto);
+    copiado.value = true;
+    setTimeout(() => (copiado.value = false), 2000);
+  } catch {
+    // Sem permissao de area de transferencia: o texto continua visivel para copiar a mao.
+  }
+}
+
+async function cancelarContador(c: ConviteContador) {
+  if (!confirm(`Cancelar o convite de contador que termina em ${c.final}?`)) return;
+  await api.del(`/conta/contador/convites/${c.id}`).catch((e: Error) => alert(e.message));
+  await contador.recarregar();
+}
+
+async function revogar(c: ContadorDaConta) {
+  if (!confirm(`Tirar o acesso de ${c.nome ?? c.rotulo ?? "contador"}? Ele deixa de ver o dossiê na hora.`)) return;
+  await api.del(`/conta/contador/${c.id}`).catch((e: Error) => alert(e.message));
+  await contador.recarregar();
+}
+
+const dataHora = (iso: string) => new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
 async function mudarPerfil(telefone: string | null, perfil: PerfilMembro) {
   if (!telefone) return;
@@ -148,8 +211,60 @@ async function remover(m: Acessos["membros"][number]) {
             <button v-if="c.estado === 'pendente'" class="btn ghost" @click="cancelar(c)">Cancelar</button>
           </div>
         </section>
+
+        <div class="secao-cab">
+          <div class="eyebrow">Contador</div>
+          <button class="btn" @click="abrirContador"><AppIcon name="mais" :size="16" /> Convidar contador</button>
+        </div>
+        <AssessorBalao mesa="operacao">
+          o contador entra com a própria conta e vê, só para leitura, os lançamentos e as notas, comprovantes e boletos de cada mês, e baixa
+          tudo num arquivo. Documentos de saúde e pessoais ficam de fora. Ele não conversa comigo pela sua conta.
+        </AssessorBalao>
+        <section v-if="contador.dados.value && (contador.dados.value.contadores.length || contadorPendentes.length)" class="card lista">
+          <div v-for="c in contador.dados.value.contadores" :key="`a${c.id}`" class="list-row">
+            <span class="iniciais">{{ (c.nome ?? "C")[0] }}</span>
+            <div class="flex1">
+              <strong>{{ c.nome ?? "Contador" }}<span v-if="c.rotulo" class="faint"> · {{ c.rotulo }}</span></strong>
+              <div class="faint">desde {{ diaMes(c.desde) }} · {{ c.ultimoAcesso ? `último acesso ${dataHora(c.ultimoAcesso)}` : "ainda não abriu o dossiê" }}</div>
+            </div>
+            <button class="btn ghost" @click="revogar(c)">Revogar</button>
+          </div>
+          <div v-for="c in contadorPendentes" :key="`c${c.id}`" class="list-row">
+            <code class="codigo-final">…{{ c.final }}</code>
+            <div class="flex1">
+              <strong>{{ c.rotulo ?? "Convite de contador" }}</strong>
+              <div class="faint">vale até {{ diaMes(c.validoAte) }}</div>
+            </div>
+            <span class="chip warning">aguardando</span>
+            <button class="btn ghost" @click="cancelarContador(c)">Cancelar</button>
+          </div>
+        </section>
       </template>
     </template>
+
+    <PainelLateral v-if="convidandoContador" titulo="Convidar contador" @fechar="convidandoContador = false">
+      <template v-if="!criadoContador">
+        <label class="field"><span>Quem é (opcional)</span><input v-model="rotuloContador" class="input" maxlength="40" placeholder="Ex.: Escritório Silva" /></label>
+        <p class="muted">O contador usa o código em <b>Criar conta</b> (ou em <b>Clientes</b>, se já tiver conta) e passa a ver o dossiê de cada mês.</p>
+        <p v-if="erroAcao" class="erro">{{ erroAcao }}</p>
+      </template>
+      <template v-else>
+        <div class="aviso info">Código pronto. Ele aparece só agora, vale até <b>{{ diaMes(criadoContador.validoAte) }}</b> e serve uma vez.</div>
+        <div class="codigo-grande num">{{ criadoContador.codigo }}</div>
+        <p class="muted">{{ criadoContador.mensagemWhatsapp }}</p>
+      </template>
+      <template #rodape>
+        <template v-if="!criadoContador">
+          <button class="btn primary" :disabled="enviando" @click="gerarContador">{{ enviando ? "Gerando…" : "Gerar código" }}</button>
+          <button class="btn ghost" @click="convidandoContador = false">Cancelar</button>
+        </template>
+        <template v-else>
+          <a class="btn primary" :href="`https://wa.me/?text=${encodeURIComponent(criadoContador.mensagemWhatsapp)}`" target="_blank" rel="noopener">Enviar no WhatsApp</a>
+          <button class="btn" @click="copiarTexto(criadoContador.codigo)"><AppIcon name="check" v-if="copiado" :size="16" />{{ copiado ? "Copiado" : "Copiar código" }}</button>
+          <button class="btn ghost" @click="convidandoContador = false">Fechar</button>
+        </template>
+      </template>
+    </PainelLateral>
 
     <PainelLateral v-if="convidando" titulo="Convidar alguém" @fechar="convidando = false">
       <template v-if="!criado">
@@ -200,6 +315,7 @@ async function remover(m: Acessos["membros"][number]) {
 .iniciais { width: 36px; height: 36px; flex: none; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--line-strong); display: grid; place-items: center; font-weight: 600; }
 .perfil { width: auto; min-width: 170px; }
 .secao { margin: 36px 0 0; }
+.secao-cab { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 40px 0 12px; }
 .codigo-final { font-size: 15px; color: var(--text-2); min-width: 44px; }
 .opcao {
   display: grid;

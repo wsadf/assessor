@@ -181,6 +181,18 @@ O assessor manda recados pelo WhatsApp em seu nome: "lembra o João de pagar o p
 
 Fora desta versão: criar recado pelo painel, resumo da resposta por IA, grupos do WhatsApp, e-mail, SMS e a agenda de contatos do celular. Com o número de teste da Meta, a pessoa também precisa estar entre os 5 destinatários cadastrados no app.
 
+### Área do contador
+
+O titular dá ao contador acesso só de leitura ao dossiê de cada mês.
+
+- **Convidar:** em Operação > Equipe e acesso > **Convidar contador**, ou pelo WhatsApp ("gera um convite para o meu contador"). O código `CONT-XXXXXX` vale 7 dias e serve uma vez; há no máximo 3 pendentes.
+- **Como o contador entra:** cria conta no painel com o código (sem plano nem pagamento) ou, se já tem conta, usa o código na tela **Clientes**. Um contador pode ter vários clientes. Ele não vira membro da conta e não conversa com o assessor pelo WhatsApp do cliente.
+- **O que ele vê:** por mês, todas as despesas e receitas (com quem lançou) e os documentos das pastas Notas fiscais, Comprovantes e Boletos, mais qualquer comprovante ligado a um lançamento do mês. Documentos de Saúde, Pessoais, Casa, Carro, Contratos, Trabalho e Outros ficam de fora, a não ser que sejam comprovante de um lançamento. Não existe botão de editar ou excluir para ele.
+- **Baixar o mês:** um ZIP com `lancamentos-AAAA-MM.csv` (abre no Excel com acentos e vírgula decimal) e uma pasta por tipo de documento. Até 200 MB por pacote; o que passar disso fica listado num `LEIA-ME.txt` e pode ser baixado um a um.
+- **Revogar:** em Equipe e acesso, ou pelo WhatsApp ("tira o acesso do contador"). Vale na hora: o pedido seguinte do contador já é recusado. A lista mostra o último acesso de cada contador.
+
+Fora desta versão: liberar outras pastas ao contador, exportar para sistema contábil (OFX, SPED), comentários ou pedidos do contador pelo painel e vários meses num pacote só.
+
 Para desenvolver com recarga automática, em dois terminais:
 
 ```bash
@@ -298,6 +310,8 @@ O agente usa o fallback do servidor da Anthropic (`fallbacks: "default"`): se um
 | `src/google.ts` | Google Agenda: conexão com código e link de uso único, acesso cifrado, renovação, e eventos (listar, conflito, criar com Meet, mover, apagar) por REST |
 | `src/agendamento.ts` | Página de agendamento: configuração e link, horários livres, reserva sem sobreposição, remarcação, textos ao cliente e respostas dele sem IA |
 | `src/contatos.ts` | Mensagens para outras pessoas: contatos, prévia, envio com limites e PARAR, situação pela Meta e repasse das respostas sem IA |
+| `src/contador.ts` | Área do contador: convite `CONT-`, acesso de leitura conferido a cada pedido, dossiê do mês e pacote |
+| `src/zip.ts` | Escritor de ZIP com `node:zlib`, sem biblioteca |
 | `src/avisos.ts` | Contas a pagar, recorrências, categoria acima do normal, comparativo, preferências de aviso, registro contra repetição e fila de avisos não entregues |
 | `src/painel.ts` | Sobe a API e o painel compilado, sem WhatsApp |
 | `src/seed.ts` | Dados de demonstração em `data/demo.db` |

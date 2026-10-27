@@ -23,6 +23,7 @@ export const router = createRouter({
     { path: "/operacao", component: () => import("./views/OperacaoMesa.vue"), meta: { mesa: "operacao" } },
     { path: "/operacao/avisos", component: () => import("./views/operacao/AvisosView.vue"), meta: { mesa: "operacao" } },
     { path: "/operacao/acessos", component: () => import("./views/operacao/AcessosView.vue"), meta: { mesa: "operacao" } },
+    { path: "/contador", component: () => import("./views/ContadorView.vue"), meta: { mesa: "operacao" } },
     { path: "/pesquisas", component: () => import("./views/PesquisasMesa.vue"), meta: { mesa: "pesquisas" } },
     { path: "/:pathMatch(.*)*", redirect: "/" },
   ],

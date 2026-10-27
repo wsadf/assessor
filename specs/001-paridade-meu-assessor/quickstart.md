@@ -303,3 +303,42 @@ Com o numero de teste e um segundo numero cadastrado como destinatario: pedir "a
 (numero de teste) que a reuniao mudou para as 15h", confirmar, ver a mensagem chegar com a
 identificacao e o PARAR, responder do segundo numero e ver o repasse; responder PARAR e pedir novo
 envio: o assessor diz que a pessoa pediu para nao receber.
+
+# US7: area do contador
+
+Contratos em [contracts/api-contador.md](contracts/api-contador.md) e
+[contracts/ferramentas-contador.md](contracts/ferramentas-contador.md).
+
+## 1. Testes automaticos
+
+Os testes novos (arquivo `test/contador.test.ts`) devem cobrir:
+
+- convite: `CONT-` gerado so pelo titular; codigo errado conta tentativa; `CONV-` nao serve como
+  contador nem `CONT-` como membro; vencido e cancelado recusados; limite de pendentes;
+- vinculo: cadastro com `CONT-` vira vinculo na ativacao, sem plano; quem ja tem conta usa o codigo
+  logado; um contador com dois clientes ve os dois, separados;
+- dossie: meses disponiveis; lancamentos do mes com quem lancou; documentos fiscais e comprovantes
+  de lancamento entram, documento de Saude sem lancamento nao entra;
+- pacote: ZIP valido (aberto pelo proprio teste com `node:zlib`), CSV com BOM, `;` e virgula
+  decimal, arquivos com nomes sem repeticao; 300 lancamentos em menos de 30 s (SC-008);
+- isolamento: contador nao chega a nenhuma rota de dados do cliente fora de `/api/contador`, nao
+  edita nem exclui, nao conversa pelo WhatsApp como membro; revogado recebe `403` no pedido seguinte;
+  outro contador nao ve o cliente;
+- ferramentas: `convidar_contador`, `listar_acessos` com contador e `remover_acesso` revogando.
+
+## 2. Painel
+
+Com `npm run painel:demo`:
+
+1. Como titular (demo@assessor.local), Operacao > Acessos > Contador: gerar o codigo.
+2. Em janela anonima, Criar conta com o codigo `CONT-`, ativar e entrar: abre direto em Clientes,
+   com a conta Demonstracao.
+3. Abrir um mes: totais, lancamentos e documentos; "Baixar o mes" entrega o ZIP, que abre no
+   Explorer com a planilha e as pastas.
+4. Como titular, revogar; na janela do contador, recarregar: o cliente some e a rota responde `403`.
+
+## 3. WhatsApp
+
+"Gera um convite para o meu contador" devolve o codigo e o texto para encaminhar; "quem tem acesso a
+minha conta?" lista o contador; "tira o acesso do contador" pede confirmacao e revoga. Repetir com
+`AI_PROVIDER=gemini` e `AI_PROVIDER=claude`.

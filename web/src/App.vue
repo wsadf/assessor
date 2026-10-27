@@ -15,6 +15,7 @@ const mesaAtual = computed(() => mesaPorId(String(route.meta.mesa ?? "financas")
 const menuAberto = ref(false);
 const tema = ref(document.documentElement.dataset.theme === "light" ? "light" : "dark");
 const mesas = computed(() => MESAS.filter((m) => mesaLiberada(m, pode)));
+const emClientes = computed(() => route.path === "/contador");
 
 watch(() => route.fullPath, () => (menuAberto.value = false));
 // Carrega a conta ao entrar na area logada (inclusive logo depois do login).
@@ -22,6 +23,13 @@ watch(publica, (p) => !p && !me.value && carregarEu());
 // Mesa fora do perfil (link antigo, rota digitada) leva para a primeira liberada.
 watch([me, () => route.path], () => {
   if (me.value && !publica.value && !mesaLiberada(mesaAtual.value, pode)) router.replace(mesas.value[0]?.rota ?? "/operacao");
+});
+// Quem so e contador (sem plano proprio nem conta de outra pessoa) comeca pelos clientes, uma vez por visita.
+let foiParaClientes = false;
+watch(me, (m) => {
+  if (!m || foiParaClientes || publica.value) return;
+  foiParaClientes = true;
+  if (m.clientes?.length && !m.plano && !m.conta.compartilhada && route.path !== "/contador") router.replace("/contador");
 });
 
 function alternarTema() {
@@ -65,7 +73,7 @@ onMounted(async () => {
       <nav>
         <div class="eyebrow secao">Mesas</div>
         <template v-for="m in mesas" :key="m.id">
-          <RouterLink :to="m.rota" class="item-mesa" :class="{ ativo: mesaAtual.id === m.id }">
+          <RouterLink :to="m.rota" class="item-mesa" :class="{ ativo: mesaAtual.id === m.id && !emClientes }">
             <span class="dot" :style="{ background: m.cor }" />
             {{ m.nome }}
           </RouterLink>
@@ -75,6 +83,13 @@ onMounted(async () => {
               {{ s.nome }}
             </RouterLink>
           </div>
+        </template>
+        <template v-if="me?.clientes?.length">
+          <div class="eyebrow secao">Contador</div>
+          <RouterLink to="/contador" class="item-mesa" :class="{ ativo: route.path === '/contador' }">
+            <AppIcon name="pessoas" :size="17" />
+            Clientes
+          </RouterLink>
         </template>
       </nav>
 
@@ -102,7 +117,7 @@ onMounted(async () => {
             :key="m.id"
             :to="m.rota"
             class="aba"
-            :class="{ ativa: mesaAtual.id === m.id }"
+            :class="{ ativa: mesaAtual.id === m.id && !emClientes }"
             :style="{ '--c': m.cor }"
           >
             <AssessorAvatar :mesa="m.id" :size="28" />

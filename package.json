@@ -13,7 +13,7 @@
     "painel:api": "node scripts/run.mjs watch src/painel.ts",
     "painel:api:demo": "node scripts/run.mjs watch src/painel.ts --demo",
     "seed:demo": "node scripts/run.mjs src/seed.ts",
-    "test": "node scripts/run.mjs --test test/core.test.ts test/conta.test.ts test/documentos.test.ts test/avisos.test.ts test/google.test.ts test/agendamento.test.ts test/contatos.test.ts",
+    "test": "node scripts/run.mjs --test test/core.test.ts test/conta.test.ts test/documentos.test.ts test/avisos.test.ts test/google.test.ts test/agendamento.test.ts test/contatos.test.ts test/contador.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "engines": {
