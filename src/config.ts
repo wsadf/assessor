@@ -61,6 +61,14 @@ export const config = {
 
   dailySummaryHour: Number(process.env.DAILY_SUMMARY_HOUR ?? 7),
 
+  arquivos: {
+    maxBytes: 20 * 1024 * 1024,
+    contaBytes: 1024 * 1024 * 1024,
+    // Acima disso o arquivo e guardado, mas nao vai ao modelo: o custo do turno dispararia.
+    modeloBytes: 5 * 1024 * 1024,
+    pendenteHoras: 24,
+  },
+
   panel: {
     token: process.env.PAINEL_TOKEN ?? "",
     // Por padrao o mesmo telefone ficticio do chat do terminal, onde costumam estar os testes.

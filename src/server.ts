@@ -1,14 +1,17 @@
 import Fastify from "fastify";
 import { runAgent, type UserInput } from "./agent.js";
 import { registerApi } from "./api.js";
+import { AuthError } from "./auth.js";
 import { config } from "./config.js";
 import { resolverContexto } from "./conta.js";
 import type { Repo } from "./db.js";
+import { documentos, extensao, legivelPelaIA, nomeParaDownload } from "./documentos.js";
 import { transcribe, transcriptionEnabled } from "./transcribe.js";
 import {
   downloadMedia,
   markReadWithTyping,
   parseWebhook,
+  sendDocument,
   sendText,
   verifySignature,
   type Incoming,
@@ -25,25 +28,50 @@ function createUserQueue() {
   };
 }
 
-async function toUserInput(msg: Incoming): Promise<UserInput | string> {
+type Entrada = { input: UserInput; anexoId?: number };
+
+const mb = (bytes: number) => `${(bytes / 1048576).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB`;
+
+async function toUserInput(repo: Repo, msg: Incoming): Promise<Entrada | string> {
   switch (msg.type) {
     case "text":
-      return { text: msg.text };
+      return { input: { text: msg.text } };
     case "audio": {
       const canHearAudio = config.aiProvider === "gemini";
       if (!transcriptionEnabled() && !canHearAudio) return "Ainda nao entendo audio por aqui. Pode mandar por texto?";
       const media = await downloadMedia(msg.mediaId);
-      if (!transcriptionEnabled()) return { text: "", audio: media };
+      if (!transcriptionEnabled()) return { input: { text: "", audio: media } };
       const text = await transcribe(media.data, media.mimeType);
-      return text ? { text: `(audio) ${text}` } : "Nao consegui entender o audio. Pode repetir?";
+      return text ? { input: { text: `(audio) ${text}` } } : "Nao consegui entender o audio. Pode repetir?";
     }
-    case "image": {
+    case "image":
+    case "document": {
       const media = await downloadMedia(msg.mediaId);
-      if (!SUPPORTED_IMAGES.includes(media.mimeType)) return "Nao consegui abrir essa imagem. Pode mandar em JPG ou PNG?";
-      return { text: msg.caption ?? "", image: media };
+      const mimeType = (msg.type === "document" && msg.mimeType) || media.mimeType;
+      if (msg.type === "image" && !SUPPORTED_IMAGES.includes(mimeType)) return "Nao consegui abrir essa imagem. Pode mandar em JPG ou PNG?";
+      // Todo arquivo fica pendente ja na chegada: o "guarda esse" pode vir so na mensagem seguinte.
+      const ctx = resolverContexto(repo.db, msg.from);
+      let anexoId: number;
+      try {
+        anexoId = documentos(repo.db).salvarPendente(ctx.conta, ctx.membro, {
+          data: media.data,
+          mimeType,
+          nomeOriginal: msg.type === "document" ? msg.filename : null,
+        }).id;
+      } catch (err) {
+        if (err instanceof AuthError) return err.message;
+        throw err;
+      }
+      const caption = msg.caption ?? "";
+      if (msg.type === "image") return { input: { text: caption, image: { data: media.data, mimeType } }, anexoId };
+      const filename = msg.filename ?? `arquivo.${extensao(mimeType)}`;
+      if (legivelPelaIA(mimeType) && media.data.length <= config.arquivos.modeloBytes) {
+        return { input: { text: caption, document: { data: media.data, mimeType, filename } }, anexoId };
+      }
+      return { input: { text: `[arquivo ${filename}, ${mb(media.data.length)}, nao lido] ${caption}`.trim() }, anexoId };
     }
     default:
-      return "Por enquanto eu entendo texto, audio e foto.";
+      return "Por enquanto eu entendo texto, audio, foto e arquivo PDF.";
   }
 }
 
@@ -92,9 +120,19 @@ export function buildServer(repo: Repo) {
         try {
           repo.ensureUser(msg.from, msg.name);
           void markReadWithTyping(msg.id);
-          const input = await toUserInput(msg);
-          const answer = typeof input === "string" ? input : await runAgent(repo, msg.from, input);
+          const entrada = await toUserInput(repo, msg);
+          // Os arquivos pedidos saem depois do texto, como numa conversa.
+          const arquivos: Parameters<typeof sendDocument>[1][] = [];
+          const answer =
+            typeof entrada === "string"
+              ? entrada
+              : await runAgent(repo, msg.from, entrada.input, {
+                  anexoId: entrada.anexoId,
+                  enviarArquivo: async (doc, data) =>
+                    void arquivos.push({ data, mimeType: doc.mime_type, filename: nomeParaDownload(doc) }),
+                });
           await sendText(msg.from, answer);
+          for (const arquivo of arquivos) await sendDocument(msg.from, arquivo);
           app.log.info({ from: msg.from, type: msg.type, ms: Date.now() - started }, "mensagem respondida");
         } catch (err) {
           app.log.error({ err, from: msg.from }, "falha ao processar mensagem");

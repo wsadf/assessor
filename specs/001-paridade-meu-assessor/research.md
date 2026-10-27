@@ -1,6 +1,9 @@
-# Research: Conta compartilhada (US1)
+# Research: Paridade com o Meu Assessor
 
-Escopo: so a User Story 1 da spec. As demais historias terao pesquisa propria.
+Decisoes por historia. R1 a R10 sao da US1 (conta compartilhada, implementada); R11 a R22 sao da
+US2 (documentos). As demais historias acrescentam secoes aqui.
+
+# US1: Conta compartilhada
 
 ## R1. Como representar a conta
 
@@ -97,3 +100,117 @@ Escopo: so a User Story 1 da spec. As demais historias terao pesquisa propria.
 - O prompt ganha uma linha com nome e perfil de quem fala (cerca de 30 tokens). Quatro
   ferramentas novas entram no bloco de ferramentas que ja usa cache. Impacto estimado abaixo de
   2% por conversa. Nenhuma chamada extra ao modelo.
+
+# US2: Guarda e busca de documentos
+
+## R11. Onde ficam os arquivos
+
+- **Decision**: no disco, em uma pasta ao lado do banco: `data/assessor-arquivos/` para o banco
+  real e `data/demo-arquivos/` para a demonstracao (derivada de `DB_PATH`). Cada arquivo fica em
+  `<telefone da conta>/<id>-<8 hex aleatorios>.<ext>`. O SQLite guarda so os metadados.
+- **Rationale**: principio VI (um servidor so, sem servico externo) e principio I (dados reais e
+  de demonstracao separados). `data/` ja esta fora do Git. O sufixo aleatorio evita adivinhar o
+  caminho de outro arquivo.
+- **Alternatives considered**: blob no SQLite (banco cresce e o backup fica pesado); armazenamento
+  de objetos (S3/R2), que fica para a troca de servidor junto com o PostgreSQL.
+
+## R12. O que entra pelo WhatsApp
+
+- **Decision**: o webhook passa a aceitar mensagens `document` (com `filename`, `mime_type` e
+  `caption`) alem de `image`. Todo arquivo recebido e salvo na hora como **pendente**, sem custo de
+  IA. Ele vira **guardado** quando o assessor chama `guardar_documento`, ou automaticamente quando
+  a foto vira lancamento (R15). Pendente nao guardado em 24 horas e apagado pelo agendador.
+- **Rationale**: o usuario pode mandar o arquivo e so na mensagem seguinte dizer "guarda esse".
+  Manter o arquivo pendente permite isso sem guardar tudo para sempre (FR-007).
+- **Limites**: ate 20 MB por arquivo (acima disso o assessor avisa e nao guarda); 1 GB por conta,
+  com aviso a partir de 80% (FR-011). Formatos lidos pela IA: PDF e imagens JPG, PNG e WebP.
+  Outros formatos (DOCX, XLSX) podem ser guardados, mas a IA so ve o nome e a legenda.
+
+## R13. Quem classifica e da o titulo
+
+- **Decision**: o proprio modelo, no turno em que o arquivo chega. O PDF ou a imagem vai junto
+  com a mensagem (Gemini: `inlineData` com `application/pdf`; Claude: bloco `document` em base64).
+  O modelo chama `guardar_documento` com pasta, titulo, descricao (1 a 3 frases com nomes, datas,
+  valores e numero do documento) e data do documento. Sem pedido de guarda na legenda, ele diz o
+  que parece ser e pergunta se guarda ("Parece o contrato de aluguel do apartamento. Guardo em
+  Contratos?"); a resposta "sim" chama a ferramenta sobre o ultimo pendente.
+- **Rationale**: nenhuma chamada extra de IA (principio IV); a classificacao usa o mesmo modelo que
+  ja le notas fiscais. A pergunta deixa no historico o que o modelo viu, porque o arquivo nao volta
+  a ser enviado nos turnos seguintes.
+- **Custo**: so arquivos de ate 5 MB vao para o modelo; acima disso ele recebe nome e legenda.
+  Um PDF de 12 paginas custa cerca de 3 mil tokens de entrada, uma vez.
+- **Alternatives considered**: OCR local (dependencia pesada, pior que o modelo); segunda chamada
+  de IA so para classificar (dobra o custo do turno).
+
+## R14. Pastas
+
+- **Decision**: pastas padrao fixas: `boletos`, `notas_fiscais`, `comprovantes`, `contratos`,
+  `casa`, `carro`, `saude`, `trabalho`, `pessoais`, `outros`. O usuario move um documento entre
+  elas no painel ou pedindo ao assessor. Pastas criadas pelo usuario ficam para depois.
+- **Rationale**: a spec cita pastas criadas pelo usuario como entidade, mas a US2 so exige separar
+  e mover. Pastas fixas deixam a classificacao mais certeira e a tela mais simples (principio VI).
+
+## R15. Foto de cupom que vira lancamento
+
+- **Decision**: quando a mensagem tem foto ou PDF e o turno cria uma transacao, o arquivo pendente
+  e guardado automaticamente em `notas_fiscais` (ou `comprovantes`, se a forma for Pix ou
+  transferencia), ligado a transacao, com titulo `<descricao> - <contraparte>`. Sem chamada extra
+  ao modelo.
+- **Rationale**: cenario 2 da US2 e FR-007; evita uma rodada de ferramenta so para guardar.
+
+## R16. Busca
+
+- **Decision**: tabela virtual FTS5 do proprio SQLite (`unicode61 remove_diacritics 2`) sobre
+  titulo, descricao, nome original e pasta. A ferramenta `buscar_documentos` recebe a consulta em
+  linguagem natural, o modelo extrai palavras-chave e periodo, e a busca devolve ate 8 candidatos
+  ordenados por relevancia (bm25) e data. Com um so candidato claro, o modelo envia direto; com
+  varios, lista ate 5 para o usuario escolher (cenario 3). Sem resultado, diz que nao achou.
+- **Rationale**: testado neste ambiente: o better-sqlite3 do projeto tem FTS5 e acha "marco" em
+  "março". Sem dependencia nova nem embeddings (principio VI e IV).
+- **Alternatives considered**: busca por embeddings (custo por documento e outro servico);
+  `LIKE` simples (nao ordena por relevancia nem ignora acento).
+
+## R17. Devolver o arquivo na conversa
+
+- **Decision**: `enviar_documento(id)` nao envia na hora: marca o arquivo para sair depois da
+  resposta em texto. `runAgent` ganha um parametro opcional `enviarArquivo`; o webhook envia pelo
+  WhatsApp (upload em `/{phone-number-id}/media` com `FormData` nativo do Node e mensagem
+  `document` ou `image` com o media id); o terminal imprime o caminho do arquivo.
+- **Rationale**: a resposta em texto chega antes do anexo, como numa conversa. `FormData` e `Blob`
+  ja existem no Node 22, sem dependencia.
+- **Alternatives considered**: enviar por link publico (exigiria URL assinada e o tunel aberto).
+
+## R18. Permissao
+
+- **Decision**: nova capacidade `documentos`, dada ao titular e ao acesso completo. Sem ela, a
+  pessoa so ve documentos ligados a lancamentos que o perfil dela enxerga (o comprovante do gasto
+  da Bia, por exemplo), e so a partir do lancamento. Os pendentes sao visiveis apenas para quem
+  enviou. Toda leitura de arquivo passa pela mesma regra, na ferramenta e na API (principio I).
+- **Rationale**: edge case da spec ("os resultados respeitam o perfil de quem pergunta") sem criar
+  um perfil novo.
+
+## R19. Painel
+
+- **Decision**: a mesa de Tarefas (Davi) passa a cuidar tambem dos documentos: cargo "Projetos e
+  documentos" e subtela `/tarefas/documentos` com pastas, busca, download, renomear, mover e
+  excluir. Em Transacoes, o lancamento com comprovante mostra "ver comprovante". O download usa
+  `fetch` com o token da sessao e abre o arquivo como `blob:`.
+- **Rationale**: evita uma setima mesa e um assessor novo; o painel ja tem a sessao no cabecalho,
+  nao em cookie, por isso nao da para usar link direto.
+- **Fora desta entrega**: enviar arquivo pelo painel.
+
+## R20. Exclusao
+
+- **Decision**: excluir apaga o arquivo do disco e a linha do banco na hora. O lancamento ligado
+  continua, sem comprovante. Exclusao pelo assessor exige confirmacao, como a de transacao.
+
+## R21. Historico
+
+- **Decision**: o historico guarda `[documento] nome.pdf: legenda` ou `[foto] legenda`, como hoje
+  com fotos. O arquivo em si nao volta para o modelo nos turnos seguintes (R13).
+
+## R22. Custo de IA (principio IV)
+
+- Seis ferramentas novas no bloco com cache. PDFs ate 5 MB entram no turno em que chegam, uma vez.
+  Busca e envio sao so texto. Estimativa: um usuario que guarda 10 documentos por mes acrescenta
+  cerca de 30 mil tokens de entrada, menos de R$ 0,10 no modelo padrao.

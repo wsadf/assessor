@@ -4,6 +4,7 @@ import { AuthError } from "./auth.js";
 import { config } from "./config.js";
 import { conta, repoDoContexto, type Membro } from "./conta.js";
 import type { Kind, Recurrence, Repo, Task, Transaction } from "./db.js";
+import { documentos, nomePasta, PASTA_IDS, PASTAS, podeVerDocumento, type Documento } from "./documentos.js";
 import {
   contextoTitular,
   exigir,
@@ -76,7 +77,31 @@ const schemas = {
   convidar_pessoa: z.object({ perfil: z.enum(PERFIS_CONVIDAVEIS), rotulo: z.string().min(1).nullish() }),
   alterar_acesso: z.object({ pessoa: z.string().min(1), perfil: z.enum(PERFIS_CONVIDAVEIS) }),
   remover_acesso: z.object({ pessoa: z.string().min(1), confirmado: z.boolean() }),
+  guardar_documento: z.object({
+    pasta: z.enum(PASTA_IDS),
+    titulo: z.string().min(1).max(120),
+    descricao: z.string().min(1).max(600).nullish(),
+    data_documento: nullableIsoDate,
+  }),
+  buscar_documentos: z.object({
+    consulta: z.string().min(1),
+    pasta: z.enum(PASTA_IDS).nullish(),
+    data_inicio: nullableIsoDate,
+    data_fim: nullableIsoDate,
+  }),
+  enviar_documento: z.object({ id: z.number().int() }),
+  mover_documento: z.object({ id: z.number().int(), pasta: z.enum(PASTA_IDS).nullish(), titulo: z.string().min(1).max(120).nullish() }),
+  excluir_documento: z.object({ id: z.number().int(), confirmado: z.boolean() }),
+  listar_pastas: z.object({}),
 };
+
+/** O que o turno do agente oferece as ferramentas alem da entrada do modelo. */
+export interface ExtrasFerramenta {
+  /** Arquivo pendente que chegou na mensagem deste turno. */
+  anexoId?: number;
+  /** Agenda o envio de um documento para depois da resposta em texto. */
+  enviar?: (id: number) => void;
+}
 
 /** Capacidade exigida pelas ferramentas que nao dependem do tipo do lancamento. */
 const CAPACIDADE: Partial<Record<keyof typeof schemas, Capacidade>> = {
@@ -89,6 +114,12 @@ const CAPACIDADE: Partial<Record<keyof typeof schemas, Capacidade>> = {
   convidar_pessoa: "acessos",
   alterar_acesso: "acessos",
   remover_acesso: "acessos",
+  // enviar_documento fica de fora: o comprovante de um gasto visivel sai ate sem esta capacidade.
+  guardar_documento: "documentos",
+  buscar_documentos: "documentos",
+  mover_documento: "documentos",
+  excluir_documento: "documentos",
+  listar_pastas: "documentos",
 };
 
 const capDoTipo = (k: Kind): Capacidade => (k === "receita" ? "receitas" : "despesas");
@@ -217,7 +248,72 @@ export const toolDefinitions: Anthropic.Tool[] = [
       confirmado: { type: "boolean" },
     },
   ),
+  tool(
+    "guardar_documento",
+    "Guarda o arquivo (PDF ou foto) que o usuario mandou nesta conversa. Use quando ele pedir para guardar. Leia o arquivo para escrever titulo e descricao.",
+    {
+      pasta: { type: "string", enum: [...PASTA_IDS], description: PASTAS.map((p) => `${p.id}: ${p.nome}`).join("; ") },
+      titulo: { ...str, description: "Curto e especifico, ex.: Contrato de aluguel do apartamento, Boleto do condominio de novembro" },
+      descricao: nullable({ ...str, description: "1 a 3 frases com nomes, datas, valores e numeros que aparecem no documento; e o que a busca vai encontrar depois" }),
+      data_documento: nullable({ ...str, description: `${dateDesc} do proprio documento (assinatura, emissao, vencimento). null se nao houver` }),
+    },
+  ),
+  tool(
+    "buscar_documentos",
+    "Procura documentos guardados pela descricao, como 'contrato do apartamento', 'comprovante do aluguel', 'CRLV do carro'.",
+    {
+      consulta: { ...str, description: "Palavras do pedido que identificam o documento: tipo, pessoa, empresa, assunto" },
+      pasta: nullable({ type: "string", enum: [...PASTA_IDS] }),
+      data_inicio: nullable({ ...str, description: `${dateDesc}. So se o usuario citar periodo` }),
+      data_fim: nullable({ ...str, description: dateDesc }),
+    },
+  ),
+  tool("enviar_documento", "Envia na conversa o arquivo de um documento guardado, pelo id que veio de buscar_documentos.", {
+    id: { type: "integer" },
+  }),
+  tool("mover_documento", "Muda a pasta ou o titulo de um documento guardado. Envie null no que nao muda.", {
+    id: { type: "integer" },
+    pasta: nullable({ type: "string", enum: [...PASTA_IDS] }),
+    titulo: nullable(str),
+  }),
+  tool(
+    "excluir_documento",
+    "Apaga um documento guardado. Chame com confirmado false, mostre qual e, e so chame com true depois que o usuario confirmar.",
+    { id: { type: "integer" }, confirmado: { type: "boolean" } },
+  ),
+  tool("listar_pastas", "Mostra as pastas de documentos com a quantidade em cada uma e o espaco usado.", {}),
 ];
+
+const dataDoc = (d: Documento) => d.document_date ?? d.saved_at?.slice(0, 10) ?? d.created_at.slice(0, 10);
+const describeDoc = (d: Documento) => `#${d.id} ${d.title ?? d.original_name} (${nomePasta(d.folder)}, ${dataDoc(d)})`;
+const mb = (bytes: number) => `${(bytes / 1048576).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB`;
+
+/** Pendente desta mensagem ou, sem ele, o ultimo que esta pessoa mandou. */
+function anexoPendente(repo: Repo, ctx: Contexto, extras: ExtrasFerramenta): Documento | undefined {
+  const docs = documentos(repo.db);
+  const doTurno = extras.anexoId ? docs.porId(extras.anexoId) : undefined;
+  const anexo = doTurno ?? docs.ultimoPendente(ctx.membro);
+  return anexo && anexo.status === "pendente" && anexo.created_by === ctx.membro && anexo.phone === ctx.conta ? anexo : undefined;
+}
+
+/** Foto ou PDF da mensagem que virou lancamento fica guardado como comprovante dele. */
+function guardarComprovante(repo: Repo, ctx: Contexto, extras: ExtrasFerramenta, t: Transaction): string {
+  if (!extras.anexoId) return "";
+  const anexo = anexoPendente(repo, ctx, extras);
+  if (!anexo || anexo.id !== extras.anexoId) return "";
+  try {
+    const { documento } = documentos(repo.db).guardar(anexo.id, {
+      pasta: /pix|transf/i.test(t.payment_method ?? "") ? "comprovantes" : "notas_fiscais",
+      titulo: t.counterpart ? `${t.description} - ${t.counterpart}` : t.description,
+      dataDocumento: t.occurred_on,
+      transacaoId: t.id,
+    });
+    return ` Comprovante guardado (#${documento.id}).`;
+  } catch (err) {
+    if (err instanceof AuthError) return ` O comprovante nao foi guardado: ${err.message}`;
+    throw err;
+  }
+}
 
 const semAcento = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
@@ -288,7 +384,7 @@ export function nextOccurrence(current: Date, rec: Recurrence): Date | null {
 }
 
 /** `quem` aceita so o telefone para o titular de uma conta sem membros, como no terminal. */
-export function executeTool(repoConta: Repo, quem: string | Contexto, name: string, rawInput: unknown): string {
+export function executeTool(repoConta: Repo, quem: string | Contexto, name: string, rawInput: unknown, extras: ExtrasFerramenta = {}): string {
   if (!(name in schemas)) throw new Error(`Ferramenta desconhecida: ${name}`);
   const toolName = name as ToolName;
   const parsed = schemas[toolName].safeParse(rawInput);
@@ -299,7 +395,7 @@ export function executeTool(repoConta: Repo, quem: string | Contexto, name: stri
   try {
     const cap = CAPACIDADE[toolName];
     if (cap) exigir(ctx, cap);
-    return run(repoDoContexto(repoConta, ctx), ctx, toolName, parsed.data as any);
+    return run(repoDoContexto(repoConta, ctx), ctx, toolName, parsed.data as any, extras);
   } catch (err) {
     // Volta como resposta, nao como erro: o modelo precisa repassar a recusa ao usuario.
     if (err instanceof SemPermissao || err instanceof AuthError) return err.message;
@@ -307,7 +403,7 @@ export function executeTool(repoConta: Repo, quem: string | Contexto, name: stri
   }
 }
 
-function run(repo: Repo, ctx: Contexto, toolName: ToolName, input: any): string {
+function run(repo: Repo, ctx: Contexto, toolName: ToolName, input: any, extras: ExtrasFerramenta): string {
   const phone = ctx.conta;
   const autoria = { created_by: ctx.membro };
   switch (toolName) {
@@ -330,7 +426,7 @@ function run(repo: Repo, ctx: Contexto, toolName: ToolName, input: any): string 
         return [
           `Parcelamento registrado: ${input.parcelas}x de ${brl(base.amount_cents)}, total ${brl(base.amount_cents * input.parcelas)}.`,
           `Primeira: ${describe(parcelas[0])}`,
-          `Ultima em ${ultima.occurred_on}.`,
+          `Ultima em ${ultima.occurred_on}.${guardarComprovante(repo, ctx, extras, parcelas[0])}`,
         ].join("\n");
       }
       const t = repo.addTransaction(base);
@@ -338,7 +434,7 @@ function run(repo: Repo, ctx: Contexto, toolName: ToolName, input: any): string 
       const monthTotal = repo
         .listTransactions(phone, `${month}-01`, `${month}-31`, { kind: t.kind, category: t.category })
         .reduce((s, x) => s + x.amount_cents, 0);
-      return `Registrado: ${describe(t)}. Total de ${t.category} no mes: ${brl(monthTotal)}.`;
+      return `Registrado: ${describe(t)}. Total de ${t.category} no mes: ${brl(monthTotal)}.${guardarComprovante(repo, ctx, extras, t)}`;
     }
 
     case "consultar_transacoes": {
@@ -489,6 +585,59 @@ function run(repo: Repo, ctx: Contexto, toolName: ToolName, input: any): string 
       }
       c.removerMembro(phone, m.telefone);
       return `${m.nome ?? "A pessoa"} nao tem mais acesso a conta. Os lancamentos dela continuam aqui.`;
+    }
+
+    case "guardar_documento": {
+      const anexo = anexoPendente(repo, ctx, extras);
+      if (!anexo) return "Nenhum arquivo recebido para guardar. Peca ao usuario para enviar o arquivo pelo WhatsApp.";
+      const r = documentos(repo.db).guardar(anexo.id, {
+        pasta: input.pasta,
+        titulo: input.titulo,
+        descricao: input.descricao,
+        dataDocumento: input.data_documento,
+      });
+      const aviso = r.alerta ? ` Atencao: a conta ja usa ${mb(r.uso)} de 1 GB; exclua documentos antigos para nao faltar espaco.` : "";
+      return `Guardado: ${describeDoc(r.documento)}.${aviso}`;
+    }
+
+    case "buscar_documentos": {
+      const achados = documentos(repo.db).buscar(phone, input.consulta, { pasta: input.pasta, de: input.data_inicio, ate: input.data_fim });
+      if (!achados.length) return `Nenhum documento encontrado para "${input.consulta}". Diga ao usuario que nao achou; nao invente.`;
+      return [
+        `${achados.length} documento(s), do mais provavel para o menos:`,
+        ...achados.map((d) => `${describeDoc(d)}${d.description ? `: ${d.description.slice(0, 160)}` : ""}`),
+      ].join("\n");
+    }
+
+    case "enviar_documento": {
+      const doc = documentos(repo.db).porId(input.id);
+      if (!podeVerDocumento(repo, ctx, doc) || doc.status !== "guardado") return `Documento #${input.id} nao encontrado.`;
+      extras.enviar?.(doc.id);
+      return `Arquivo ${describeDoc(doc)} sera enviado logo apos a sua resposta.`;
+    }
+
+    case "mover_documento": {
+      const docs = documentos(repo.db);
+      const antes = docs.porId(input.id);
+      if (!podeVerDocumento(repo, ctx, antes) || antes.status !== "guardado") return `Documento #${input.id} nao encontrado.`;
+      const depois = docs.atualizar(antes.id, { pasta: input.pasta ?? undefined, titulo: input.titulo ?? undefined })!;
+      return `Atualizado.\nAntes: ${describeDoc(antes)}\nAgora: ${describeDoc(depois)}`;
+    }
+
+    case "excluir_documento": {
+      const docs = documentos(repo.db);
+      const doc = docs.porId(input.id);
+      if (!podeVerDocumento(repo, ctx, doc) || doc.status !== "guardado") return `Documento #${input.id} nao encontrado.`;
+      if (!input.confirmado) return `Confirme com o usuario antes de apagar ${describeDoc(doc)}. O arquivo some de vez.`;
+      docs.excluir(doc.id);
+      return `Excluido: ${describeDoc(doc)}.`;
+    }
+
+    case "listar_pastas": {
+      const docs = documentos(repo.db);
+      const pastas = docs.pastasComUso(phone).filter((p) => p.qtd);
+      if (!pastas.length) return "Nenhum documento guardado ainda.";
+      return `${pastas.map((p) => `${p.nome}: ${p.qtd}`).join("; ")}. Espaco usado: ${mb(docs.uso(phone))} de 1 GB.`;
     }
   }
 }

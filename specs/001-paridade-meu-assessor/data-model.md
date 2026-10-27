@@ -1,7 +1,10 @@
-# Data Model: Conta compartilhada (US1)
+# Data Model: Paridade com o Meu Assessor
 
 Decisoes em [research.md](research.md). Tudo em SQLite, criado ou migrado em `openDb` e
-`prepararTabelas`, no mesmo estilo de `ALTER TABLE ... ADD COLUMN` ja usado.
+`prepararTabelas`, no mesmo estilo de `ALTER TABLE ... ADD COLUMN` ja usado. Uma secao por
+historia.
+
+# US1: Conta compartilhada
 
 ## Conta
 
@@ -88,3 +91,56 @@ As funcoes do repo recebem `conta`; o historico usa `membro`; as escritas gravam
 
 Tabela em [research.md](research.md#r5-perfis-e-onde-a-permissao-e-aplicada). Capacidades:
 `despesas`, `receitas`, `agenda`, `tarefas`, `acessos`.
+
+# US2: Documentos
+
+## documents (nova)
+
+| Campo | Tipo | Regra |
+| --- | --- | --- |
+| id | INTEGER PK | |
+| phone | TEXT NOT NULL | telefone da conta (mesmo sentido de `transactions.phone`) |
+| created_by | TEXT NOT NULL | telefone de quem enviou |
+| status | TEXT NOT NULL | `pendente` ou `guardado` |
+| folder | TEXT | uma das pastas padrao (R14); nulo enquanto pendente |
+| title | TEXT | ate 120 caracteres; nulo enquanto pendente |
+| description | TEXT | ate 600 caracteres, escrita pelo modelo ou pelo usuario |
+| original_name | TEXT | nome do arquivo no WhatsApp; fotos recebem `foto-AAAAMMDD-HHMM.jpg` |
+| mime_type | TEXT NOT NULL | ex.: `application/pdf`, `image/jpeg` |
+| size_bytes | INTEGER NOT NULL | de 1 a 20 MB (20971520) |
+| storage_path | TEXT NOT NULL UNIQUE | relativo a pasta de arquivos (R11) |
+| document_date | TEXT | data do proprio documento, `AAAA-MM-DD`, se o modelo identificar |
+| transaction_id | INTEGER | lancamento ligado (R15); nulo se nao houver |
+| created_at | TEXT NOT NULL | chegada pelo WhatsApp |
+| saved_at | TEXT | quando virou guardado |
+
+Indices: `(phone, status, folder)`, `(phone, transaction_id)`, `(created_by, status, created_at)`.
+
+Transicoes:
+
+```text
+recebido --(arquivo salvo no disco)--> pendente
+pendente --guardar_documento / lancamento com foto--> guardado
+pendente --24 h sem guardar--> apagado (arquivo e linha)
+guardado --excluir--> apagado (arquivo e linha)
+```
+
+Regras:
+
+- Pendente so e visivel para `created_by`; o "ultimo pendente" e o mais recente dele.
+- A soma de `size_bytes` dos guardados da conta nao passa de 1 GB (1073741824); a partir de 80%
+  as respostas de guardar avisam.
+- Excluir uma transacao nao apaga o documento: `transaction_id` continua apontando para um
+  lancamento que o repo ja nao devolve, e a busca o trata como sem ligacao.
+
+## documents_fts (nova, virtual)
+
+`CREATE VIRTUAL TABLE documents_fts USING fts5(title, description, original_name, folder,
+content='documents', content_rowid='id', tokenize='unicode61 remove_diacritics 2')`, mantida por
+gatilhos de insert, update e delete em `documents`. So entram linhas com `status = 'guardado'`
+na busca (filtro na consulta).
+
+## Capacidade nova
+
+`documentos`: titular e acesso completo. Regras de visibilidade em
+[research.md R18](research.md#r18-permissao).

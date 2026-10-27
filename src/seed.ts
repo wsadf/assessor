@@ -2,6 +2,9 @@ import { auth } from "./auth.js";
 import { config, DEMO_DB_PATH } from "./config.js";
 import { conta } from "./conta.js";
 import { openDb, repo as makeRepo } from "./db.js";
+import { documentos, pastaDeArquivos, type PastaId } from "./documentos.js";
+import fs from "node:fs";
+import path from "node:path";
 import { fromLocal, localDate } from "./time.js";
 
 // Dados ficticios para ver o painel cheio. Grava em data/demo.db, nunca no banco real.
@@ -19,6 +22,8 @@ for (const p of [phone, BIA.phone]) {
     db.prepare(`DELETE FROM ${table} WHERE phone = ?`).run(p);
   }
 }
+db.prepare(`DELETE FROM documents WHERE phone = ?`).run(phone);
+fs.rmSync(path.join(pastaDeArquivos(db), phone), { recursive: true, force: true });
 db.prepare(`DELETE FROM account_members WHERE account_phone = ?`).run(phone);
 db.prepare(`DELETE FROM account_invites WHERE account_phone = ?`).run(phone);
 repo.ensureUser(phone, "Demonstração");
@@ -174,6 +179,96 @@ for (const [title, days, priority, project, status] of tarefas) {
   if (status !== "pendente") repo.updateTask(phone, t.id, { status });
 }
 
+/** PDF de uma pagina so com texto; as posicoes da tabela xref sao calculadas na hora. */
+function pdfSimples(linhas: string[]): Buffer {
+  const texto = linhas.map((l, i) => `BT /F1 ${i ? 12 : 16} Tf 56 ${780 - i * 22} Td (${l.replace(/[()\\]/g, "")}) Tj ET`).join("\n");
+  const objetos = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+    `<< /Length ${Buffer.byteLength(texto)} >>\nstream\n${texto}\nendstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  let pdf = "%PDF-1.4\n";
+  const posicoes = objetos.map((o, i) => {
+    const pos = Buffer.byteLength(pdf);
+    pdf += `${i + 1} 0 obj\n${o}\nendobj\n`;
+    return pos;
+  });
+  const xref = Buffer.byteLength(pdf);
+  pdf += `xref\n0 ${objetos.length + 1}\n0000000000 65535 f \n${posicoes.map((p) => `${String(p).padStart(10, "0")} 00000 n \n`).join("")}`;
+  pdf += `trailer\n<< /Size ${objetos.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(pdf, "latin1");
+}
+
+// PNG de 1 pixel, so para a foto de exemplo ter conteudo valido.
+const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
+
+const docs = documentos(db);
+const ultima = (busca: string) => repo.listTransactions(phone, "0000-01-01", today, { search: busca })[0];
+const exemplos: { titulo: string; pasta: PastaId; descricao: string; data: string; arquivo: Buffer; tipo: string; nome: string; tx?: number }[] = [
+  {
+    titulo: "Contrato de aluguel do apartamento",
+    pasta: "contratos",
+    descricao: "Locação do apartamento da Rua das Flores, 120, com a Imobiliária Sol. Assinado em março de 2026, prazo de 30 meses, aluguel de R$ 1.650,00.",
+    data: `${today.slice(0, 4)}-03-12`,
+    arquivo: pdfSimples(["Contrato de locacao residencial", "Locador: Imobiliaria Sol", "Imovel: Rua das Flores, 120", "Prazo: 30 meses", "Aluguel: R$ 1.650,00"]),
+    tipo: "application/pdf",
+    nome: "contrato-locacao.pdf",
+  },
+  {
+    titulo: "Boleto do condomínio",
+    pasta: "boletos",
+    descricao: "Boleto da taxa condominial do Edifício Aurora, vencimento no dia 8, R$ 480,00.",
+    data: today,
+    arquivo: pdfSimples(["Boleto de pagamento", "Condominio Edificio Aurora", "Valor: R$ 480,00"]),
+    tipo: "application/pdf",
+    nome: "boleto-condominio.pdf",
+  },
+  {
+    titulo: "CRLV do carro",
+    pasta: "carro",
+    descricao: "Certificado de registro e licenciamento do veículo, placa ABC1D23, exercício atual.",
+    data: `${today.slice(0, 4)}-01-20`,
+    arquivo: pdfSimples(["CRLV digital", "Placa: ABC1D23"]),
+    tipo: "application/pdf",
+    nome: "crlv.pdf",
+  },
+  {
+    titulo: "Nota fiscal do notebook",
+    pasta: "notas_fiscais",
+    descricao: "Nota fiscal eletrônica da compra do notebook na Amazon, parcelada em 8 vezes no cartão Itaú.",
+    data: ultima("Notebook")?.occurred_on ?? today,
+    arquivo: pdfSimples(["Nota fiscal eletronica", "Emitente: Amazon", "Produto: Notebook"]),
+    tipo: "application/pdf",
+    nome: "nfe-notebook.pdf",
+    tx: ultima("Notebook")?.id,
+  },
+  {
+    titulo: "Receita do dentista",
+    pasta: "saude",
+    descricao: "Receita da Dra. Paula Mendes para o tratamento de canal, com a lista de remédios.",
+    data: today,
+    arquivo: PNG,
+    tipo: "image/png",
+    nome: "receita.png",
+  },
+  {
+    titulo: "Comprovante do aluguel",
+    pasta: "comprovantes",
+    descricao: "Comprovante do pagamento do aluguel do mês para a Imobiliária Sol.",
+    data: ultima("Aluguel")?.occurred_on ?? today,
+    arquivo: pdfSimples(["Comprovante de pagamento", "Favorecido: Imobiliaria Sol", "Valor: R$ 1.650,00"]),
+    tipo: "application/pdf",
+    nome: "comprovante-aluguel.pdf",
+    tx: ultima("Aluguel")?.id,
+  },
+];
+for (const e of exemplos) {
+  const p = docs.salvarPendente(phone, phone, { data: e.arquivo, mimeType: e.tipo, nomeOriginal: e.nome });
+  docs.guardar(p.id, { pasta: e.pasta, titulo: e.titulo, descricao: e.descricao, dataDocumento: e.data, transacaoId: e.tx ?? null });
+}
+
 for (const [role, text] of [
   ["user", "gastei 62 na farmácia"],
   ["assistant", "Lancei R$ 62,00 em Saúde. No mês já são R$ 180,00."],
@@ -183,6 +278,6 @@ for (const [role, text] of [
   repo.addHistory(phone, role, text);
 }
 
-console.log(`Demonstracao gravada em ${file}: ${total} lancamentos, 6 lembretes, ${tarefas.length} tarefas.`);
+console.log(`Demonstracao gravada em ${file}: ${total} lancamentos, 6 lembretes, ${tarefas.length} tarefas, ${exemplos.length} documentos.`);
 console.log(`Para entrar no painel de demonstracao: ${DEMO_EMAIL} / ${DEMO_SENHA}`);
 console.log(`Como membro so gastos da mesma conta: ${BIA.email} / ${DEMO_SENHA}`);

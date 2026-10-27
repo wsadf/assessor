@@ -1,7 +1,9 @@
+import path from "node:path";
 import readline from "node:readline/promises";
 import { runAgent } from "./agent.js";
 import { aiKeyName, config } from "./config.js";
 import { openDb, repo as makeRepo } from "./db.js";
+import { documentos } from "./documentos.js";
 import { runRemindersOnce } from "./scheduler.js";
 
 const keyName = aiKeyName();
@@ -35,9 +37,14 @@ for await (const line of rl) {
     process.stdout.write("pensando...");
     const ticker = setInterval(() => process.stdout.write("."), 2000);
     try {
-      const reply = await runAgent(repo, phone, { text });
+      // O terminal nao mostra arquivo: indica onde ele esta no disco.
+      const arquivos: string[] = [];
+      const reply = await runAgent(repo, phone, { text }, {
+        enviarArquivo: async (doc) => void arquivos.push(`[arquivo enviado] ${doc.title}: ${path.resolve(documentos(repo.db).caminho(doc))}`),
+      });
       clearInterval(ticker);
       console.log(` (${Math.round((Date.now() - started) / 1000)}s)\n\n${reply}\n`);
+      for (const a of arquivos) console.log(`${a}\n`);
     } catch (err) {
       clearInterval(ticker);
       console.error("\nErro:", (err as Error).message);

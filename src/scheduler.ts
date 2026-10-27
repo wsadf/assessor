@@ -1,5 +1,6 @@
 import { config } from "./config.js";
 import type { Repo } from "./db.js";
+import { documentos } from "./documentos.js";
 import { brl, localDate, localHour } from "./time.js";
 import { nextOccurrence } from "./tools.js";
 
@@ -56,12 +57,17 @@ async function runSummaryOnce(repo: Repo, send: Send, now = new Date()) {
 
 export function startScheduler(repo: Repo, send: Send) {
   let running = false;
+  let ultimaLimpeza = 0;
   const tick = async () => {
     if (running) return;
     running = true;
     try {
       await runRemindersOnce(repo, send);
       await runSummaryOnce(repo, send);
+      if (Date.now() - ultimaLimpeza > 3_600_000) {
+        ultimaLimpeza = Date.now();
+        documentos(repo.db).limparPendentes();
+      }
     } finally {
       running = false;
     }

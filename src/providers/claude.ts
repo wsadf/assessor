@@ -21,6 +21,21 @@ export const claudeProvider: Provider = async (history, input, userText, execute
       },
     });
   }
+  if (input.document?.mimeType === "application/pdf") {
+    content.push({
+      type: "document",
+      source: { type: "base64", media_type: "application/pdf", data: input.document.data.toString("base64") },
+    });
+  } else if (input.document) {
+    content.push({
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: input.document.mimeType as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
+        data: input.document.data.toString("base64"),
+      },
+    });
+  }
   content.push({ type: "text", text: userText });
 
   const messages: Anthropic.Beta.BetaMessageParam[] = [
