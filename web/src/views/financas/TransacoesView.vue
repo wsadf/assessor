@@ -159,6 +159,7 @@ async function excluir() {
           <span class="valor">
             <strong class="num" :class="{ pos: t.tipo === 'receita' }">{{ brlSinal(t.valor, t.tipo) }}</strong>
             <span v-if="t.comprovanteId" class="chip ok">comprovante</span>
+            <span v-if="t.recorrente" class="chip">recorrente</span>
             <span v-if="t.parcela" class="chip">parcela {{ t.parcela.numero }}/{{ t.parcela.total }}</span>
             <span v-else-if="t.pagamento?.toLowerCase().includes('credito')" class="chip warning">na fatura</span>
           </span>

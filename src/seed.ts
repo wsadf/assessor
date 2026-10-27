@@ -1,4 +1,6 @@
 import { auth } from "./auth.js";
+import { criarConta, criarRecorrencia, definirPreferencia } from "./avisos.js";
+import { contextoTitular } from "./permissoes.js";
 import { config, DEMO_DB_PATH } from "./config.js";
 import { conta } from "./conta.js";
 import { openDb, repo as makeRepo } from "./db.js";
@@ -23,6 +25,10 @@ for (const p of [phone, BIA.phone]) {
   }
 }
 db.prepare(`DELETE FROM documents WHERE phone = ?`).run(phone);
+for (const table of ["bills", "recurring"]) db.prepare(`DELETE FROM ${table} WHERE phone = ?`).run(phone);
+for (const table of ["notice_prefs", "notice_log", "pending_notices"]) {
+  for (const p of [phone, BIA.phone]) db.prepare(`DELETE FROM ${table} WHERE phone = ?`).run(p);
+}
 fs.rmSync(path.join(pastaDeArquivos(db), phone), { recursive: true, force: true });
 db.prepare(`DELETE FROM account_members WHERE account_phone = ?`).run(phone);
 db.prepare(`DELETE FROM account_invites WHERE account_phone = ?`).run(phone);
@@ -269,6 +275,22 @@ for (const e of exemplos) {
   docs.guardar(p.id, { pasta: e.pasta, titulo: e.titulo, descricao: e.descricao, dataDocumento: e.data, transacaoId: e.tx ?? null });
 }
 
+// Contas e recorrencias comecam em datas futuras: no passado, o agendador lancaria tudo de uma vez.
+const titularDemo = contextoTitular(phone, "Demonstração");
+const proximoDia = (dia: number) => {
+  const [y, m, d] = today.split("-").map(Number);
+  const mes = d <= dia ? m - 1 : m;
+  const ultimo = new Date(Date.UTC(y, mes + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(y, mes, Math.min(dia, ultimo))).toISOString().slice(0, 10);
+};
+const proximaSegunda = addDays(today, ((1 - new Date(`${today}T12:00:00Z`).getUTCDay() + 7) % 7) || 7);
+criarConta(db, titularDemo, { descricao: "Condomínio", vencimento: proximoDia(8), valor: 480, categoria: "Moradia", mensal: true });
+criarConta(db, titularDemo, { descricao: "Fatura Nubank", vencimento: proximoDia(15), categoria: "Cartão", mensal: true });
+criarConta(db, titularDemo, { descricao: "IPVA", vencimento: addDays(today, 20), valor: 1240, categoria: "Transporte", mensal: false });
+criarRecorrencia(db, titularDemo, { tipo: "despesa", valor: 89.9, categoria: "Saúde", descricao: "Academia", frequencia: "semanal", inicio: proximaSegunda, pagamento: "credito Itau" });
+criarRecorrencia(db, titularDemo, { tipo: "despesa", valor: 55.9, categoria: "Assinaturas", descricao: "Streaming", frequencia: "mensal", inicio: proximoDia(18), pagamento: "credito Nubank" });
+definirPreferencia(db, phone, "resumo_noite", { ligado: true });
+
 for (const [role, text] of [
   ["user", "gastei 62 na farmácia"],
   ["assistant", "Lancei R$ 62,00 em Saúde. No mês já são R$ 180,00."],
@@ -278,6 +300,6 @@ for (const [role, text] of [
   repo.addHistory(phone, role, text);
 }
 
-console.log(`Demonstracao gravada em ${file}: ${total} lancamentos, 6 lembretes, ${tarefas.length} tarefas, ${exemplos.length} documentos.`);
+console.log(`Demonstracao gravada em ${file}: ${total} lancamentos, 6 lembretes, ${tarefas.length} tarefas, ${exemplos.length} documentos, 3 contas a pagar e 2 recorrencias.`);
 console.log(`Para entrar no painel de demonstracao: ${DEMO_EMAIL} / ${DEMO_SENHA}`);
 console.log(`Como membro so gastos da mesma conta: ${BIA.email} / ${DEMO_SENHA}`);

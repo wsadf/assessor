@@ -66,7 +66,10 @@ const EM_PREPARACAO = new Set(["fiscal", "pesquisas"]);
           <template v-if="acessos.podeGerir">cada pessoa conversa pelo próprio WhatsApp e alimenta a mesma conta. Você decide o que cada uma vê.</template>
           <template v-else>você está na conta de <b>{{ acessos.titular.nome ?? "titular" }}</b>. Só o titular muda os acessos.</template>
         </AssessorBalao>
-        <RouterLink class="btn primary" to="/operacao/acessos">Equipe e acesso →</RouterLink>
+        <div class="botoes">
+          <RouterLink class="btn primary" to="/operacao/acessos">Equipe e acesso →</RouterLink>
+          <RouterLink class="btn" to="/operacao/avisos">Avisos →</RouterLink>
+        </div>
         <template #lado>
           <div class="equipe">
             <div class="membro">
@@ -114,5 +117,6 @@ const EM_PREPARACAO = new Set(["fiscal", "pesquisas"]);
 .membro:hover { background: var(--surface); }
 .flex1 { flex: 1; min-width: 0; }
 .faint { font-size: 13px; }
+.botoes { display: flex; gap: 10px; flex-wrap: wrap; }
 .iniciais { width: 40px; height: 40px; flex: none; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--line-strong); display: grid; place-items: center; font-weight: 600; }
 </style>

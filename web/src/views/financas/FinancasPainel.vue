@@ -114,6 +114,26 @@ const pagamentos = computed(() => {
         </template>
       </BlocoMesa>
 
+      <BlocoMesa v-if="f.contasProximas?.length" titulo="Vence nos próximos dias">
+        <ValorGrande :valor="f.contasProximas.reduce((s, c) => s + (c.valor ?? 0), 0)" />
+        <p class="muted">
+          em {{ f.contasProximas.length }} {{ f.contasProximas.length === 1 ? "conta" : "contas" }} nos próximos 7 dias<template
+            v-if="f.contasProximas.some((c) => c.valor === null)"
+          >, fora as de valor variável</template>.
+        </p>
+        <AssessorBalao mesa="financas">aviso na véspera de cada uma. Quando pagar, diga “paguei” e eu lanço.</AssessorBalao>
+        <template #lado>
+          <div v-for="c in f.contasProximas" :key="c.id" class="list-row">
+            <div class="flex1">
+              <div class="tx-desc">{{ c.descricao }}</div>
+              <div class="eyebrow tx-meta">{{ dataCurta(c.vencimento) }} · {{ c.mensal ? "todo mês" : "única" }}</div>
+            </div>
+            <strong class="num">{{ c.valor === null ? "variável" : brl(c.valor) }}</strong>
+          </div>
+          <RouterLink class="ver" to="/financas/contas">Ver contas e recorrências →</RouterLink>
+        </template>
+      </BlocoMesa>
+
       <BlocoMesa titulo="Saídas">
         <ValorGrande :valor="f.despesas" />
         <p class="muted">em {{ f.pulso.lancamentos }} lançamentos no mês.</p>

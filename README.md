@@ -15,6 +15,7 @@ O que já funciona:
 - Painel web em Vue com seis mesas: Finanças, Fiscal, Agenda, Tarefas, Operação e Pesquisas
 - Conta compartilhada: o titular convida família, sócio ou equipe por código; cada pessoa usa o próprio WhatsApp, alimenta a mesma conta e vê só o que o perfil dela libera
 - Documentos: mande um PDF ou foto e diga "guarda esse"; o assessor lê, dá um nome, põe na pasta certa e devolve o arquivo quando você pede ("me manda o contrato do apartamento")
+- Avisos sem precisar pedir: contas a pagar na véspera do vencimento, categoria gastando acima do mês passado, lançamentos recorrentes ("toda segunda tem 89,90 da academia") e resumos da manhã e da noite
 
 ## Requisito
 
@@ -100,6 +101,22 @@ No painel, **Tarefas > Documentos** lista as pastas, busca, abre, renomeia, move
 - Os arquivos ficam em `data/assessor-arquivos/` (ou `data/demo-arquivos/` na demonstração), fora do Git.
 - Quem tem acesso completo vê todos os documentos; perfis só gastos e agenda e tarefas não veem a tela, e o só gastos abre apenas o comprovante dos gastos que já enxerga.
 - Ainda não dá para enviar arquivo pelo painel nem criar pastas próprias.
+
+### Avisos, contas a pagar e recorrências
+
+Pelo WhatsApp: "o condomínio vence dia 8, 480 reais, todo mês" cadastra uma conta a pagar; "paguei o condomínio" lança a despesa e passa o vencimento para o mês seguinte. Fatura de cartão entra como conta mensal sem valor fixo, e o valor é informado ao pagar. "Toda segunda tem 89,90 da academia" cria uma recorrência, lançada sozinha em cada data. No painel, **Finanças > Contas e recorrências** faz o mesmo, e o painel de Finanças mostra o que vence nos próximos 7 dias.
+
+| Aviso | Quando | Padrão do titular | Padrão de membro |
+| --- | --- | --- | --- |
+| Vencimentos | véspera, 9h | ligado | desligado |
+| Categoria acima do normal | 15% acima do mesmo ponto do mês passado (diferença acima de R$ 50 e mês passado com pelo menos R$ 100), no máximo uma vez por semana | ligado | desligado |
+| Lançamentos recorrentes | quando o lançamento é feito, a partir das 9h | ligado | desligado |
+| Resumo da manhã | `DAILY_SUMMARY_HOUR` | ligado | desligado |
+| Resumo da noite | 21h | desligado | desligado |
+
+Cada pessoa liga, desliga e escolhe o horário em **Operação > Avisos** ou pelo WhatsApp ("para de me avisar de categoria", "me manda o resumo da noite às 22h"). Os avisos são montados com os números do banco, sem IA, e cada um sai uma vez só. Se o servidor ficar parado, as recorrências lançam no máximo os últimos 7 dias.
+
+Sem `WHATSAPP_NOTICE_TEMPLATE`, avisos e lembretes só chegam se a pessoa falou com o assessor nas últimas 24 horas. O que a Meta recusar fica guardado e sai na próxima mensagem da pessoa, antes da resposta; depois de 7 dias é descartado.
 
 No WhatsApp, o membro é atendido se o titular estiver em `ALLOWED_NUMBERS`. O número de teste da Meta, porém, só entrega para os 5 destinatários cadastrados no app: cadastre também o número de cada membro (seção 2.1, passo 5).
 
@@ -217,10 +234,11 @@ O agente usa o fallback do servidor da Anthropic (`fallbacks: "default"`): se um
 | `src/conta.ts` | Conta compartilhada: convites, membros, contexto de quem fala e a visão dos dados por perfil |
 | `src/permissoes.ts` | Perfis e o que cada um pode ver e fazer |
 | `src/documentos.ts` | Documentos: arquivo no disco, pastas, busca sem acento (FTS5), pendentes e quem vê cada um |
+| `src/avisos.ts` | Contas a pagar, recorrências, categoria acima do normal, comparativo, preferências de aviso, registro contra repetição e fila de avisos não entregues |
 | `src/painel.ts` | Sobe a API e o painel compilado, sem WhatsApp |
 | `src/seed.ts` | Dados de demonstração em `data/demo.db` |
 | `web/` | Painel em Vue 3 + Vue Router + Vite, gráficos em SVG próprios |
-| `src/scheduler.ts` | Envia lembretes vencidos e o resumo da manhã a cada 30 segundos |
+| `src/scheduler.ts` | A cada 30 segundos: lembretes vencidos, lançamentos recorrentes e os avisos de cada pessoa no horário dela |
 | `src/whatsapp.ts` | Envio de texto e modelo, download de mídia, leitura do webhook |
 | `src/cli.ts` | Mesmo agente no terminal |
 

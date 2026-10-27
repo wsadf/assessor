@@ -273,12 +273,12 @@ avancar o relogio de teste e verificar que o aviso e o lancamento automatico aco
 
 **Painel web**
 
-- [ ] T088 [P] [US3] Em `web/src/api.ts`, tipos `ContaPagar`, `Recorrencia`, `Aviso`, `Avisos`; `recorrente?` e `contaPagarId?` em `Transacao`; `contasProximas?` em `Financas` (depende de T084 a T087)
-- [ ] T089 [US3] Em `web/src/mesas.ts`, item "Contas e recorrências" (`/financas/contas`, icone `repetir`) em `SUBMENU_FINANCAS`; em `web/src/router.ts`, rotas `/financas/contas` (mesa financas) e `/operacao/avisos` (mesa operacao) (depende de T088)
-- [ ] T090 [US3] Criar `web/src/views/financas/ContasView.vue` no padrao de `TransacoesView.vue` (com `CabecalhoSub`): bloco de contas a pagar (vencidas em destaque, proximas, pagas no mes), botao "Pagar" com `PainelLateral` para valor, data e forma; bloco de recorrencias com frequencia em palavras e proxima data, pausar, retomar e cancelar; formularios de nova conta e nova recorrencia; recorrencia de receita so com `pode("receitas")` (depende de T089)
-- [ ] T091 [P] [US3] Criar `web/src/views/operacao/AvisosView.vue` no padrao de `AcessosView.vue`: um item por tipo com nome, descricao, interruptor e seletor de hora; tipos indisponiveis aparecem desabilitados com o motivo; sem `modeloAprovado`, aviso "Sem modelo aprovado na Meta, os avisos so chegam se você falou com o assessor nas últimas 24 horas" (depende de T089)
-- [ ] T092 [P] [US3] Em `web/src/views/financas/FinancasPainel.vue`, bloco "Vence nos próximos dias" com `contasProximas` (descricao, data, valor ou "valor variável") e link para `/financas/contas`; nao aparece sem contas (depende de T088)
-- [ ] T093 [P] [US3] Em `web/src/views/OperacaoMesa.vue`, atalho "Avisos →" para `/operacao/avisos` ao lado de "Equipe e acesso"; em `web/src/views/financas/TransacoesView.vue`, chip "recorrente" quando `t.recorrente` (depende de T089)
+- [X] T088 [P] [US3] Em `web/src/api.ts`, tipos `ContaPagar`, `Recorrencia`, `Aviso`, `Avisos`; `recorrente?` e `contaPagarId?` em `Transacao`; `contasProximas?` em `Financas` (depende de T084 a T087)
+- [X] T089 [US3] Em `web/src/mesas.ts`, item "Contas e recorrências" (`/financas/contas`, icone `repetir`) em `SUBMENU_FINANCAS`; em `web/src/router.ts`, rotas `/financas/contas` (mesa financas) e `/operacao/avisos` (mesa operacao) (depende de T088)
+- [X] T090 [US3] Criar `web/src/views/financas/ContasView.vue` no padrao de `TransacoesView.vue` (com `CabecalhoSub`): bloco de contas a pagar (vencidas em destaque, proximas, pagas no mes), botao "Pagar" com `PainelLateral` para valor, data e forma; bloco de recorrencias com frequencia em palavras e proxima data, pausar, retomar e cancelar; formularios de nova conta e nova recorrencia; recorrencia de receita so com `pode("receitas")` (depende de T089)
+- [X] T091 [P] [US3] Criar `web/src/views/operacao/AvisosView.vue` no padrao de `AcessosView.vue`: um item por tipo com nome, descricao, interruptor e seletor de hora; tipos indisponiveis aparecem desabilitados com o motivo; sem `modeloAprovado`, aviso "Sem modelo aprovado na Meta, os avisos so chegam se você falou com o assessor nas últimas 24 horas" (depende de T089)
+- [X] T092 [P] [US3] Em `web/src/views/financas/FinancasPainel.vue`, bloco "Vence nos próximos dias" com `contasProximas` (descricao, data, valor ou "valor variável") e link para `/financas/contas`; nao aparece sem contas (depende de T088)
+- [X] T093 [P] [US3] Em `web/src/views/OperacaoMesa.vue`, atalho "Avisos →" para `/operacao/avisos` ao lado de "Equipe e acesso"; em `web/src/views/financas/TransacoesView.vue`, chip "recorrente" quando `t.recorrente` (depende de T089)
 
 **Checkpoint**: US3 completa; T070 a T075 verdes; roteiro de [quickstart.md](quickstart.md#us3-avisos-proativos) passando.
 
@@ -286,9 +286,9 @@ avancar o relogio de teste e verificar que o aviso e o lancamento automatico aco
 
 ## Phase 12: Polish (US3)
 
-- [ ] T094 [P] Em `src/seed.ts`, criar na conta demo as contas a pagar "Condomínio" (mensal, dia 8, R$ 480), "Fatura Nubank" (mensal, dia 15, valor variável) e "IPVA" (única, daqui a 20 dias, R$ 1.240) e as recorrencias "Academia" (semanal, segunda, R$ 89,90) e "Streaming" (mensal, dia 18, R$ 55,90); ligar `resumo_noite` para o titular demo
-- [ ] T095 [P] Em `README.md`, documentar contas a pagar, recorrencias, tipos de aviso com padroes e horarios, a fila de avisos pendentes e a dependencia do modelo aprovado fora da janela de 24 horas; tabela "Como esta organizado" com `src/avisos.ts`
-- [ ] T096 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
+- [X] T094 [P] Em `src/seed.ts`, criar na conta demo as contas a pagar "Condomínio" (mensal, dia 8, R$ 480), "Fatura Nubank" (mensal, dia 15, valor variável) e "IPVA" (única, daqui a 20 dias, R$ 1.240) e as recorrencias "Academia" (semanal, segunda, R$ 89,90) e "Streaming" (mensal, dia 18, R$ 55,90); ligar `resumo_noite` para o titular demo
+- [X] T095 [P] Em `README.md`, documentar contas a pagar, recorrencias, tipos de aviso com padroes e horarios, a fila de avisos pendentes e a dependencia do modelo aprovado fora da janela de 24 horas; tabela "Como esta organizado" com `src/avisos.ts`
+- [X] T096 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
 - [ ] T097 Executar o roteiro de [quickstart.md](quickstart.md#us3-avisos-proativos) (painel demo como titular e como Bia, terminal com `DB_PATH=data/demo.db`), com `AI_PROVIDER=gemini` e com `AI_PROVIDER=claude` quando houver `ANTHROPIC_API_KEY`
 
 ---
