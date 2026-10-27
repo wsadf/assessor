@@ -57,6 +57,30 @@ export function nowContext(date = new Date()): string {
   return `${localDate(date)} ${hhmm}, ${weekday} (${tz()})`;
 }
 
+/** Proxima ocorrencia no mesmo horario local. */
+export function nextOccurrence(current: Date, rec: "diario" | "semanal" | "mensal" | null): Date | null {
+  if (!rec) return null;
+  const day = localDate(current);
+  const time = new Intl.DateTimeFormat("en-GB", {
+    timeZone: tz(),
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(current);
+  const [y, m, d] = day.split("-").map(Number);
+  const base = new Date(Date.UTC(y, m - 1, d));
+  if (rec === "diario") base.setUTCDate(base.getUTCDate() + 1);
+  if (rec === "semanal") base.setUTCDate(base.getUTCDate() + 7);
+  if (rec === "mensal") {
+    // Dia 31 vira o ultimo dia do mes seguinte, em vez de pular para o mes depois.
+    const target = new Date(Date.UTC(y, m, 1));
+    const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+    target.setUTCDate(Math.min(d, lastDay));
+    return fromLocal(`${target.toISOString().slice(0, 10)}T${time}`);
+  }
+  return fromLocal(`${base.toISOString().slice(0, 10)}T${time}`);
+}
+
 export function brl(cents: number): string {
   return (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }

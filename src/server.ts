@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import { runAgent, type UserInput } from "./agent.js";
 import { agendamentoAtivoDe, responderCliente } from "./agendamento.js";
+import { atualizarSituacoes, contatoAtivoDe, responderContato } from "./contatos.js";
 import { registerApi } from "./api.js";
 import { AuthError } from "./auth.js";
 import { retirarPendentes } from "./avisos.js";
@@ -12,8 +13,10 @@ import { transcribe, transcriptionEnabled } from "./transcribe.js";
 import {
   downloadMedia,
   markReadWithTyping,
+  parseStatuses,
   parseWebhook,
   sendDocument,
+  sendNotice,
   sendText,
   verifySignature,
   type Incoming,
@@ -72,6 +75,9 @@ async function toUserInput(repo: Repo, msg: Incoming): Promise<Entrada | string>
       }
       return { input: { text: `[arquivo ${filename}, ${mb(media.data.length)}, nao lido] ${caption}`.trim() }, anexoId };
     }
+    case "contact":
+      if (!msg.contatos.length) return "Nao achei o numero nesse contato. Pode mandar o WhatsApp com DDD?";
+      return { input: { text: msg.contatos.map((c) => `[contato compartilhado: ${c.nome || "sem nome"}, ${c.telefone}]`).join(" ") } };
     default:
       return "Por enquanto eu entendo texto, audio, foto e arquivo PDF.";
   }
@@ -108,6 +114,11 @@ export function buildServer(repo: Repo) {
       return reply.code(401).send();
     }
 
+    const situacoes = parseStatuses(json);
+    if (situacoes.length) {
+      await atualizarSituacoes(repo, sendNotice, situacoes).catch((err) => req.log.error({ err }, "falha ao atualizar a situacao das mensagens"));
+    }
+
     for (const msg of parseWebhook(json)) {
       // Membro ativo entra pela autorizacao do titular, sem precisar estar na lista.
       const autorizado = (phone: string) => config.allowedNumbers.includes(phone);
@@ -115,14 +126,18 @@ export function buildServer(repo: Repo) {
       const daCasa = config.allowedNumbers.length
         ? autorizado(msg.from) || autorizado(contaDoRemetente)
         : !!repo.getUser(msg.from) || contaDoRemetente !== msg.from;
-      // Cliente de uma pagina de agendamento nunca chega ao assessor de IA nem aos dados de quem atende.
-      if (!daCasa && agendamentoAtivoDe(repo.db, msg.from, new Date())) {
+      // Cliente de uma pagina de agendamento ou contato que recebeu mensagem nunca chega ao assessor
+      // de IA nem aos dados da conta.
+      const cliente = !daCasa && agendamentoAtivoDe(repo.db, msg.from, new Date());
+      if (cliente || (!daCasa && contatoAtivoDe(repo.db, msg.from, new Date()))) {
         if (!repo.markProcessed(msg.id)) continue;
+        const texto = msg.type === "text" ? msg.text : "";
         enqueue(msg.from, async () => {
           try {
-            await responderCliente(repo, sendText, msg.from, msg.type === "text" ? msg.text : "", new Date());
+            if (cliente) await responderCliente(repo, sendText, msg.from, texto, new Date());
+            else await responderContato(repo, sendText, msg.from, texto, new Date());
           } catch (err) {
-            app.log.error({ err, from: msg.from }, "falha ao responder cliente de agendamento");
+            app.log.error({ err, from: msg.from }, "falha ao responder quem nao e usuario");
           }
         });
         continue;
