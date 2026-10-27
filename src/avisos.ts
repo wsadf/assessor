@@ -228,7 +228,8 @@ export function limparRegistros(db: Db, agora: Date) {
   db.prepare(`DELETE FROM pending_notices WHERE created_at < ?`).run(new Date(agora.getTime() - 7 * 86_400_000).toISOString());
 }
 
-export type Envio = (para: string, texto: string) => Promise<void>;
+/** O retorno e o id da Meta, quando quem envia tem; so os contatos (US6) usam. */
+export type Envio = (para: string, texto: string) => Promise<string | null | void>;
 
 /** Envia uma vez por chave; recusa da Meta (fora da janela de 24 h, por exemplo) vira pendente. */
 export async function entregar(db: Db, send: Envio, phone: string, tipo: string, chave: string, texto: string, agora: Date) {

@@ -1,9 +1,9 @@
 ---
 
-description: "Tarefas da feature 001: US1 a US4 (concluidas) e US5 (pagina publica de agendamento)"
+description: "Tarefas da feature 001: US1 a US5 (concluidas) e US6 (mensagens a outras pessoas)"
 ---
 
-# Tasks: Paridade com o Meu Assessor (US1 a US5)
+# Tasks: Paridade com o Meu Assessor (US1 a US6)
 
 **Input**: Design documents from `/specs/001-paridade-meu-assessor/`
 
@@ -15,12 +15,13 @@ nova, e isolamento por usuario e o principio I.
 
 **Escopo**: fases 1 a 4 sao da US1 (T001 a T033, PR #1); fases 5 a 8 da US2 (T034 a T064, PR #2);
 fases 9 a 12 da US3 (T065 a T097, PR #3); fases 13 a 16 da US4 (T098 a T120, PR #4); fases 17 a 20
-da US5 (T121 em diante). As historias 6 a 9 entram aqui depois dos proprios planos.
+da US5 (T121 a T144, PR #5); fases 21 a 24 da US6 (T145 em diante). As historias 7 a 9 entram aqui
+depois dos proprios planos.
 
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: pode rodar em paralelo (arquivos diferentes, sem dependencia de tarefa aberta)
-- **[Story]**: historia da spec (US1 a US5)
+- **[Story]**: historia da spec (US1 a US6)
 - Caminhos relativos a raiz do repositorio: back-end em `src/`, painel em `web/src/`, testes em
   `test/`
 
@@ -451,6 +452,83 @@ usuario e a mensagem de confirmacao chegar no WhatsApp do cliente de teste (spec
 
 ---
 
+## Phase 21: Setup (US6)
+
+**Purpose**: arquivo de testes e WhatsApp simulado. Decisoes em [research.md](research.md) R59 a
+R70; tabelas em [data-model.md](data-model.md#us6-mensagens-a-outras-pessoas).
+
+- [X] T145 Criar `test/contatos.test.ts` com o cabecalho de `test/agendamento.test.ts` (inclusive `WHATSAPP_TOKEN` e `WHATSAPP_PHONE_NUMBER_ID`), o `googleFalso()` de `test/googleFalso.ts` (que ja anota `mensagens` e devolve `wamid.N`; acrescentar o `wamid` em cada item de `mensagens`), um helper `webhook(app, corpo)` com a assinatura HMAC e um helper `statuses(app, lista)`; incluir o arquivo no script `test` de `package.json` depois de `test/agendamento.test.ts`
+
+---
+
+## Phase 22: Foundational (US6)
+
+**Purpose**: tabelas, WhatsApp com `wamid` e `statuses`, contato e previa. Bloqueia a Phase 23.
+
+- [X] T146 Criar `src/contatos.ts` com `prepararTabelasContatos(db)` (chamada em `openDb` de `src/db.ts`, depois de `prepararTabelasAgendamento`), criando exatamente as tabelas de [data-model.md](data-model.md#us6-mensagens-a-outras-pessoas): `contacts` (`conta`, `name` "1 a 60 caracteres", `phone` "so digitos, 10 a 15", `created_by`, `created_at`, `UNIQUE (conta, phone)`), `contact_sends` (`text` "1 a 500 caracteres", `next_run_at`, `recurrence` em `diario|semanal|mensal` ou nulo, `status` em `ativo|concluido|cancelado`, indice `(status, next_run_at)`) e `contact_messages` (`status` em `enviada|entregue|lida|falhou|pulada`, `wamid` unico quando nao nulo, `error`, `reply_text`, `replied_at`, `ack_sent_on`, indices `(conta, sent_at)` e `(phone, sent_at)`)
+- [X] T147 [P] Em `src/whatsapp.ts`: `sendText`, `sendTemplate` e `sendNotice` devolvem o `wamid` (`messages[0].id` da resposta; no texto em partes, o da primeira); `parseWebhook` reconhece `type: "contacts"` como `{ type: "contact", contatos: { nome, telefone }[] }` (primeiro telefone `wa_id` ou `phone` so com digitos); nova `parseStatuses(body)` devolve `{ id, status, para, erro }[]` de `value.statuses` (erro = `errors[0].title`)
+- [X] T148 Mover `nextOccurrence` de `src/tools.ts` para `src/time.ts` e reexportar em `src/tools.ts` (o agendador e `src/contatos.ts` passam a importar de `src/time.ts`, sem ciclo `tools` > `contatos` > `tools`)
+- [X] T149 Em `src/contatos.ts`: `telefoneComDdi(texto)` (so digitos, 10 a 15, `55` na frente de 10 ou 11 digitos; senao `null`); `acharContato(db, conta, nome)` sem acento e por trecho do nome, devolvendo `{ um }`, `{ varios }` ou `{ nenhum }`; `salvarContato(db, ctx, nome, telefone)` com `ON CONFLICT (conta, phone)` atualizando o nome; `textoFinal(contato, usuario, texto)` = `Oi, {contato}! Aqui e o assessor de {usuario}. {texto} Para nao receber mais mensagens do assessor, responda PARAR.` conforme [contracts/ferramentas-contatos.md](contracts/ferramentas-contatos.md#mensagem-ao-contato-texto-fixo-em-volta-do-pedido), com `{usuario}` = nome de `ctx.membro` (depende de T146)
+- [X] T150 Em `test/contatos.test.ts`, testar a fundacao: `telefoneComDdi` com 11, 13 e 9 digitos; `acharContato` com um, dois e nenhum; mesmo numero com outro nome atualiza; `textoFinal` com identificacao e PARAR; `parseWebhook` com cartao de contato e `parseStatuses` com `delivered` e `failed`; `sendText` devolve o `wamid` do WhatsApp simulado (depende de T145, T149)
+
+**Checkpoint**: contatos e WhatsApp prontos; nada e enviado ainda.
+
+---
+
+## Phase 23: User Story 6 - Assessor fala com outras pessoas pelo usuario (Priority: P6)
+
+**Goal**: o usuario pede uma mensagem unica, agendada ou recorrente a um contato; o assessor mostra
+a previa, envia so com confirmacao, informa falhas, repassa respostas e respeita o PARAR.
+
+**Independent Test**: pedir um aviso para um segundo numero de teste e verificar a mensagem
+recebida, a identificacao do remetente, a opcao de parar e o relato devolvido ao usuario (spec, US6).
+
+### Tests for User Story 6
+
+> Escrever antes da implementacao correspondente e ver falhar.
+
+- [X] T151 [US6] Em `test/contatos.test.ts`, testar pedido e envio: `pedirEnvio` sem `confirmado` nao grava e devolve a previa com o texto final; com `confirmado` grava `ativo`; data no passado recusada; numero em `client_optouts` (gravado como na US5) recusado; `enviarVencidos(now)` manda uma vez, grava `contact_messages` com `wamid` e `enviada`, conclui o unico e avanca o mensal para o mesmo dia do mes seguinte; 21a mensagem da conta no dia e 4a para o mesmo contato viram `pulada` com um aviso so a quem pediu; envio com a Meta recusando vira `falhou` e avisa; numero que entrou em `client_optouts` depois do pedido nao recebe e o envio e cancelado (SC-007)
+- [X] T152 [US6] Em `test/contatos.test.ts`, testar o webhook: `statuses` `delivered`, `read` e `failed` atualizam a mensagem pelo `wamid`, e `failed` avisa quem pediu; resposta do contato e repassada literal (cortada em 500) a quem pediu, e o contato recebe "Recebido!" so uma vez no dia; `PARAR` grava o opt-out, cancela os recorrentes e avisa quem pediu; cliente com agendamento ativo continua indo para a US5; numero sem envio nos ultimos 7 dias e fora de `ALLOWED_NUMBERS` continua ignorado; cartao de contato compartilhado pelo titular vira texto com nome e numero; nenhum desses caminhos chama o Gemini
+- [X] T153 [US6] Em `test/contatos.test.ts`, testar ferramentas e API: `mensagem_para_contato` pede o numero quando o contato nao existe, pede para escolher com dois contatos de mesmo nome, mostra a previa com `confirmado` falso e grava com verdadeiro; `consultar_mensagens_contato` lista envios ativos e mensagens com situacao e resposta; `cancelar_mensagem_contato` pede confirmacao e cancela; `GET /api/contatos/mensagens` sem telefone do contato e `DELETE /api/contatos/envios/:id` (`404` para envio de outra conta); so gastos recebe `Sem permissao` e `403`
+
+### Implementation for User Story 6
+
+**Dominio**
+
+- [X] T154 [US6] Em `src/contatos.ts`, `pedirEnvio(db, ctx, dados, agora)` (R60, R64): `exigir(ctx, "agenda")`; zod (`contato` 1 a 60, `telefone` opcional, `texto` 1 a 500, `dataHora` `AAAA-MM-DDTHH:mm` opcional, `recorrencia` opcional, `confirmado`); contato pelo telefone ou por `acharContato`; opt-out recusa com "pediu para nao receber mensagens do assessor"; envio para agora conferido contra os limites de 20 por conta e 3 por contato no dia local; sem `confirmado` devolve `{ previa }` com o texto final, quando e recorrencia e, sem `config.whatsapp.noticeTemplate`, o aviso de 24 horas; com `confirmado` salva o contato e grava `contact_sends` `ativo` com `next_run_at`; e `cancelarEnvio(db, ctx, id)`, `listarEnvios(db, ctx, contato?)` e `ultimasMensagens(db, ctx, contato?, limite)` sempre filtrando por `ctx.conta` (depende de T149)
+- [X] T155 [US6] Em `src/contatos.ts`, `enviarVencidos(repo, send, now)` (R62 a R64, R67): para cada `contact_sends` `ativo` com `next_run_at <= now`: numero em `client_optouts` cancela; acima do limite grava `pulada` e avisa quem pediu uma vez por dia (`notice_log`); senao envia `textoFinal` por `send`, grava `contact_messages` com o `wamid` ou `falhou` com o erro e avisa a falha; depois avanca com `nextOccurrence` (pulando ocorrencias ja passadas) ou marca `concluido` (depende de T148, T154)
+- [X] T156 [US6] Em `src/contatos.ts`, `atualizarSituacoes(repo, send, statuses, agora)`: `delivered` > `entregue`, `read` > `lida`, `failed` > `falhou` com o erro e o aviso `⚠️ A mensagem para {contato} nao foi entregue: {motivo}.` a quem pediu; nunca volta de `lida` para `entregue` (depende de T155)
+- [X] T157 [US6] Em `src/contatos.ts`, `contatoAtivoDe(db, phone, agora)` (mensagem a esse numero nos ultimos 7 dias ou envio recorrente ativo, de qualquer conta) e `responderContato(repo, send, phone, texto, agora)` (R66) conforme [contracts/ferramentas-contatos.md](contracts/ferramentas-contatos.md#respostas-do-contato-sem-ia): `PARAR` grava em `client_optouts`, cancela os envios ativos para o numero em todas as contas, responde uma ultima vez e avisa cada pessoa que pediu; outra coisa grava `reply_text` (ate 500) e `replied_at` na ultima mensagem, repassa `💬 {contato} respondeu: "{texto}"` a quem pediu por `entregar` e manda `Recebido! Vou repassar para {usuario}.` se `ack_sent_on` nao for hoje (depende de T156)
+
+**Agendador e webhook**
+
+- [X] T158 [US6] Em `src/scheduler.ts`, chamar `enviarVencidos(repo, send)` no tick, depois de `confirmarVespera`; na limpeza horaria, `limparContatos(db, agora)` em `src/contatos.ts` apaga `reply_text` de mensagens com mais de 90 dias (depende de T155)
+- [X] T159 [US6] Em `src/server.ts`: `parseStatuses` do corpo vai para `atualizarSituacoes` com `sendNotice` antes das mensagens; numero que nao e da casa, sem `agendamentoAtivoDe` e com `contatoAtivoDe`, vai para `responderContato` na fila do numero (so texto; o resto recebe "Recebido!" pelas mesmas regras) e nunca para `runAgent`; em `toUserInput`, `contact` vira `[contato compartilhado: {nome}, {telefone}]` para o modelo (depende de T147, T157)
+
+**Assessor**
+
+- [X] T160 [US6] Em `src/tools.ts`, as 3 ferramentas de [contracts/ferramentas-contatos.md](contracts/ferramentas-contatos.md) com capacidade `agenda` e schemas zod (`contato` 1 a 60, `telefone` opcional, `texto` 1 a 500, `data_hora` `AAAA-MM-DDTHH:mm` opcional, `recorrencia` em `diario|semanal|mensal` opcional, `id` inteiro, `confirmado` booleano), sincronas, com as recusas do contrato voltando como resposta; em `src/prompt.ts`, as regras do contrato (previa antes, enviar so depois do "pode mandar" na conversa, "para de cobrar o Joao" consulta e cancela, cartao de contato traz o numero) (depende de T154)
+
+**API**
+
+- [X] T161 [US6] Em `src/api.ts`, `GET /api/contatos/mensagens` e `DELETE /api/contatos/envios/:id` conforme [contracts/api-contatos.md](contracts/api-contatos.md), com `["agenda"]` em `CAPACIDADE_ROTA`, sempre em `ctx.conta`, sem devolver o telefone do contato (depende de T154)
+
+**Painel web**
+
+- [X] T162 [P] [US6] Em `web/src/api.ts`, tipos `EnvioContato` e `MensagemContato` do contrato (depende de T161)
+- [X] T163 [US6] Em `web/src/views/AgendaMesa.vue`, bloco "Mensagens para outras pessoas": balao explicando que o pedido e pelo WhatsApp ("lembra o Joao de pagar o personal todo dia 5"); envios ativos com contato, proximo, recorrencia e cancelar com confirmacao; ultimas mensagens com situacao (chip para `falhou` e `pulada`) e resposta; vazio com `EstadoVazio` (depende de T162)
+
+**Checkpoint**: US6 completa; T150 a T153 verdes; roteiro de [quickstart.md](quickstart.md#us6-mensagens-a-outras-pessoas) passando.
+
+---
+
+## Phase 24: Polish (US6)
+
+- [X] T164 [P] Em `README.md`, secao Mensagens para outras pessoas: como pedir, a previa e a confirmacao, o texto com identificacao e PARAR, envio agendado e recorrente, a janela de 24 horas e o modelo aprovado, situacao e repasse da resposta, limites por dia, quem pode pedir e o que ficou de fora; tabela "Como esta organizado" com `src/contatos.ts`
+- [X] T165 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
+- [ ] T166 Executar o roteiro de [quickstart.md](quickstart.md#us6-mensagens-a-outras-pessoas) com WhatsApp real e um segundo numero cadastrado como destinatario, com `AI_PROVIDER=gemini` e com `AI_PROVIDER=claude` quando houver `ANTHROPIC_API_KEY`
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -475,6 +553,10 @@ usuario e a mensagem de confirmacao chegar no WhatsApp do cliente de teste (spec
 - **Foundational US5 (Phase 18)**: depende da Phase 17; bloqueia a US5
 - **US5 (Phase 19)**: depende da Phase 18
 - **Polish US5 (Phase 20)**: depende da US5; T144 depende tambem do Google Cloud e do modelo aprovado
+- **Setup US6 (Phase 21)**: depende da US5 na `main` (usa `client_optouts` e `test/googleFalso.ts`)
+- **Foundational US6 (Phase 22)**: depende da Phase 21; bloqueia a US6
+- **US6 (Phase 23)**: depende da Phase 22
+- **Polish US6 (Phase 24)**: depende da US6; T166 depende tambem do WhatsApp real com dois numeros
 
 ### Dentro da US1
 
@@ -529,6 +611,15 @@ T017 (webhook) depende so de T006
 - Testes: T126 antes de T130; T127 antes de T133 a T135; T128 antes de T136 e T138; T129 antes de
   T137.
 
+### Dentro da US6
+
+- Fundacao: T145 > T146 > T149 > T150; T147 e T148 em paralelo com T146.
+- Dominio: T149 > T154 > T155 > T156 > T157.
+- Agendador e webhook: T155 > T158; T147 e T157 > T159.
+- Assessor e API: T154 > T160 e T161.
+- Painel: T161 > T162 > T163.
+- Testes: T151 antes de T154 e T155; T152 antes de T156, T157 e T159; T153 antes de T160 e T161.
+
 ### Parallel Opportunities
 
 - T002 e T003 em paralelo (arquivos diferentes).
@@ -548,6 +639,9 @@ T017 (webhook) depende so de T006
 - US5: o dominio inteiro fica em `src/agendamento.ts` e a API em `src/api.ts`; T139 depois da API,
   T140 e T141 em sequencia (`router.ts` e `api.ts` compartilhados), T142 em paralelo com a Phase 19.
 - T125 a T129 tocam o mesmo arquivo (`test/agendamento.test.ts`): sequenciais.
+- US6: T147 (`src/whatsapp.ts`) e T148 (`src/time.ts`, `src/tools.ts`) em paralelo com T146; o dominio
+  fica em `src/contatos.ts` e e sequencial; T164 em paralelo com a Phase 23.
+- T150 a T153 tocam o mesmo arquivo (`test/contatos.test.ts`): sequenciais.
 
 ---
 
@@ -601,6 +695,18 @@ Task: "Secao Google Agenda no README.md"
 # Durante a Phase 19, arquivos diferentes:
 Task: "Secao Pagina de agendamento no README.md"
 Task: "Tipos e chamadas publicas em web/src/api.ts (depois da API)"
+```
+
+## Parallel Example: User Story 6
+
+```bash
+# Fundacao, arquivos diferentes:
+Task: "Tabelas em src/contatos.ts"
+Task: "wamid, cartao de contato e parseStatuses em src/whatsapp.ts"
+Task: "nextOccurrence para src/time.ts"
+
+# Durante a Phase 23:
+Task: "Secao Mensagens para outras pessoas no README.md"
 ```
 
 ---
@@ -660,6 +766,16 @@ Task: "Tipos e chamadas publicas em web/src/api.ts (depois da API)"
 5. **Parar e validar** com a [secao US5 do quickstart](quickstart.md#us5-pagina-publica-de-agendamento).
 6. Commits por bloco, na branch `001-us5-agendamento`.
 
+### US6
+
+1. Phases 21 e 22: tabelas, contato, previa e WhatsApp com `wamid` testados, sem enviar nada.
+2. Pedido e agendador (T154, T155, T158) com as ferramentas (T160): ja entrega o envio pelo
+   WhatsApp com previa, confirmacao, limites e opt-out.
+3. Situacao e respostas (T156, T157, T159).
+4. API e painel (T161 a T163).
+5. **Parar e validar** com a [secao US6 do quickstart](quickstart.md#us6-mensagens-a-outras-pessoas).
+6. Commits por bloco, na branch `001-us6-falar-por-voce`.
+
 ---
 
 ## Notes
@@ -676,3 +792,5 @@ Task: "Tipos e chamadas publicas em web/src/api.ts (depois da API)"
   recebidos, sincronizar lembretes antigos, pagina publica de agendamento (US5).
 - Fora da US5: janelas diferentes por dia, intervalo entre atendimentos, feriados, cobranca na
   reserva (US9), lembrete por e-mail, varias paginas por pessoa.
+- Fora da US6: criar envio pelo painel, resumo das respostas por IA, grupos do WhatsApp, e-mail e
+  SMS, agenda do celular e Google Contatos.

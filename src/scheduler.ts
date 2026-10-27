@@ -27,13 +27,13 @@ import {
   textosDono,
 } from "./agendamento.js";
 import { config } from "./config.js";
+import { enviarVencidos, limparContatos } from "./contatos.js";
 import { repoDoContexto, resolverContexto } from "./conta.js";
 import type { Repo } from "./db.js";
 import { documentos } from "./documentos.js";
 import { estado as estadoGoogle, eventosDoDia, limparAutorizacoes, type Evento } from "./google.js";
 import { contextoTitular } from "./permissoes.js";
-import { localDate, localHour } from "./time.js";
-import { nextOccurrence } from "./tools.js";
+import { localDate, localHour, nextOccurrence } from "./time.js";
 
 export async function runRemindersOnce(repo: Repo, send: Envio, now = new Date()) {
   for (const r of repo.dueReminders(now)) {
@@ -154,12 +154,14 @@ export function startScheduler(repo: Repo, send: Envio) {
       await runRemindersOnce(repo, send);
       await rodarAvisos(repo, send);
       await confirmarVespera(repo, send);
+      await enviarVencidos(repo, send);
       if (Date.now() - ultimaLimpeza > 3_600_000) {
         ultimaLimpeza = Date.now();
         documentos(repo.db).limparPendentes();
         limparRegistros(repo.db, new Date());
         limparAutorizacoes(repo.db);
         limparAgendamentos(repo.db, new Date());
+        limparContatos(repo.db, new Date());
       }
     } catch (err) {
       console.error("[agendador] falha no tick", err);

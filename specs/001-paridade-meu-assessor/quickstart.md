@@ -259,3 +259,47 @@ mudar a hora do servidor para a vespera as 18h (ou criar o agendamento para aman
 agendador), responder `1`, depois pedir ao assessor "nao vou poder atender a Camila amanha" e
 responder `2` com o numero de teste. Repetir o pedido ao assessor com `AI_PROVIDER=gemini` e
 `AI_PROVIDER=claude`.
+
+# US6: mensagens a outras pessoas
+
+Contratos em [contracts/ferramentas-contatos.md](contracts/ferramentas-contatos.md) e
+[contracts/api-contatos.md](contracts/api-contatos.md).
+
+## 1. Testes automaticos
+
+Os testes novos (arquivo `test/contatos.test.ts`), com o WhatsApp simulado de `test/googleFalso.ts`,
+devem cobrir:
+
+- previa: sem `confirmado` nada e gravado nem enviado; o texto final tem a identificacao de quem
+  pediu e o PARAR;
+- contato: sem cadastro e sem telefone a ferramenta pede o numero; com telefone salva; dois
+  contatos com o mesmo nome pedem para escolher; numero com 11 digitos ganha o 55;
+- envio: o agendador manda o vencido uma vez, guarda o `wamid` e calcula o proximo da recorrencia;
+  `statuses` do webhook passam a mensagem para entregue, lida ou falhou, e a falha avisa quem pediu;
+- opt-out: numero em `client_optouts` (inclusive vindo da US5) e recusado; PARAR do contato cancela
+  os recorrentes e avisa quem pediu; nenhuma mensagem sai para numero na lista (SC-007);
+- limites: 21a mensagem da conta no dia e 4a para o mesmo contato recusadas; recorrente pula o dia;
+- resposta do contato pelo webhook: repassada literal a quem pediu, "Recebido!" uma vez por dia,
+  nada chama o modelo de IA; agendamento ativo da US5 continua com a vez; numero sem envio recente
+  continua ignorado;
+- cartao de contato compartilhado vira texto com nome e numero para o modelo;
+- perfil so gastos recebe `Sem permissao` e `403`; outra conta nao ve nem cancela os envios.
+
+## 2. Terminal
+
+Com `npm run chat`: "lembra o Joao de pagar o personal todo dia 5" pede o numero; com o numero, o
+assessor mostra a previa e so grava depois do "pode mandar". "O que eu pedi para mandar ao Joao?"
+lista o envio; "para de cobrar o Joao" cancela. Repetir com `AI_PROVIDER=gemini` e
+`AI_PROVIDER=claude`.
+
+## 3. Painel
+
+Agenda > Mensagens para outras pessoas: o envio recorrente aparece com o proximo dia; cancelar tira
+da lista. Conferir com `npm run painel:demo`.
+
+## 4. WhatsApp
+
+Com o numero de teste e um segundo numero cadastrado como destinatario: pedir "avisa o Pedro
+(numero de teste) que a reuniao mudou para as 15h", confirmar, ver a mensagem chegar com a
+identificacao e o PARAR, responder do segundo numero e ver o repasse; responder PARAR e pedir novo
+envio: o assessor diz que a pessoa pediu para nao receber.

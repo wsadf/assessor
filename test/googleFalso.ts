@@ -8,7 +8,7 @@ const fimDe = (e: any) => new Date(e.end.dateTime ?? `${e.end.date}T00:00:00Z`);
 export function googleFalso() {
   const chamadas: { metodo: string; url: string; corpo: any }[] = [];
   const eventos = new Map<string, any>();
-  const mensagens: { para: string; texto: string; modelo: boolean }[] = [];
+  const mensagens: { para: string; texto: string; modelo: boolean; wamid: string }[] = [];
   const estado = {
     refresh: "ok" as "ok" | "invalid_grant" | "fora",
     agenda: "ok" as "ok" | "fora",
@@ -31,12 +31,14 @@ export function googleFalso() {
       if (!corpo.to) return json(200, { success: true });
       if (estado.whatsapp === "fora") return json(400, { error: { message: "fora da janela" } });
       const modelo = corpo.type === "template";
-      mensagens.push({ para: corpo.to, texto: modelo ? corpo.template.components[0].parameters[0].text : corpo.text?.body, modelo });
-      return json(200, { messages: [{ id: `wamid.${mensagens.length}` }] });
+      const wamid = `wamid.${mensagens.length + 1}`;
+      mensagens.push({ para: corpo.to, texto: modelo ? corpo.template.components[0].parameters[0].text : corpo.text?.body, modelo, wamid });
+      return json(200, { messages: [{ id: wamid }] });
     }
     if (u.host === "generativelanguage.googleapis.com") {
       estado.ia++;
-      return json(500, {});
+      // 400 nao e repetido pelo provedor: nada escapa para a rede real depois do teste.
+      return json(400, { error: { message: "modelo simulado" } });
     }
     if (u.host === "oauth2.googleapis.com" && u.pathname === "/token") {
       if (corpo.grant_type === "authorization_code") {

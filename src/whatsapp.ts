@@ -8,7 +8,15 @@ export type Incoming =
   | { id: string; from: string; name?: string; type: "audio"; mediaId: string }
   | { id: string; from: string; name?: string; type: "image"; mediaId: string; caption?: string }
   | { id: string; from: string; name?: string; type: "document"; mediaId: string; filename?: string; mimeType?: string; caption?: string }
+  | { id: string; from: string; name?: string; type: "contact"; contatos: { nome: string; telefone: string }[] }
   | { id: string; from: string; name?: string; type: "unsupported"; original: string };
+
+export interface Situacao {
+  id: string;
+  status: string;
+  para: string;
+  erro: string | null;
+}
 
 /** Extrai as mensagens de um payload de webhook; ignora status de entrega e leitura. */
 export function parseWebhook(body: any): Incoming[] {
@@ -28,7 +36,29 @@ export function parseWebhook(body: any): Incoming[] {
           const d = m.document;
           out.push({ ...base, type: "document", mediaId: d.id, filename: d.filename, mimeType: d.mime_type, caption: d.caption });
         }
+        else if (m.type === "contacts") {
+          const contatos = (m.contacts ?? [])
+            .map((c: any) => ({
+              nome: c.name?.formatted_name ?? c.name?.first_name ?? "",
+              telefone: String(c.phones?.[0]?.wa_id ?? c.phones?.[0]?.phone ?? "").replace(/\D/g, ""),
+            }))
+            .filter((c: { telefone: string }) => c.telefone);
+          out.push({ ...base, type: "contact", contatos });
+        }
         else out.push({ ...base, type: "unsupported", original: m.type });
+      }
+    }
+  }
+  return out;
+}
+
+/** Entregue, lida ou falhou: a Meta avisa no mesmo webhook, fora de `messages`. */
+export function parseStatuses(body: any): Situacao[] {
+  const out: Situacao[] = [];
+  for (const entry of body?.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      for (const s of change.value?.statuses ?? []) {
+        out.push({ id: s.id, status: s.status, para: s.recipient_id, erro: s.errors?.[0]?.title ?? null });
       }
     }
   }
@@ -52,10 +82,14 @@ async function graphFetch(url: string, init: RequestInit = {}) {
   return res;
 }
 
-export async function sendText(to: string, text: string) {
+const wamidDe = async (res: Response) => ((await res.json().catch(() => ({}))) as { messages?: { id: string }[] }).messages?.[0]?.id ?? null;
+
+/** Devolve o id da Meta da primeira parte, que liga os `statuses` do webhook a mensagem. */
+export async function sendText(to: string, text: string): Promise<string | null> {
+  let primeiro: string | null = null;
   // Limite de 4096 caracteres por mensagem de texto na Cloud API.
   for (let i = 0; i < text.length; i += 4000) {
-    await graphFetch(graph(`${config.whatsapp.phoneNumberId}/messages`), {
+    const res = await graphFetch(graph(`${config.whatsapp.phoneNumberId}/messages`), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -65,7 +99,10 @@ export async function sendText(to: string, text: string) {
         text: { body: text.slice(i, i + 4000) },
       }),
     });
+    const id = await wamidDe(res);
+    primeiro ??= id;
   }
+  return primeiro;
 }
 
 /** Sobe o arquivo para a Meta e devolve o media id usado na mensagem. */
@@ -97,8 +134,8 @@ export async function sendDocument(to: string, arquivo: { data: Buffer; mimeType
 }
 
 /** Mensagem de modelo aprovado; unica forma de escrever fora da janela de 24h desde a ultima mensagem do usuario. */
-export async function sendTemplate(to: string, name: string, language: string, params: string[]) {
-  await graphFetch(graph(`${config.whatsapp.phoneNumberId}/messages`), {
+export async function sendTemplate(to: string, name: string, language: string, params: string[]): Promise<string | null> {
+  const res = await graphFetch(graph(`${config.whatsapp.phoneNumberId}/messages`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -112,10 +149,11 @@ export async function sendTemplate(to: string, name: string, language: string, p
       },
     }),
   });
+  return wamidDe(res);
 }
 
 /** Avisos do agendador: usa o modelo configurado, se houver, senao texto livre. */
-export async function sendNotice(to: string, text: string) {
+export async function sendNotice(to: string, text: string): Promise<string | null> {
   const { noticeTemplate, noticeTemplateLanguage } = config.whatsapp;
   // Parametro de template nao aceita quebra de linha nem varios espacos seguidos.
   if (noticeTemplate) return sendTemplate(to, noticeTemplate, noticeTemplateLanguage, [text.replace(/\s*\n\s*/g, " | ")]);

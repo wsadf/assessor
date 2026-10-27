@@ -54,6 +54,7 @@ import {
   type Pagina,
 } from "./agendamento.js";
 import { GoogleExpirado, GoogleIndisponivel, GoogleNaoConectado, GoogleNaoConfigurado } from "./google.js";
+import { cancelarEnvio, listarEnvios, ultimasMensagens } from "./contatos.js";
 
 const contaPagarBody = z.object({
   descricao: z.string().trim().min(1).max(80),
@@ -258,6 +259,8 @@ const CAPACIDADE_ROTA: Record<string, Capacidade[]> = {
   "GET /api/agendamento": ["agenda"],
   "POST /api/agendamento/:id/remarcar": ["agenda"],
   "DELETE /api/agendamento/:id": ["agenda"],
+  "GET /api/contatos/mensagens": ["agenda"],
+  "DELETE /api/contatos/envios/:id": ["agenda"],
 };
 const SEM_ACESSO = { erro: "Seu acesso a esta conta não inclui isso." };
 
@@ -1118,6 +1121,40 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
           return { ...toAgendamento(r.agendamento), enviado: r.enviado };
         }),
       );
+
+      // O telefone do contato nao sai para o painel: o nome basta para conferir e cancelar.
+      api.get("/contatos/mensagens", async (req) => {
+        const { ctx } = de(req);
+        const nome = (phone: string) => contas.porTelefone(phone)?.name ?? null;
+        return {
+          envios: listarEnvios(repo.db, ctx).map((e) => ({
+            id: e.id,
+            contato: e.contato,
+            texto: e.text,
+            proximo: e.next_run_at,
+            recorrencia: e.recurrence,
+            pedidoPor: nome(e.created_by),
+          })),
+          mensagens: ultimasMensagens(repo.db, ctx, null, 30).map((m) => ({
+            id: m.id,
+            contato: m.contato,
+            enviadaEm: m.sent_at,
+            situacao: m.status,
+            erro: m.error,
+            resposta: m.reply_text,
+            respondidaEm: m.replied_at,
+          })),
+        };
+      });
+
+      api.delete("/contatos/envios/:id", async (req, reply) => {
+        try {
+          cancelarEnvio(repo.db, de(req).ctx, Number((req.params as { id: string }).id));
+          return { ok: true };
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
 
       api.get("/agenda", async (req, reply) => {
         const { ctx, phone, repo } = de(req);

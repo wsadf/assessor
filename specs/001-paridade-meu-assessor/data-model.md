@@ -360,3 +360,71 @@ confirmacao por WhatsApp.
 ## Aviso novo
 
 `notice_prefs.kind` ganha `agendamentos` (R57), ligado por padrao para quem tem pagina `ativa`.
+
+# US6: Mensagens a outras pessoas
+
+Decisoes em [research.md](research.md) R59 a R70.
+
+## contacts (nova)
+
+| Campo | Tipo | Regra |
+| --- | --- | --- |
+| id | INTEGER PK | |
+| conta | TEXT NOT NULL | telefone da conta; o contato nao aparece para outras contas |
+| name | TEXT NOT NULL | 1 a 60 caracteres, como o usuario chama a pessoa |
+| phone | TEXT NOT NULL | so digitos, 10 a 15, com DDI 55 acrescentado a 10 ou 11 digitos |
+| created_by | TEXT NOT NULL | quem cadastrou |
+| created_at | TEXT NOT NULL | |
+
+`UNIQUE (conta, phone)`. Mesmo numero com outro nome atualiza o nome.
+
+## contact_sends (nova): o pedido de envio
+
+| Campo | Tipo | Regra |
+| --- | --- | --- |
+| id | INTEGER PK | |
+| conta | TEXT NOT NULL | |
+| created_by | TEXT NOT NULL | quem pediu; recebe as respostas e as falhas |
+| contact_id | INTEGER NOT NULL | contato |
+| text | TEXT NOT NULL | 1 a 500 caracteres, so o miolo; a identificacao e o PARAR entram no envio |
+| next_run_at | TEXT | proximo envio (ISO UTC); nulo quando nao ha mais |
+| recurrence | TEXT | `diario`, `semanal`, `mensal` ou nulo |
+| status | TEXT NOT NULL | `ativo`, `concluido`, `cancelado` |
+| created_at | TEXT NOT NULL | |
+
+Indice: `(status, next_run_at)`.
+
+Transicoes: `ativo` --enviou e nao repete--> `concluido`; `ativo` --usuario cancela ou contato
+responde PARAR--> `cancelado`.
+
+## contact_messages (nova): cada mensagem que saiu
+
+| Campo | Tipo | Regra |
+| --- | --- | --- |
+| id | INTEGER PK | |
+| send_id | INTEGER NOT NULL | pedido de origem |
+| conta | TEXT NOT NULL | |
+| phone | TEXT NOT NULL | numero do contato no momento do envio |
+| wamid | TEXT | id da Meta, para ligar os `statuses` |
+| status | TEXT NOT NULL | `enviada`, `entregue`, `lida`, `falhou`, `pulada` (limite) |
+| error | TEXT | motivo da falha |
+| sent_at | TEXT NOT NULL | |
+| reply_text | TEXT | ultima resposta do contato, ate 500 caracteres |
+| replied_at | TEXT | |
+| ack_sent_on | TEXT | dia (local) do ultimo "Recebido!" ao contato |
+
+Indices: `(conta, sent_at)` para o limite diario; `(phone, sent_at)` para achar a mensagem a que o
+contato responde; `wamid` unico quando nao nulo.
+
+Texto de resposta apagado 90 dias depois (`reply_text` nulo).
+
+## Lista de opt-out
+
+`client_optouts` (US5) passa a valer para contatos tambem: numero na lista nao recebe mensagem de
+nenhuma conta, de pagina de agendamento ou de pedido do usuario.
+
+## Mensagem do webhook
+
+`parseWebhook` passa a devolver `contacts` (cartao compartilhado: nome e telefones) e uma lista
+separada de `statuses` (`id`, `status`, `recipient_id`, erro). `sendText` e `sendTemplate` passam a
+devolver o `wamid`.

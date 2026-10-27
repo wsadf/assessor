@@ -12,6 +12,7 @@ import {
 } from "./agendamento.js";
 import { AuthError } from "./auth.js";
 import { config } from "./config.js";
+import { cancelarEnvio, envioDaConta, listarEnvios, pedirEnvio, ultimasMensagens } from "./contatos.js";
 import { conta, repoDoContexto, type Membro } from "./conta.js";
 import type { Kind, Recurrence, Repo, Task, Transaction } from "./db.js";
 import { documentos, nomePasta, PASTA_IDS, PASTAS, podeVerDocumento, type Documento } from "./documentos.js";
@@ -59,7 +60,7 @@ import {
   type Capacidade,
   type Contexto,
 } from "./permissoes.js";
-import { brl, formatLocal, fromLocal, localDate } from "./time.js";
+import { brl, formatLocal, fromLocal, localDate, nextOccurrence } from "./time.js";
 import { sendNotice } from "./whatsapp.js";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "use YYYY-MM-DD");
@@ -194,6 +195,16 @@ const schemas = {
   consultar_agendamentos: z.object({ data_inicio: isoDate, data_fim: isoDate, cliente: z.string().min(1).max(80).nullish() }),
   remarcar_agendamento: z.object({ id: z.number().int() }),
   cancelar_agendamento: z.object({ id: z.number().int(), confirmado: z.boolean() }),
+  mensagem_para_contato: z.object({
+    contato: z.string().min(1).max(60),
+    telefone: z.string().min(1).nullish(),
+    texto: z.string().min(1).max(500),
+    data_hora: dataHora.nullish(),
+    recorrencia: z.enum(["diario", "semanal", "mensal"]).nullish(),
+    confirmado: z.boolean(),
+  }),
+  consultar_mensagens_contato: z.object({ contato: z.string().min(1).max(60).nullish() }),
+  cancelar_mensagem_contato: z.object({ id: z.number().int(), confirmado: z.boolean() }),
 };
 
 /** O que o turno do agente oferece as ferramentas alem da entrada do modelo. */
@@ -237,6 +248,9 @@ const CAPACIDADE: Partial<Record<keyof typeof schemas, Capacidade>> = {
   consultar_agendamentos: "agenda",
   remarcar_agendamento: "agenda",
   cancelar_agendamento: "agenda",
+  mensagem_para_contato: "agenda",
+  consultar_mensagens_contato: "agenda",
+  cancelar_mensagem_contato: "agenda",
 };
 
 const GOOGLE = new Set<string>([
@@ -522,6 +536,28 @@ export const toolDefinitions: Anthropic.Tool[] = [
     "Cancela um horario marcado por cliente, apaga o evento e avisa o cliente. Chame com confirmado false, mostre qual e, e so chame com true depois que o usuario confirmar.",
     { id: { type: "integer" }, confirmado: { type: "boolean" } },
   ),
+  tool(
+    "mensagem_para_contato",
+    "Manda uma mensagem pelo WhatsApp para outra pessoa em nome de quem fala, agora, numa data ou repetindo, ex.: 'lembra o Joao de pagar o personal todo dia 5'. Chame primeiro com confirmado false, mostre a previa ao usuario e so chame com true depois que ele confirmar.",
+    {
+      contato: { ...str, description: "Nome da pessoa, como o usuario chama" },
+      telefone: nullable({ ...str, description: "WhatsApp com DDD. null para usar o contato ja salvo; se a ferramenta pedir o numero, pergunte ao usuario" }),
+      texto: { ...str, description: "So o recado, curto e educado, ex.: 'Lembrete: o pagamento do personal vence hoje.' A saudacao, quem manda e o PARAR entram sozinhos" },
+      data_hora: nullable({ ...str, description: "YYYY-MM-DDTHH:mm no horario local do primeiro envio. null = agora" }),
+      recorrencia: nullable({ type: "string", enum: ["diario", "semanal", "mensal"] }),
+      confirmado: { type: "boolean" },
+    },
+  ),
+  tool(
+    "consultar_mensagens_contato",
+    "Mostra os envios agendados ou recorrentes para outras pessoas e as ultimas mensagens enviadas, com situacao (enviada, entregue, lida, falhou) e a resposta, se houve.",
+    { contato: nullable({ ...str, description: "Parte do nome, ex.: Joao" }) },
+  ),
+  tool(
+    "cancelar_mensagem_contato",
+    "Para os envios futuros de um pedido, pelo id de consultar_mensagens_contato, ex.: 'para de cobrar o Joao'. Chame com confirmado false, mostre qual e, e so chame com true depois da confirmacao.",
+    { id: { type: "integer" }, confirmado: { type: "boolean" } },
+  ),
 ];
 
 const describeConta = (c: ContaPagar) =>
@@ -604,29 +640,7 @@ const somaPor = (rows: Transaction[], chave: (t: Transaction) => string | null) 
   return [...mapa.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}: ${brl(v)}`);
 };
 
-/** Proxima ocorrencia no mesmo horario local. */
-export function nextOccurrence(current: Date, rec: Recurrence): Date | null {
-  if (!rec) return null;
-  const day = localDate(current);
-  const time = new Intl.DateTimeFormat("en-GB", {
-    timeZone: config.timezone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).format(current);
-  const [y, m, d] = day.split("-").map(Number);
-  const base = new Date(Date.UTC(y, m - 1, d));
-  if (rec === "diario") base.setUTCDate(base.getUTCDate() + 1);
-  if (rec === "semanal") base.setUTCDate(base.getUTCDate() + 7);
-  if (rec === "mensal") {
-    // Dia 31 vira o ultimo dia do mes seguinte, em vez de pular para o mes depois.
-    const target = new Date(Date.UTC(y, m, 1));
-    const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
-    target.setUTCDate(Math.min(d, lastDay));
-    return fromLocal(`${target.toISOString().slice(0, 10)}T${time}`);
-  }
-  return fromLocal(`${base.toISOString().slice(0, 10)}T${time}`);
-}
+export { nextOccurrence };
 
 /** `quem` aceita so o telefone para o titular de uma conta sem membros, como no terminal. */
 /** Recusa volta como resposta, nao como erro: o modelo precisa repassar ao usuario. */
@@ -980,6 +994,39 @@ function run(repo: Repo, ctx: Contexto, toolName: ToolName, input: any, extras: 
       definirPreferencia(repo.db, ctx.membro, input.tipo, { ligado: input.ligado, hora: input.hora });
       const hora = input.hora ?? atual.hora;
       return input.ligado ? `${atual.nome} ligado, as ${hora}h.` : `${atual.nome} desligado.`;
+    }
+
+    case "mensagem_para_contato":
+      return pedirEnvio(repo.db, ctx, {
+        contato: input.contato,
+        telefone: input.telefone,
+        texto: input.texto,
+        dataHora: input.data_hora,
+        recorrencia: input.recorrencia,
+        confirmado: input.confirmado,
+      }, new Date()).texto;
+
+    case "consultar_mensagens_contato": {
+      const envios = listarEnvios(repo.db, ctx, input.contato);
+      const mensagens = ultimasMensagens(repo.db, ctx, input.contato, 10);
+      if (!envios.length && !mensagens.length) return "Nenhuma mensagem para outras pessoas.";
+      return [
+        envios.length
+          ? `Envios ativos:\n${envios.map((e) => `#${e.id} | ${e.contato} | proximo ${e.next_run_at ? formatLocal(new Date(e.next_run_at)) : "-"}${e.recurrence ? ` | ${e.recurrence}` : ""} | "${e.text}"`).join("\n")}`
+          : "Nenhum envio agendado.",
+        mensagens.length
+          ? `Ultimas mensagens:\n${mensagens.map((m) => `${formatLocal(new Date(m.sent_at))} | ${m.contato} | ${m.status}${m.error ? ` (${m.error})` : ""}${m.reply_text ? ` | respondeu: "${m.reply_text}"` : m.status === "pulada" ? "" : " | sem resposta"}`).join("\n")}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+    }
+
+    case "cancelar_mensagem_contato": {
+      const e = envioDaConta(repo.db, ctx, input.id);
+      if (!input.confirmado) return `Confirme com o usuario antes de cancelar: #${e.id} para ${e.contato}, "${e.text}"${e.recurrence ? `, ${e.recurrence}` : ""}.`;
+      cancelarEnvio(repo.db, ctx, input.id);
+      return `Cancelado: nao mando mais "${e.text}" para ${e.contato}.`;
     }
 
     default:

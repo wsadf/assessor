@@ -32,6 +32,12 @@ for (const table of ["notice_prefs", "notice_log", "pending_notices"]) {
 fs.rmSync(path.join(pastaDeArquivos(db), phone), { recursive: true, force: true });
 db.prepare(`DELETE FROM account_members WHERE account_phone = ?`).run(phone);
 db.prepare(`DELETE FROM account_invites WHERE account_phone = ?`).run(phone);
+for (const p of [phone, BIA.phone]) {
+  db.prepare(`DELETE FROM google_accounts WHERE phone = ?`).run(p);
+  db.prepare(`DELETE FROM bookings WHERE owner_phone = ?`).run(p);
+  db.prepare(`DELETE FROM booking_pages WHERE phone = ?`).run(p);
+}
+for (const table of ["contact_messages", "contact_sends", "contacts"]) db.prepare(`DELETE FROM ${table} WHERE conta = ?`).run(phone);
 repo.ensureUser(phone, "Demonstração");
 
 // Conta de teste para entrar no painel de demonstracao; credenciais ficticias, so deste banco.
