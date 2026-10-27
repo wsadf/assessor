@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
-import { api, type Agenda, type GoogleStatus, type Lembrete } from "../api";
+import { api, type Agenda, type Agendamento, type GoogleStatus, type Lembrete, type MinhaPagina } from "../api";
 import AppIcon from "../components/AppIcon.vue";
 import AssessorBalao from "../components/AssessorBalao.vue";
 import BlocoMesa from "../components/BlocoMesa.vue";
@@ -35,6 +35,85 @@ async function desconectarGoogle() {
   if (!confirm("Desconectar o Google Agenda? Seus compromissos continuam no Google, mas a Lia para de ler e marcar.")) return;
   await api.del("/google");
   await Promise.all([recarregarGoogle(), recarregar()]);
+}
+
+const { dados: minha, recarregar: recarregarPagina } = useCarregar(() => api.get<MinhaPagina>("/agendamento/pagina"));
+const { dados: lista, recarregar: recarregarLista } = useCarregar(() => api.get<{ agendamentos: Agendamento[] }>("/agendamento"));
+const DURACOES = [15, 30, 45, 60, 90, 120];
+const SEMANA_CURTA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+const SITUACAO = { agendado: "agendado", confirmado: "confirmado", remarcando: "esperando o cliente escolher", cancelado: "cancelado" } as const;
+const pag = reactive({ nome: "", duracoes: [30] as number[], dias: [1, 2, 3, 4, 5] as number[], inicio: "09:00", fim: "18:00", antecedenciaHoras: 12, horizonteDias: 30, ativa: true });
+const editandoPagina = ref(false);
+const erroPagina = ref<string | null>(null);
+const salvandoPagina = ref(false);
+const copiado = ref(false);
+
+function editarPagina() {
+  const p = minha.value?.pagina;
+  Object.assign(pag, p ? { ...p, duracoes: [...p.duracoes], dias: [...p.dias] } : { nome: "" });
+  erroPagina.value = null;
+  editandoPagina.value = true;
+}
+
+const alternar = (lista: number[], v: number) => {
+  const i = lista.indexOf(v);
+  if (i >= 0) lista.splice(i, 1);
+  else lista.push(v);
+};
+
+async function salvarPagina() {
+  salvandoPagina.value = true;
+  erroPagina.value = null;
+  try {
+    await api.put("/agendamento/pagina", pag);
+    editandoPagina.value = false;
+    await recarregarPagina();
+  } catch (e) {
+    erroPagina.value = (e as Error).message;
+  } finally {
+    salvandoPagina.value = false;
+  }
+}
+
+async function novoLink() {
+  if (!confirm("Gerar um link novo? O link atual para de funcionar na hora; quem já marcou continua marcado.")) return;
+  await api.post("/agendamento/pagina/novo-link", {});
+  await recarregarPagina();
+}
+
+// Sem PAINEL_URL no servidor o link vem relativo; o cliente precisa do endereco inteiro.
+const linkCompleto = computed(() => {
+  const l = minha.value?.link ?? "";
+  return l.startsWith("/") ? `${location.origin}${l}` : l;
+});
+
+async function copiarLink() {
+  await navigator.clipboard.writeText(linkCompleto.value);
+  copiado.value = true;
+  setTimeout(() => (copiado.value = false), 2000);
+}
+
+const erroLista = ref<string | null>(null);
+async function remarcarCliente(b: Agendamento) {
+  if (!confirm(`Mandar para ${b.cliente} até três horários livres para escolher?`)) return;
+  erroLista.value = null;
+  try {
+    await api.post(`/agendamento/${b.id}/remarcar`, {});
+  } catch (e) {
+    erroLista.value = (e as Error).message;
+  }
+  await recarregarLista();
+}
+
+async function cancelarCliente(b: Agendamento) {
+  if (!confirm(`Cancelar o horário de ${b.cliente}? O evento sai do Google Agenda e o cliente recebe o aviso com o link para marcar outro.`)) return;
+  erroLista.value = null;
+  try {
+    await api.del(`/agendamento/${b.id}`);
+  } catch (e) {
+    erroLista.value = (e as Error).message;
+  }
+  await Promise.all([recarregarLista(), recarregar()]);
 }
 
 const REC = { diario: "todo dia", semanal: "toda semana", mensal: "todo mês" } as const;
@@ -153,6 +232,80 @@ async function cancelar(l: Lembrete) {
         </template>
       </BlocoMesa>
 
+      <BlocoMesa v-if="minha" titulo="Página de agendamento">
+        <AssessorBalao mesa="agenda">
+          <template v-if="google && !google.configurado">a página de agendamento depende do Google Agenda, que não está configurado neste servidor.</template>
+          <template v-else-if="!minha.googleConectado">a página de agendamento usa o seu Google Agenda para mostrar só horários livres. Conecte o Google acima e volte aqui.</template>
+          <template v-else-if="!minha.pagina">seus clientes escolhem um horário livre num link seu, sem precisar falar com você. Eu confirmo com eles na véspera pelo WhatsApp.</template>
+          <template v-else-if="minha.pagina.ativa">sua página está no ar. Mande o link para os clientes; cada horário marcado entra no seu Google Agenda.</template>
+          <template v-else>sua página está pausada: o link mostra “página não encontrada” até você reativar.</template>
+        </AssessorBalao>
+        <template #lado>
+          <template v-if="minha.googleConectado">
+            <form v-if="editandoPagina" class="form" @submit.prevent="salvarPagina">
+              <label class="field"><span>Nome que o cliente vê</span><input v-model="pag.nome" class="input" maxlength="60" placeholder="Ex.: Dra. Julia Andrade" /></label>
+              <div class="field">
+                <span>Durações</span>
+                <div class="escolhas">
+                  <button v-for="d in DURACOES" :key="d" type="button" class="chip escolha" :class="{ ok: pag.duracoes.includes(d) }" @click="alternar(pag.duracoes, d)">{{ d }} min</button>
+                </div>
+              </div>
+              <div class="field">
+                <span>Dias de atendimento</span>
+                <div class="escolhas">
+                  <button v-for="(s, i) in SEMANA_CURTA" :key="s" type="button" class="chip escolha" :class="{ ok: pag.dias.includes(i) }" @click="alternar(pag.dias, i)">{{ s }}</button>
+                </div>
+              </div>
+              <div class="linha-form">
+                <label class="field"><span>Das</span><input v-model="pag.inicio" class="input" type="time" step="900" /></label>
+                <label class="field"><span>Até</span><input v-model="pag.fim" class="input" type="time" step="900" /></label>
+                <label class="field"><span>Antecedência (h)</span><input v-model.number="pag.antecedenciaHoras" class="input" type="number" min="0" max="168" /></label>
+              </div>
+              <div class="linha-form">
+                <label class="field"><span>Até quantos dias à frente</span><input v-model.number="pag.horizonteDias" class="input" type="number" min="1" max="90" /></label>
+                <label class="field check"><input v-model="pag.ativa" type="checkbox" /> <span>Página no ar</span></label>
+              </div>
+              <p v-if="erroPagina" class="erro">{{ erroPagina }}</p>
+              <div class="acoes">
+                <button class="btn primary" :disabled="salvandoPagina" type="submit">{{ salvandoPagina ? "Salvando…" : "Salvar página" }}</button>
+                <button class="btn ghost" type="button" @click="editandoPagina = false">Cancelar</button>
+              </div>
+            </form>
+            <div v-else-if="minha.pagina" class="pagina">
+              <div class="link">
+                <span class="chip" :class="minha.pagina.ativa ? 'ok' : 'warning'">{{ minha.pagina.ativa ? "no ar" : "pausada" }}</span>
+                <a class="flex1 url" :href="linkCompleto" target="_blank" rel="noopener">{{ linkCompleto }}</a>
+              </div>
+              <p class="faint">
+                {{ minha.pagina.nome }} · {{ minha.pagina.duracoes.join(", ") }} min ·
+                {{ minha.pagina.dias.map((d) => SEMANA_CURTA[d]).join(", ") }} · {{ minha.pagina.inicio }} às {{ minha.pagina.fim }}
+              </p>
+              <div class="acoes">
+                <button class="btn primary" type="button" @click="copiarLink">{{ copiado ? "Copiado!" : "Copiar link" }}</button>
+                <button class="btn ghost" type="button" @click="editarPagina">Editar</button>
+                <button class="btn ghost" type="button" @click="novoLink">Gerar novo link</button>
+              </div>
+            </div>
+            <button v-else class="btn primary" type="button" @click="editarPagina"><AppIcon name="mais" :size="16" /> Criar minha página</button>
+          </template>
+          <p v-else class="faint">Disponível depois de conectar o Google Agenda.</p>
+          <template v-if="lista?.agendamentos.length">
+            <div class="eyebrow agendados">Próximos agendamentos</div>
+            <div v-for="b in lista.agendamentos" :key="b.id" class="list-row">
+              <span class="dot" style="background: var(--mesa)" />
+              <div class="flex1">
+                <div class="titulo">{{ b.cliente }}</div>
+                <div class="eyebrow meta">{{ rotuloDia(dataLocal(b.inicio), HOJE) }} · {{ horaLocal(b.inicio) }} · {{ SITUACAO[b.situacao] }}</div>
+                <div v-if="b.confirmacaoFalhou" class="aviso-linha">Confirmação não enviada pelo WhatsApp; confirme direto com o cliente.</div>
+              </div>
+              <button v-if="b.situacao !== 'remarcando'" class="icon-btn mini" title="Remarcar" @click="remarcarCliente(b)"><AppIcon name="repetir" :size="15" /></button>
+              <button class="icon-btn mini" title="Cancelar horário" @click="cancelarCliente(b)"><AppIcon name="lixo" :size="15" /></button>
+            </div>
+            <p v-if="erroLista" class="erro">{{ erroLista }}</p>
+          </template>
+        </template>
+      </BlocoMesa>
+
       <BlocoMesa titulo="As próximas duas semanas">
         <AssessorBalao mesa="agenda">cada coluna é um dia; as mais altas são onde a agenda aperta.</AssessorBalao>
         <template #lado>
@@ -218,9 +371,18 @@ async function cancelar(l: Lembrete) {
 .qtd { font-size: 12px; font-weight: 600; }
 .d { font-size: 11px; }
 .form { display: grid; gap: 14px; }
-.linha-form { display: grid; grid-template-columns: 1fr 120px 150px; gap: 12px; }
+.linha-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
 .form .btn { justify-self: start; }
 .erro { color: var(--danger); margin: 0; }
+.escolhas { display: flex; flex-wrap: wrap; gap: 6px; }
+.escolha { cursor: pointer; background: transparent; font: inherit; }
+.check { display: flex; align-items: center; gap: 8px; align-self: end; height: 40px; }
+.acoes { display: flex; gap: 8px; flex-wrap: wrap; }
+.pagina { display: grid; gap: 10px; }
+.link { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--mesa); }
+.agendados { margin-top: 18px; }
+.aviso-linha { font-size: 12.5px; color: var(--warning); margin-top: 2px; }
 @media (max-width: 600px) {
   .linha-form { grid-template-columns: 1fr 1fr; }
 }

@@ -96,7 +96,7 @@ test("fundacao: pagina, slug, dias e horarios livres", async () => {
   try {
     const { repo, db } = contaCom();
     const ctx = ctxDe(repo, titular);
-    assert.throws(() => a.salvarPagina(db, ctx, PADRAO), /Conecte o Google Agenda antes de ativar a pagina/);
+    assert.throws(() => a.salvarPagina(db, ctx, PADRAO), /Conecte o Google Agenda antes de ativar a página/);
 
     await conectar(db, titular);
     const p = a.salvarPagina(db, ctx, PADRAO);
@@ -105,8 +105,8 @@ test("fundacao: pagina, slug, dias e horarios livres", async () => {
     const trocada = a.novoSlug(db, ctx);
     assert.notEqual(trocada.slug, p.slug);
     assert.equal(a.paginaPorSlug(db, p.slug), undefined);
-    assert.throws(() => a.salvarPagina(db, ctx, { ...PADRAO, duracoes: [20] }), /duracao fora/);
-    assert.throws(() => a.salvarPagina(db, ctx, { ...PADRAO, fim: "08:00" }), /depois do inicio/);
+    assert.throws(() => a.salvarPagina(db, ctx, { ...PADRAO, duracoes: [20] }), /duração fora/);
+    assert.throws(() => a.salvarPagina(db, ctx, { ...PADRAO, fim: "08:00" }), /depois do início/);
 
     // Segunda as 9h com 12 h de antecedencia: a janela de segunda ja acabou.
     const dias = a.diasDisponiveis(trocada, segunda);
@@ -363,7 +363,7 @@ test("ferramentas e API privada", async () => {
     assert.ok(!fake.eventos.has(evento));
     assert.equal(repo.remindersDoEvento(titular, evento).length, 0);
     assert.match(fake.mensagens.filter((m) => m.para === camila).at(-1)!.texto, new RegExp(`cancelou o horario .+ Se quiser marcar outro: http://localhost:3001/agendar/${p.slug}$`));
-    assert.match(await ferramenta("cancelar_agendamento", { id: camilaId, confirmado: true }), /nao encontrado/);
+    assert.match(await ferramenta("cancelar_agendamento", { id: camilaId, confirmado: true }), /não encontrado/);
 
     // Um compromisso cobrindo os proximos 15 dias inteiros nao deixa nenhuma opcao.
     const de = new Date(Date.now() - 86_400_000).toISOString();
@@ -432,7 +432,7 @@ test("API publica: dados minimos, 404, horarios e reserva", async () => {
     assert.equal((await get(`/api/agendar/${p.slug}`)).statusCode, 404);
     a.salvarPagina(db, ctx, SEMPRE);
     db.prepare(`UPDATE google_accounts SET status = 'expirada'`).run();
-    assert.equal((await get(`/api/agendar/${p.slug}`)).json().erro, "Pagina de agendamento nao encontrada.");
+    assert.equal((await get(`/api/agendar/${p.slug}`)).json().erro, "Página de agendamento não encontrada.");
     db.prepare(`UPDATE google_accounts SET status = 'conectada'`).run();
 
     const dia = amanha();
@@ -441,7 +441,7 @@ test("API publica: dados minimos, 404, horarios e reserva", async () => {
     fake.estado.agenda = "fora";
     const fora = await get(`/api/agendar/${p.slug}/horarios?dia=${dia}&duracao=30`);
     assert.equal(fora.statusCode, 503);
-    assert.equal(fora.json().erro, "Nao consegui ver a agenda agora. Tente em alguns minutos.");
+    assert.equal(fora.json().erro, "Não consegui ver a agenda agora. Tente em alguns minutos.");
     fake.estado.agenda = "ok";
     const horarios = (await get(`/api/agendar/${p.slug}/horarios?dia=${dia}&duracao=30`)).json().horarios as { inicio: string }[];
     assert.ok(horarios.length > 10);

@@ -150,6 +150,21 @@ Sem esses quatro valores, a mesa de Agenda mostra "Google Agenda não configurad
 
 No WhatsApp, o membro é atendido se o titular estiver em `ALLOWED_NUMBERS`. O número de teste da Meta, porém, só entrega para os 5 destinatários cadastrados no app: cadastre também o número de cada membro (seção 2.1, passo 5).
 
+### Página de agendamento
+
+Quem atende clientes ativa uma página pública em que o cliente marca sozinho um horário livre. Precisa do Google Agenda conectado: é ele que diz o que está livre, e o horário marcado vira evento nele.
+
+- **Ativar:** na mesa de **Agenda**, bloco "Página de agendamento": nome que o cliente vê, durações (15 a 120 min), dias da semana, janela de atendimento, antecedência mínima e até quantos dias à frente. O link é `PAINEL_URL/agendar/<código aleatório>`; "Gerar novo link" troca o código e o antigo para de funcionar. Pelo WhatsApp: "me manda meu link de agendamento".
+- **O que o cliente vê:** o nome exibido, as durações, um calendário só com os dias de atendimento e os horários livres no fuso do navegador dele. Nunca vê título, convidados ou qualquer outro dado da sua agenda.
+- **Na reserva:** o cliente informa nome, e-mail e WhatsApp e aceita receber a confirmação. O evento entra no seu Google Agenda com o cliente convidado (o Google manda o convite), você recebe o lembrete 1 hora antes e o aviso "📆 Camila marcou...". Dois clientes no mesmo horário: só um consegue.
+- **Na véspera, às 18h:** o cliente recebe a confirmação no WhatsApp. Como ele quase nunca falou com o número nas últimas 24 horas, só sai com o modelo aprovado (`WHATSAPP_NOTICE_TEMPLATE`, seção 4). Sem modelo, a mensagem não é enviada, o agendamento aparece com "confirmação não enviada" e você é avisado.
+- **Respostas do cliente:** `1` confirma, `2` pede para remarcar (você é avisado) e `PARAR` faz o número não receber mais nada. Qualquer outra coisa recebe a lista dessas opções. O cliente nunca conversa com a IA nem vê dados da sua conta.
+- **Remarcar:** "não vou poder atender a Camila amanhã" faz o assessor mandar ao cliente até três horários livres dos próximos 14 dias. A escolha dele move o evento e o lembrete. O painel também tem remarcar e cancelar em cada agendamento.
+- **Contra reservas falsas:** campo escondido que só robô preenche, até 5 reservas por IP por hora e 3 por WhatsApp por dia.
+- **Privacidade:** nome, e-mail e WhatsApp do cliente são apagados 90 dias depois do horário.
+
+Fora desta versão: janelas diferentes por dia, intervalo entre atendimentos, feriados, cobrança na reserva, lembrete por e-mail e mais de uma página por pessoa. Com o número de teste da Meta, o cliente também precisa estar entre os 5 destinatários cadastrados no app.
+
 Para desenvolver com recarga automática, em dois terminais:
 
 ```bash
@@ -252,7 +267,7 @@ O agente usa o fallback do servidor da Anthropic (`fallbacks: "default"`): se um
 
 | Arquivo | Papel |
 | --- | --- |
-| `src/server.ts` | Webhook: valida assinatura, ignora números não autorizados e duplicados, processa cada usuário em ordem |
+| `src/server.ts` | Webhook: valida assinatura, ignora números não autorizados e duplicados, manda o cliente com agendamento para as respostas fixas, processa cada usuário em ordem |
 | `src/agent.ts` | Monta a mensagem, escolhe o provedor de IA e grava o histórico |
 | `src/prompt.ts` | Prompt de sistema comum aos dois provedores |
 | `src/providers/gemini.ts` | Laço de chamadas de função com o Gemini (REST) |
@@ -265,11 +280,12 @@ O agente usa o fallback do servidor da Anthropic (`fallbacks: "default"`): se um
 | `src/permissoes.ts` | Perfis e o que cada um pode ver e fazer |
 | `src/documentos.ts` | Documentos: arquivo no disco, pastas, busca sem acento (FTS5), pendentes e quem vê cada um |
 | `src/google.ts` | Google Agenda: conexão com código e link de uso único, acesso cifrado, renovação, e eventos (listar, conflito, criar com Meet, mover, apagar) por REST |
+| `src/agendamento.ts` | Página de agendamento: configuração e link, horários livres, reserva sem sobreposição, remarcação, textos ao cliente e respostas dele sem IA |
 | `src/avisos.ts` | Contas a pagar, recorrências, categoria acima do normal, comparativo, preferências de aviso, registro contra repetição e fila de avisos não entregues |
 | `src/painel.ts` | Sobe a API e o painel compilado, sem WhatsApp |
 | `src/seed.ts` | Dados de demonstração em `data/demo.db` |
 | `web/` | Painel em Vue 3 + Vue Router + Vite, gráficos em SVG próprios |
-| `src/scheduler.ts` | A cada 30 segundos: lembretes vencidos, lançamentos recorrentes e os avisos de cada pessoa no horário dela |
+| `src/scheduler.ts` | A cada 30 segundos: lembretes vencidos, lançamentos recorrentes, os avisos de cada pessoa no horário dela e a confirmação da véspera aos clientes |
 | `src/whatsapp.ts` | Envio de texto e modelo, download de mídia, leitura do webhook |
 | `src/cli.ts` | Mesmo agente no terminal |
 

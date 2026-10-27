@@ -8,6 +8,7 @@ export const router = createRouter({
     { path: "/entrar", component: () => import("./views/auth/EntrarView.vue"), meta: { publica: true } },
     { path: "/criar-conta", component: () => import("./views/auth/CriarContaView.vue"), meta: { publica: true } },
     { path: "/esqueci", component: () => import("./views/auth/EsqueciView.vue"), meta: { publica: true } },
+    { path: "/agendar/:slug", component: () => import("./views/AgendarPublico.vue"), meta: { publica: true } },
     { path: "/financas", component: () => import("./views/financas/FinancasPainel.vue"), meta: { mesa: "financas" } },
     { path: "/financas/transacoes", component: () => import("./views/financas/TransacoesView.vue"), meta: { mesa: "financas" } },
     { path: "/financas/contas", component: () => import("./views/financas/ContasView.vue"), meta: { mesa: "financas" } },

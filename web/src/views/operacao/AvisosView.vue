@@ -52,7 +52,9 @@ async function salvar(aviso: Aviso, mudanca: { ligado?: boolean; hora?: number }
             <strong>{{ aviso.nome }}</strong>
             <div class="faint">{{ aviso.disponivel ? aviso.descricao : "Seu acesso nesta conta não inclui esta área." }}</div>
           </div>
+          <span v-if="aviso.tipo === 'agendamentos'" class="faint quando">na hora</span>
           <select
+            v-else
             class="input hora"
             :value="aviso.hora"
             :disabled="!aviso.disponivel || salvando === aviso.tipo"
@@ -86,6 +88,7 @@ async function salvar(aviso: Aviso, mudanca: { ligado?: boolean; hora?: number }
 .flex1 { flex: 1; min-width: 0; }
 .faint { font-size: 13px; }
 .hora { width: auto; min-width: 80px; }
+.quando { min-width: 80px; text-align: center; }
 .chave { position: relative; width: 42px; height: 24px; flex: none; cursor: pointer; }
 .chave input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: inherit; }
 .chave span { position: absolute; inset: 0; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line-strong); transition: background 0.15s; }

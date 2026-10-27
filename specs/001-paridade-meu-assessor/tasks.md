@@ -435,9 +435,9 @@ usuario e a mensagem de confirmacao chegar no WhatsApp do cliente de teste (spec
 
 **Painel web**
 
-- [ ] T139 [P] [US5] Em `web/src/api.ts`, tipos `PaginaAgendamento`, `Horario`, `Agendamento` e as chamadas publicas sem token (`/agendar/...`) (depende de T137, T138)
-- [ ] T140 [US5] Criar `web/src/views/AgendarPublico.vue` e a rota publica `/agendar/:slug` em `web/src/router.ts` (`meta: { publica: true }`): etapas duracao, dia (calendario do mes so com `dias`), horario (no fuso do navegador, com o aviso de fuso diferente), dados (nome, e-mail, WhatsApp, aceite e o campo escondido `site`) e confirmado; `409` volta para a escolha de horario com a mensagem; sem menu nem dados do painel; layout do `AuthLayout` (depende de T139)
-- [ ] T141 [US5] Em `web/src/views/AgendaMesa.vue`, bloco "Página de agendamento": sem Google, explica e manda conectar; com Google, formulario (nome exibido, duracoes, dias, janela, antecedencia, horizonte, ativa), link com copiar e "gerar novo link" com confirmacao; lista dos proximos agendamentos com cliente, horario, situacao, aviso de confirmacao nao enviada, remarcar e cancelar (depende de T139)
+- [X] T139 [P] [US5] Em `web/src/api.ts`, tipos `PaginaAgendamento`, `Horario`, `Agendamento` e as chamadas publicas sem token (`/agendar/...`) (depende de T137, T138)
+- [X] T140 [US5] Criar `web/src/views/AgendarPublico.vue` e a rota publica `/agendar/:slug` em `web/src/router.ts` (`meta: { publica: true }`): etapas duracao, dia (calendario do mes so com `dias`), horario (no fuso do navegador, com o aviso de fuso diferente), dados (nome, e-mail, WhatsApp, aceite e o campo escondido `site`) e confirmado; `409` volta para a escolha de horario com a mensagem; sem menu nem dados do painel; layout do `AuthLayout` (depende de T139)
+- [X] T141 [US5] Em `web/src/views/AgendaMesa.vue`, bloco "Página de agendamento": sem Google, explica e manda conectar; com Google, formulario (nome exibido, duracoes, dias, janela, antecedencia, horizonte, ativa), link com copiar e "gerar novo link" com confirmacao; lista dos proximos agendamentos com cliente, horario, situacao, aviso de confirmacao nao enviada, remarcar e cancelar (depende de T139)
 
 **Checkpoint**: US5 completa; T125 a T129 verdes; roteiro de [quickstart.md](quickstart.md#us5-pagina-publica-de-agendamento) passando.
 
@@ -445,8 +445,8 @@ usuario e a mensagem de confirmacao chegar no WhatsApp do cliente de teste (spec
 
 ## Phase 20: Polish (US5)
 
-- [ ] T142 [P] Em `README.md`, secao Pagina de agendamento: como ativar (precisa do Google Agenda), o que o cliente ve, o que acontece na reserva, a confirmacao da vespera dependendo do modelo aprovado da Meta, as respostas 1, 2 e PARAR, remarcar pelo assessor, limites contra reservas falsas e o que ficou de fora; tabela "Como esta organizado" com `src/agendamento.ts`
-- [ ] T143 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
+- [X] T142 [P] Em `README.md`, secao Pagina de agendamento: como ativar (precisa do Google Agenda), o que o cliente ve, o que acontece na reserva, a confirmacao da vespera dependendo do modelo aprovado da Meta, as respostas 1, 2 e PARAR, remarcar pelo assessor, limites contra reservas falsas e o que ficou de fora; tabela "Como esta organizado" com `src/agendamento.ts`
+- [X] T143 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
 - [ ] T144 Executar o roteiro de [quickstart.md](quickstart.md#us5-pagina-publica-de-agendamento) com Google e WhatsApp reais (depende do Google Cloud da US4 e do modelo aprovado), com `AI_PROVIDER=gemini` e com `AI_PROVIDER=claude` quando houver `ANTHROPIC_API_KEY`
 
 ---

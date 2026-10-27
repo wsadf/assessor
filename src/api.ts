@@ -494,7 +494,7 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
   // Pagina publica de agendamento: o cliente nao tem conta. So sai o nome exibido e horarios livres.
   app.register(
     async (pub) => {
-      const NAO_ACHEI = { erro: "Pagina de agendamento nao encontrada." };
+      const NAO_ACHEI = { erro: "Página de agendamento não encontrada." };
       const publica = (req: FastifyRequest) => paginaPublica(repo.db, (req.params as { slug: string }).slug);
 
       pub.get("/:slug", async (req, reply) => {

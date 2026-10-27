@@ -119,10 +119,10 @@ const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "use HH:mm");
 
 export const paginaSchema = z
   .object({
-    nome: z.string().trim().min(2, "o nome precisa de 2 a 60 letras").max(60, "o nome precisa de 2 a 60 letras"),
+    nome: z.string().trim().min(2, "o nome precisa ter de 2 a 60 letras").max(60, "o nome precisa ter de 2 a 60 letras"),
     duracoes: z
-      .array(z.number().int().refine((d) => (DURACOES as readonly number[]).includes(d), "duracao fora de 15, 30, 45, 60, 90 e 120"))
-      .min(1, "escolha pelo menos uma duracao")
+      .array(z.number().int().refine((d) => (DURACOES as readonly number[]).includes(d), "duração fora de 15, 30, 45, 60, 90 e 120"))
+      .min(1, "escolha pelo menos uma duração")
       .max(6),
     dias: z.array(z.number().int().min(0).max(6)).min(1, "escolha pelo menos um dia").max(7),
     inicio: hhmm,
@@ -131,7 +131,7 @@ export const paginaSchema = z
     horizonteDias: z.number().int().min(1).max(90).default(30),
     ativa: z.boolean(),
   })
-  .refine((p) => p.fim > p.inicio, { message: "o fim do atendimento precisa ser depois do inicio", path: ["fim"] });
+  .refine((p) => p.fim > p.inicio, { message: "o fim do atendimento precisa ser depois do início", path: ["fim"] });
 
 export type DadosPagina = z.input<typeof paginaSchema>;
 
@@ -155,7 +155,7 @@ export const linkDaPagina = (p: Pagina) => `${config.google.painelUrl}/agendar/$
 
 export function salvarPagina(db: Db, ctx: Contexto, dados: DadosPagina) {
   exigir(ctx, "agenda");
-  if (!estadoGoogle(db, ctx.membro).conectada) throw new AuthError(409, "Conecte o Google Agenda antes de ativar a pagina.");
+  if (!estadoGoogle(db, ctx.membro).conectada) throw new AuthError(409, "Conecte o Google Agenda antes de ativar a página.");
   const r = paginaSchema.safeParse(dados);
   if (!r.success) throw new AuthError(400, r.error.issues.map((i) => i.message).join("; "));
   const d = r.data;
@@ -186,7 +186,7 @@ export function salvarPagina(db: Db, ctx: Contexto, dados: DadosPagina) {
 /** O link antigo para de funcionar na hora: serve para quando ele vazou. */
 export function novoSlug(db: Db, ctx: Contexto) {
   exigir(ctx, "agenda");
-  if (!paginaDe(db, ctx.membro)) throw new AuthError(404, "Voce ainda nao tem pagina de agendamento.");
+  if (!paginaDe(db, ctx.membro)) throw new AuthError(404, "Você ainda não tem página de agendamento.");
   db.prepare(`UPDATE booking_pages SET slug = ? WHERE phone = ?`).run(gerarSlug(), ctx.membro);
   return paginaDe(db, ctx.membro)!;
 }
@@ -246,8 +246,8 @@ function livres(db: Db, p: Pagina, dia: string, duracao: number, agora: Date, ev
 
 /** Confere a consulta antes de gastar uma chamada ao Google. */
 export function validarConsulta(p: Pagina, dia: string, duracao: number, agora: Date) {
-  if (!duracoesDa(p).includes(duracao)) throw new AuthError(400, "Duracao fora das oferecidas.");
-  if (!diasDisponiveis(p, agora).includes(dia)) throw new AuthError(400, "Dia fora dos disponiveis.");
+  if (!duracoesDa(p).includes(duracao)) throw new AuthError(400, "Duração fora das oferecidas.");
+  if (!diasDisponiveis(p, agora).includes(dia)) throw new AuthError(400, "Dia fora dos disponíveis.");
 }
 
 /** Nunca devolve nada dos outros compromissos alem de que o horario esta ocupado. */
@@ -328,20 +328,20 @@ const reservaSchema = z.object({
   inicio: z.iso.datetime({ offset: true }),
   duracao: z.number().int(),
   nome: z.string().trim().min(2, "informe seu nome").max(80),
-  email: z.string().trim().email("e-mail invalido"),
+  email: z.string().trim().email("e-mail inválido"),
   whatsapp: z
     .string()
     .transform(digitos)
     .pipe(z.string().min(10, "WhatsApp incompleto").max(15))
     .transform((n) => (n.length <= 11 ? `55${n}` : n)),
-  aceite: z.literal(true, { error: "e preciso aceitar receber a confirmacao pelo WhatsApp" }),
-  fuso: z.string().refine((f) => f === "UTC" || Intl.supportedValuesOf("timeZone").includes(f), "fuso invalido"),
+  aceite: z.literal(true, { error: "é preciso aceitar receber a confirmação pelo WhatsApp" }),
+  fuso: z.string().refine((f) => f === "UTC" || Intl.supportedValuesOf("timeZone").includes(f), "fuso inválido"),
   site: z.string().optional(),
 });
 
 const sha256 = (s: string) => crypto.createHash("sha256").update(s).digest("hex");
-const OCUPADO = "Esse horario acabou de ser ocupado. Escolha outro.";
-const SEM_AGENDA = "Nao consegui ver a agenda agora. Tente em alguns minutos.";
+const OCUPADO = "Esse horário acabou de ser ocupado. Escolha outro.";
+const SEM_AGENDA = "Não consegui ver a agenda agora. Tente em alguns minutos.";
 
 export const agendamentoPorId = (db: Db, id: number) => db.prepare(`SELECT * FROM bookings WHERE id = ?`).get(id) as Agendamento | undefined;
 
@@ -385,7 +385,7 @@ export async function reservar(repo: Repo, p: Pagina, dados: unknown, ip: string
   const fim = new Date(inicio.getTime() + minutos(d.duracao));
   const dia = localDate(inicio);
   validarConsulta(p, dia, d.duracao, agora);
-  if (!iniciosDoDia(p, dia, d.duracao, agora).some((t) => t.getTime() === inicio.getTime())) throw new AuthError(400, "Horario fora dos oferecidos.");
+  if (!iniciosDoDia(p, dia, d.duracao, agora).some((t) => t.getTime() === inicio.getTime())) throw new AuthError(400, "Horário fora dos oferecidos.");
 
   const ipHash = sha256(ip);
   const conta = (sql: string, ...args: unknown[]) => (db.prepare(sql).get(...args) as { n: number }).n;
@@ -443,7 +443,7 @@ export function agendamentoDoDono(db: Db, ctx: Contexto, id: number) {
   exigir(ctx, "agenda");
   const b = agendamentoPorId(db, id);
   if (!b || b.owner_phone !== ctx.membro || b.status === "cancelado" || b.status === "reservando") {
-    throw new AuthError(404, `Agendamento #${id} nao encontrado.`);
+    throw new AuthError(404, `Agendamento #${id} não encontrado.`);
   }
   return b;
 }
