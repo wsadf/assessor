@@ -24,8 +24,12 @@ const { dados: d, carregando, erro, recarregar } = useCarregar(
   [pasta, buscaAtiva],
 );
 
-const tamanho = (bytes: number) =>
-  bytes >= 1048576 ? `${(bytes / 1048576).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+const tamanho = (bytes: number) => {
+  const em = (div: number, sufixo: string) => `${(bytes / div).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} ${sufixo}`;
+  if (bytes >= 1024 ** 3) return em(1024 ** 3, "GB");
+  if (bytes >= 1024 ** 2) return em(1024 ** 2, "MB");
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+};
 const fracaoUso = computed(() => (d.value ? Math.min(d.value.uso.bytes / d.value.uso.limite, 1) : 0));
 const nomeDaPasta = (id: string | null) => d.value?.pastas.find((p) => p.id === id)?.nome ?? "Sem pasta";
 const totalGuardado = computed(() => (d.value?.pastas ?? []).reduce((s, p) => s + p.qtd, 0));

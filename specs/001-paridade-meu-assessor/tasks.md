@@ -198,6 +198,7 @@ certa e recuperar um deles descrevendo o conteudo sem citar o nome do arquivo (s
 - [X] T062 [P] Em `README.md`, documentar a guarda de documentos (WhatsApp e painel), pastas, limites (20 MB, 1 GB, aviso em 80%, so PDF e imagem lidos pela IA), pendentes apagados em 24 h, a pasta `data/<banco>-arquivos/` e o que ficou de fora (enviar pelo painel, pastas proprias, ler DOCX); tabela "Como esta organizado" com `src/documentos.ts`
 - [X] T063 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
 - [ ] T064 Executar o roteiro de [quickstart.md](quickstart.md#us2-documentos) (painel demo, terminal com `DB_PATH=data/demo.db` e, se houver numero de teste, WhatsApp), com `AI_PROVIDER=gemini` e com `AI_PROVIDER=claude` quando houver `ANTHROPIC_API_KEY`
+  - 2026-10-27: painel conferido como titular (pastas, busca "apartamento marco", download do PDF, `comprovanteId` em Transacoes). Terminal com Gemini nao validado: o Gemini respondeu 503 de alta demanda (principal e reserva), inclusive em pedidos so com ferramentas antigas. Falta repetir o terminal, o WhatsApp e o Claude.
 
 ---
 
