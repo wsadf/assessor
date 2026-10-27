@@ -115,6 +115,7 @@ Com o numero de teste: mandar um PDF com a legenda "guarda esse" (guardado e cla
 uma foto de cupom (lancamento e comprovante), mandar um PDF sem legenda e depois "sim, guarda"
 (guardado), e pedir o arquivo de volta (chega como documento na conversa). Repetir com
 `AI_PROVIDER=gemini` e `AI_PROVIDER=claude`.
+
 # US3: avisos proativos
 
 Contratos em [contracts/ferramentas-avisos.md](contracts/ferramentas-avisos.md) e
@@ -163,6 +164,7 @@ disponiveis e desligados.
 
 Com o servidor rodando e um numero de teste: cadastrar uma conta que vence amanha e mudar a hora
 de `vencimentos` para a hora atual; o aviso chega em ate 30 segundos e nao se repete.
+
 # US4: Google Agenda
 
 Contratos em [contracts/ferramentas-agenda.md](contracts/ferramentas-agenda.md) e
