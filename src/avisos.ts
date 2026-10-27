@@ -228,7 +228,7 @@ const contaPorId = (db: Db, id: number) => db.prepare(`SELECT * FROM bills WHERE
 
 function contaDaConta(db: Db, ctx: Contexto, id: number) {
   const c = contaPorId(db, id);
-  if (!c || c.phone !== ctx.conta || c.status === "cancelada") throw new AuthError(404, `Conta a pagar #${id} nao encontrada.`);
+  if (!c || c.phone !== ctx.conta || c.status === "cancelada") throw new AuthError(404, `Conta a pagar #${id} não encontrada.`);
   return c;
 }
 
@@ -274,9 +274,9 @@ export function contasAVencer(db: Db, conta: string, de: string, ate: string) {
 export function pagarConta(repo: Repo, ctx: Contexto, id: number, p: { valor?: number | null; data?: string | null; pagamento?: string | null }) {
   exigir(ctx, "despesas");
   const c = contaDaConta(repo.db, ctx, id);
-  if (c.status !== "aberta") throw new AuthError(400, `${c.description} ja esta paga.`);
+  if (c.status !== "aberta") throw new AuthError(400, `${c.description} já está paga.`);
   const centavos = p.valor ? toCents(p.valor) : c.amount_cents;
-  if (!centavos) throw new AuthError(400, `Informe o valor pago: ${c.description} nao tem valor fixo cadastrado.`);
+  if (!centavos) throw new AuthError(400, `Informe o valor pago: ${c.description} não tem valor fixo cadastrado.`);
   const transacao = repo.addTransaction({
     phone: ctx.conta,
     created_by: ctx.membro,
@@ -345,7 +345,7 @@ function primeiraDesde(r: Pick<Recorrencia, "frequency" | "anchor_day">, desde: 
 export function descreverFrequencia(r: Pick<Recorrencia, "frequency" | "anchor_day">) {
   if (r.frequency === "diaria") return "todo dia";
   if (r.frequency === "semanal") return `toda ${SEMANA[r.anchor_day ?? 0]}`;
-  return `todo dia ${r.anchor_day} do mes`;
+  return `todo dia ${r.anchor_day}`;
 }
 
 export function criarRecorrencia(
@@ -387,7 +387,7 @@ export function listarRecorrencias(db: Db, ctx: Contexto) {
 
 export function alterarRecorrencia(db: Db, ctx: Contexto, id: number, acao: "pausar" | "retomar" | "cancelar" | null, hoje: string, valor?: number | null) {
   const r = recorrenciaPorId(db, id);
-  if (!r || r.phone !== ctx.conta || r.status === "cancelada") throw new AuthError(404, `Recorrencia #${id} nao encontrada.`);
+  if (!r || r.phone !== ctx.conta || r.status === "cancelada") throw new AuthError(404, `Recorrência #${id} não encontrada.`);
   exigir(ctx, capDoTipo(r.kind));
   if (valor) db.prepare(`UPDATE recurring SET amount_cents = ? WHERE id = ?`).run(toCents(valor), id);
   if (acao === "pausar") db.prepare(`UPDATE recurring SET status = 'pausada' WHERE id = ?`).run(id);

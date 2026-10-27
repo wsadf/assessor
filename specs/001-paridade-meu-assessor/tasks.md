@@ -199,6 +199,7 @@ certa e recuperar um deles descrevendo o conteudo sem citar o nome do arquivo (s
 - [X] T063 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
 - [ ] T064 Executar o roteiro de [quickstart.md](quickstart.md#us2-documentos) (painel demo, terminal com `DB_PATH=data/demo.db` e, se houver numero de teste, WhatsApp), com `AI_PROVIDER=gemini` e com `AI_PROVIDER=claude` quando houver `ANTHROPIC_API_KEY`
   - 2026-10-27: painel conferido como titular (pastas, busca "apartamento marco", download do PDF, `comprovanteId` em Transacoes). Terminal com Gemini nao validado: o Gemini respondeu 503 de alta demanda (principal e reserva), inclusive em pedidos so com ferramentas antigas. Falta repetir o terminal, o WhatsApp e o Claude.
+  - 2026-10-27, depois: terminal com Gemini ok ("acha o contrato do apartamento" e "me manda o comprovante do aluguel" enviam o arquivo; "documento do barco" diz que nao achou). Falta o WhatsApp com numero de teste e o Claude.
 
 ---
 
@@ -290,6 +291,7 @@ avancar o relogio de teste e verificar que o aviso e o lancamento automatico aco
 - [X] T095 [P] Em `README.md`, documentar contas a pagar, recorrencias, tipos de aviso com padroes e horarios, a fila de avisos pendentes e a dependencia do modelo aprovado fora da janela de 24 horas; tabela "Como esta organizado" com `src/avisos.ts`
 - [X] T096 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
 - [ ] T097 Executar o roteiro de [quickstart.md](quickstart.md#us3-avisos-proativos) (painel demo como titular e como Bia, terminal com `DB_PATH=data/demo.db`), com `AI_PROVIDER=gemini` e com `AI_PROVIDER=claude` quando houver `ANTHROPIC_API_KEY`
+  - 2026-10-27: painel como titular ok (contas, pagamento de fatura variavel com recusa sem valor, recorrencias, Avisos com alerta de modelo nao aprovado). Terminal com Gemini ok (comparativo, recorrencia "toda sexta", desligar aviso de categoria). Falta o agendador com numero real de WhatsApp e o Claude.
 
 ---
 
