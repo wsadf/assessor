@@ -19,6 +19,7 @@ import {
 import { repoDoContexto, resolverContexto } from "./conta.js";
 import type { Repo } from "./db.js";
 import { documentos } from "./documentos.js";
+import { estado as estadoGoogle, eventosDoDia, limparAutorizacoes, type Evento } from "./google.js";
 import { contextoTitular } from "./permissoes.js";
 import { localDate, localHour } from "./time.js";
 import { nextOccurrence } from "./tools.js";
@@ -85,12 +86,22 @@ export async function rodarAvisos(repo: Repo, send: Envio, now = new Date()) {
         case "resumo_manha":
         case "resumo_noite": {
           if (!uma(p.tipo)) break;
-          const texto = p.tipo === "resumo_manha" ? resumoManha(repo, ctx, now) : resumoNoite(repo, ctx, now);
+          const texto = p.tipo === "resumo_manha" ? resumoManha(repo, ctx, now, await eventosDoResumo(repo, phone, hoje)) : resumoNoite(repo, ctx, now);
           if (texto) await entregar(db, send, phone, p.tipo, hoje, texto, now);
           break;
         }
       }
     }
+  }
+}
+
+/** Resumo nao depende do Google: falha vira uma linha de aviso, sem conta conectada nao aparece. */
+async function eventosDoResumo(repo: Repo, phone: string, hoje: string): Promise<Evento[] | "falhou" | undefined> {
+  if (!estadoGoogle(repo.db, phone).conectada) return undefined;
+  try {
+    return await eventosDoDia(repo.db, phone, hoje);
+  } catch {
+    return "falhou";
   }
 }
 
@@ -107,6 +118,7 @@ export function startScheduler(repo: Repo, send: Envio) {
         ultimaLimpeza = Date.now();
         documentos(repo.db).limparPendentes();
         limparRegistros(repo.db, new Date());
+        limparAutorizacoes(repo.db);
       }
     } catch (err) {
       console.error("[agendador] falha no tick", err);

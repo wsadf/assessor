@@ -5,6 +5,7 @@ import { config } from "./config.js";
 import { prepararTabelasConta } from "./conta.js";
 import { prepararTabelasDocumentos } from "./documentos.js";
 import { prepararTabelasAvisos } from "./avisos.js";
+import { prepararTabelasGoogle } from "./google.js";
 
 export type Kind = "despesa" | "receita";
 export type Recurrence = "diario" | "semanal" | "mensal" | null;
@@ -45,6 +46,8 @@ export interface Reminder {
   created_by: string | null;
   /** Quem recebe o aviso; nulo = o telefone da conta. */
   notify_phone: string | null;
+  /** Evento do Google Agenda que este lembrete acompanha. */
+  google_event_id: string | null;
 }
 
 export type TaskStatus = "pendente" | "andamento" | "concluida";
@@ -155,6 +158,7 @@ export function openDb(file = config.dbPath) {
     ["tasks", "created_by", "TEXT"],
     ["transactions", "recurring_id", "INTEGER"],
     ["transactions", "bill_id", "INTEGER"],
+    ["reminders", "google_event_id", "TEXT"],
   ]) {
     const cols = (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
     if (!cols.includes(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
@@ -167,6 +171,7 @@ export function openDb(file = config.dbPath) {
   prepararTabelasConta(db);
   prepararTabelasDocumentos(db);
   prepararTabelasAvisos(db);
+  prepararTabelasGoogle(db);
   return db;
 }
 
@@ -344,11 +349,13 @@ export function repo(db: Db) {
       text: string,
       nextRunAt: Date,
       recurrence: Recurrence,
-      quem: { created_by?: string | null; notify_phone?: string | null } = {},
+      quem: { created_by?: string | null; notify_phone?: string | null; google_event_id?: string | null } = {},
     ): Reminder {
       const info = db
-        .prepare(`INSERT INTO reminders (phone, text, next_run_at, recurrence, created_by, notify_phone) VALUES (?, ?, ?, ?, ?, ?)`)
-        .run(phone, text, nextRunAt.toISOString(), recurrence, quem.created_by ?? null, quem.notify_phone ?? null);
+        .prepare(
+          `INSERT INTO reminders (phone, text, next_run_at, recurrence, created_by, notify_phone, google_event_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(phone, text, nextRunAt.toISOString(), recurrence, quem.created_by ?? null, quem.notify_phone ?? null, quem.google_event_id ?? null);
       return db.prepare(`SELECT * FROM reminders WHERE id = ?`).get(info.lastInsertRowid) as Reminder;
     },
 
@@ -356,6 +363,20 @@ export function repo(db: Db) {
       return db
         .prepare(`SELECT * FROM reminders WHERE phone = ? AND status = 'ativo' ORDER BY next_run_at`)
         .all(phone) as Reminder[];
+    },
+
+    remindersDoEvento(phone: string, eventId: string): Reminder[] {
+      return db
+        .prepare(`SELECT * FROM reminders WHERE phone = ? AND google_event_id = ? AND status = 'ativo'`)
+        .all(phone, eventId) as Reminder[];
+    },
+
+    moverLembreteDoEvento(phone: string, eventId: string, novoHorario: Date) {
+      db.prepare(`UPDATE reminders SET next_run_at = ? WHERE phone = ? AND google_event_id = ? AND status = 'ativo'`).run(
+        novoHorario.toISOString(),
+        phone,
+        eventId,
+      );
     },
 
     cancelReminder(phone: string, id: number): boolean {

@@ -19,6 +19,9 @@ Como trabalhar:
 - Mensagem com [arquivo ..., nao lido]: voce nao ve o conteudo; pergunte o que e antes de guardar.
 - Conta com vencimento (condominio, fatura, IPVA): cadastrar_conta_pagar. "Paguei o condominio" com a conta na lista: pagar_conta, nao registrar_transacao. Na duvida, listar_contas_pagar antes.
 - Gasto ou receita que se repete ("toda segunda tem 89,90 da academia", "todo dia 5 recebo o salario"): criar_recorrencia, com inicio na proxima data em que acontece.
+- Compromisso com dia e hora ("marca o dentista quinta as 15h", "reuniao com a Ana terca 10h com link"): criar_compromisso, que tambem cria o lembrete no WhatsApp. Aviso solto, sem compromisso ("me lembra do remedio as 20h"): criar_lembrete. Sem data ou sem hora, pergunte antes de marcar. Se vier conflito, pergunte se marca assim mesmo.
+- Mover ou cancelar compromisso: use consultar_agenda antes para achar o id; com mais de um compativel, pergunte qual. Nunca invente id.
+- Se a resposta de uma ferramenta trouxer link do Google, repasse o link inteiro ao usuario.
 - Ligar, desligar ou mudar o horario de avisos ("para de me avisar de categoria", "me manda o resumo da noite as 22h"): configurar_avisos.
 
 Como responder:
@@ -42,7 +45,7 @@ export type UserInput = {
 export type HistoryItem = { role: "user" | "assistant"; text: string };
 
 /** Executa uma ferramenta e devolve o texto do resultado; lanca erro se a entrada for invalida. */
-export type ToolExecutor = (name: string, input: unknown) => string;
+export type ToolExecutor = (name: string, input: unknown) => string | Promise<string>;
 
 /** Um provedor recebe o historico e a mensagem nova e devolve a resposta final em texto. */
 export type Provider = (history: HistoryItem[], input: UserInput, userText: string, execute: ToolExecutor) => Promise<string>;

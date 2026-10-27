@@ -20,6 +20,13 @@ function provider(): "claude" | "gemini" {
   return process.env.GEMINI_API_KEY && !process.env.ANTHROPIC_API_KEY ? "gemini" : "claude";
 }
 
+/** AES-256 exige exatamente 32 bytes; chave errada vale como ausente, e a agenda do Google fica desligada. */
+function chaveDoGoogle(base64: string | undefined): Buffer | null {
+  if (!base64) return null;
+  const chave = Buffer.from(base64, "base64");
+  return chave.length === 32 ? chave : null;
+}
+
 export const config = {
   port: Number(process.env.PORT ?? 3000),
   aiProvider: provider(),
@@ -69,6 +76,13 @@ export const config = {
     pendenteHoras: 24,
   },
 
+  google: {
+    clientId: process.env.GOOGLE_CLIENT_ID ?? "",
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+    tokenKey: chaveDoGoogle(process.env.GOOGLE_TOKEN_KEY),
+    painelUrl: (process.env.PAINEL_URL ?? "").replace(/\/+$/, ""),
+  },
+
   panel: {
     token: process.env.PAINEL_TOKEN ?? "",
     // Por padrao o mesmo telefone ficticio do chat do terminal, onde costumam estar os testes.
@@ -78,6 +92,9 @@ export const config = {
 };
 
 export const DEMO_DB_PATH = "data/demo.db";
+
+export const googleConfigurado = () =>
+  Boolean(config.google.clientId && config.google.clientSecret && config.google.tokenKey && config.google.painelUrl);
 
 /** Variavel com a chave do provedor de IA escolhido. */
 export const aiKeyName = () => (config.aiProvider === "gemini" ? "GEMINI_API_KEY" : "ANTHROPIC_API_KEY");

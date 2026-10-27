@@ -2,6 +2,7 @@ import { AuthError } from "./auth.js";
 import { config } from "./config.js";
 import { repoDoContexto } from "./conta.js";
 import type { Db, Kind, Repo, Transaction } from "./db.js";
+import type { Evento } from "./google.js";
 import { exigir, pode, type Capacidade, type Contexto } from "./permissoes.js";
 import { brl, fromLocal, localDate } from "./time.js";
 
@@ -511,7 +512,8 @@ export const textoRecorrente = (t: Transaction) =>
 const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
 const criadoHoje = (criado: string, hoje: string) => localDate(new Date(criado.includes("T") ? criado : `${criado.replace(" ", "T")}Z`)) === hoje;
 
-export function resumoManha(repo: Repo, ctx: Contexto, now: Date): string | null {
+/** `eventos` sao os do Google Agenda de quem recebe; "falhou" quando o Google nao respondeu. */
+export function resumoManha(repo: Repo, ctx: Contexto, now: Date, eventos?: Evento[] | "falhou"): string | null {
   const r = repoDoContexto(repo, ctx);
   const hoje = localDate(now);
   const ontem = addDias(hoje, -1);
@@ -526,6 +528,11 @@ export function resumoManha(repo: Repo, ctx: Contexto, now: Date): string | null
   if (pode(ctx, "agenda")) {
     const meus = r.listReminders(ctx.conta).filter((l) => (l.notify_phone ?? l.phone) === ctx.membro && localDate(new Date(l.next_run_at)) === hoje);
     if (meus.length) linhas.push(`- Lembretes de hoje: ${meus.map((l) => l.text).join("; ")}`);
+  }
+  if (eventos === "falhou") linhas.push("- Nao consegui ler o Google Agenda agora");
+  else if (eventos?.length) {
+    const hora = (iso: string) => new Intl.DateTimeFormat("pt-BR", { timeZone: config.timezone, hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+    linhas.push(`- Compromissos de hoje: ${eventos.map((e) => (e.diaInteiro ? e.titulo : `${hora(e.inicio)} ${e.titulo}`)).join("; ")}`);
   }
   return linhas.length ? ["Bom dia! Seu resumo:", ...linhas].join("\n") : null;
 }

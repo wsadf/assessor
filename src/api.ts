@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { config } from "./config.js";
+import { config, googleConfigurado } from "./config.js";
 import type { Kind, Repo, Task, Transaction } from "./db.js";
 import { fromLocal, localDate } from "./time.js";
 import { assistantNumber, sendNotice } from "./whatsapp.js";
@@ -26,6 +26,15 @@ import {
   type Recorrencia,
   type TipoAviso,
 } from "./avisos.js";
+import {
+  concluirConexao,
+  desconectar as desconectarGoogle,
+  estado as estadoGoogle,
+  eventosDoDia,
+  urlDeAutorizacao,
+  usarLink,
+  type Evento,
+} from "./google.js";
 import { documentos as servicoDocumentos, nomeParaDownload, PASTA_IDS, podeVerDocumento, type Documento } from "./documentos.js";
 
 const contaPagarBody = z.object({
@@ -222,6 +231,9 @@ const CAPACIDADE_ROTA: Record<string, Capacidade[]> = {
   "GET /api/recorrencias": FINANCAS,
   "POST /api/recorrencias": FINANCAS,
   "PATCH /api/recorrencias/:id": FINANCAS,
+  "GET /api/google": ["agenda"],
+  "POST /api/google/conectar": ["agenda"],
+  "DELETE /api/google": ["agenda"],
 };
 const SEM_ACESSO = { erro: "Seu acesso a esta conta não inclui isso." };
 
@@ -388,6 +400,44 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
     },
     { prefix: "/api/auth" },
+  );
+
+  // Rotas que o Google e o link do WhatsApp abrem no navegador, sem sessao do painel.
+  // Ficam num plugin proprio para nao passar pelo hook de sessao das rotas privadas.
+  app.register(
+    async (pub) => {
+      const pagina = (reply: FastifyReply, titulo: string, texto: string, status = 200) =>
+        reply
+          .code(status)
+          .type("text/html; charset=utf-8")
+          .send(
+            `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
+              `<title>${titulo}</title><body style="font-family:system-ui,sans-serif;max-width:420px;margin:15vh auto;padding:0 16px;line-height:1.5">` +
+              `<h1 style="font-size:22px">${titulo}</h1><p>${texto}</p></body></html>`,
+          );
+
+      pub.get("/conectar/:token", async (req, reply) => {
+        if (!googleConfigurado()) return pagina(reply, "Google Agenda indisponível", "A agenda do Google não está configurada neste servidor.", 503);
+        const phone = usarLink(repo.db, (req.params as { token: string }).token);
+        if (!phone) return pagina(reply, "Link vencido", "Link vencido ou já usado. Peça outro ao assessor no WhatsApp.", 400);
+        return reply.redirect(urlDeAutorizacao(repo.db, phone), 302);
+      });
+
+      pub.get("/retorno", async (req, reply) => {
+        const q = req.query as { code?: string; state?: string; error?: string };
+        if (q.error || !q.code || !q.state) {
+          return pagina(reply, "Agenda não conectada", "A Google Agenda não foi conectada. Se quiser tentar de novo, peça outro link ao assessor.", 400);
+        }
+        try {
+          await concluirConexao(repo.db, q.code, q.state);
+          return pagina(reply, "Google Agenda conectada", "Tudo certo. Pode voltar para o WhatsApp ou para o painel.");
+        } catch (err) {
+          req.log.warn({ err }, "falha ao concluir a conexao com o Google");
+          return pagina(reply, "Agenda não conectada", (err as Error).message, 400);
+        }
+      });
+    },
+    { prefix: "/api/google" },
   );
 
   app.register(
@@ -909,14 +959,36 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
         };
       });
 
+      api.get("/google", async (req) => estadoGoogle(repo.db, de(req).ctx.membro));
+
+      api.post("/google/conectar", async (req, reply) => {
+        if (!googleConfigurado()) return reply.code(503).send({ erro: "Google Agenda não configurada neste servidor." });
+        return { url: urlDeAutorizacao(repo.db, de(req).ctx.membro) };
+      });
+
+      api.delete("/google", async (req) => {
+        await desconectarGoogle(repo.db, de(req).ctx.membro);
+        return { ok: true };
+      });
+
       api.get("/agenda", async (req, reply) => {
-        const { phone, repo } = de(req);
+        const { ctx, phone, repo } = de(req);
         const dia = parse(dataSchema, (req.query as { dia?: string }).dia ?? localDate(), reply);
         if (!dia) return;
         const ativos = repo.listReminders(phone);
         const item = (r: (typeof ativos)[number]) => ({ id: r.id, texto: r.text, quando: r.next_run_at, recorrencia: r.recurrence });
         const todos = repo.allReminders(phone);
+        // A agenda do Google e de quem esta logado; falha do Google nao derruba a mesa.
+        const google = { conectada: estadoGoogle(repo.db, ctx.membro).conectada, eventos: [] as Evento[], erro: null as string | null };
+        if (google.conectada) {
+          try {
+            google.eventos = await eventosDoDia(repo.db, ctx.membro, dia);
+          } catch (err) {
+            google.erro = (err as Error).message;
+          }
+        }
         return {
+          google,
           dia,
           doDia: ativos.filter((r) => localDate(new Date(r.next_run_at)) === dia).map(item),
           proximos: ativos.filter((r) => new Date(r.next_run_at) > new Date()).slice(0, 12).map(item),

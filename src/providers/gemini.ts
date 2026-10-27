@@ -138,18 +138,18 @@ export const geminiProvider: Provider = async (history, input, userText, execute
     // O turno do modelo volta inteiro, sem mexer nas partes: as assinaturas de
     // raciocinio (thoughtSignature) precisam acompanhar as chamadas de funcao.
     contents.push({ role: "model", parts });
-    contents.push({
-      role: "user",
-      parts: calls.map(({ functionCall: call }) => {
-        let response: Record<string, unknown>;
-        try {
-          response = { result: execute(call!.name, call!.args ?? {}) };
-        } catch (err) {
-          response = { error: (err as Error).message };
-        }
-        return { functionResponse: { ...(call!.id ? { id: call!.id } : {}), name: call!.name, response } };
-      }),
-    });
+    // Em sequencia, nao em paralelo: duas funcoes podem mexer no mesmo registro.
+    const respostas: Part[] = [];
+    for (const { functionCall: call } of calls) {
+      let response: Record<string, unknown>;
+      try {
+        response = { result: await execute(call!.name, call!.args ?? {}) };
+      } catch (err) {
+        response = { error: (err as Error).message };
+      }
+      respostas.push({ functionResponse: { ...(call!.id ? { id: call!.id } : {}), name: call!.name, response } });
+    }
+    contents.push({ role: "user", parts: respostas });
   }
   return "";
 };
