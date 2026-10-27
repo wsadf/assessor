@@ -50,9 +50,63 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return data as T;
 }
 
+export type Perfil = "titular" | "completo" | "so_gastos" | "agenda_tarefas";
+export type PerfilMembro = Exclude<Perfil, "titular">;
+export type Capacidade = "despesas" | "receitas" | "agenda" | "tarefas" | "acessos";
+
+export const PERFIS: Record<Perfil, { nome: string; detalhe: string }> = {
+  titular: { nome: "Titular", detalhe: "dono da conta, vê tudo e gerencia quem tem acesso" },
+  completo: { nome: "Acesso completo", detalhe: "vê e lança gastos, receitas, agenda e tarefas" },
+  so_gastos: { nome: "Só gastos", detalhe: "registra e vê só as despesas, sem receitas nem saldo" },
+  agenda_tarefas: { nome: "Agenda e tarefas", detalhe: "só lembretes e tarefas, sem nada de dinheiro" },
+};
+
 export interface SessaoAberta {
   token: string;
-  conta: { nome: string | null; email: string | null; plano: string | null; testeAte: string | null };
+  conta: { nome: string | null; email: string | null; plano: string | null; testeAte: string | null; titular: string | null; perfil: Perfil };
+  aviso?: string;
+}
+
+export interface Me {
+  telefone: string;
+  nome: string | null;
+  email: string | null;
+  plano: string | null;
+  testeAte: string | null;
+  ia: string;
+  hoje: string;
+  whatsapp: string | null;
+  conta: { titular: string | null; perfil: Perfil; capacidades: Capacidade[]; compartilhada: boolean };
+}
+
+export interface ConviteValidado {
+  titular: string | null;
+  perfil: PerfilMembro;
+  temDadosProprios: boolean;
+}
+
+export interface Acessos {
+  titular: { nome: string | null; telefoneMascarado: string };
+  membros: { telefone: string | null; telefoneMascarado: string; nome: string | null; perfil: PerfilMembro; desde: string; voce: boolean }[];
+  podeGerir: boolean;
+}
+
+export interface Convite {
+  id: number;
+  final: string;
+  perfil: PerfilMembro;
+  rotulo: string | null;
+  estado: "pendente" | "aceito" | "cancelado" | "expirado";
+  validoAte: string;
+  aceitoPor: string | null;
+}
+
+export interface ConviteCriado {
+  id: number;
+  codigo: string;
+  perfil: PerfilMembro;
+  validoAte: string;
+  mensagemWhatsapp: string;
 }
 
 const qs = (params: Record<string, string | number | undefined | null>) => {
@@ -79,6 +133,8 @@ export interface Transacao {
   data: string;
   contraparte: string | null;
   parcela: { numero: number; total: number; grupo: string } | null;
+  /** Quem lancou, quando nao foi o titular; so vem na lista de Transacoes. */
+  criadoPor?: string | null;
 }
 
 export interface Contraparte {
@@ -97,20 +153,21 @@ export interface Grupo {
   qtd: number;
 }
 
+/** Campos opcionais nao vem para quem so ve gastos. */
 export interface Financas {
   mes: string;
-  inicioDoMes: number;
-  receitas: number;
+  inicioDoMes?: number;
+  receitas?: number;
   despesas: number;
-  saldoDoMes: number;
-  saldoAtual: number;
-  diario: { dia: number; saldo: number }[];
+  saldoDoMes?: number;
+  saldoAtual?: number;
+  diario?: { dia: number; saldo: number }[];
   ultimos: Transacao[];
   maioresSaidas: Transacao[];
   porCategoria: Grupo[];
-  projecao: { despesas: number; saldoFinal: number; ritmoDiario: number } | null;
+  projecao: { despesas: number; saldoFinal?: number; ritmoDiario: number } | null;
   mesAnterior: { mes: string; despesas: number };
-  renda: { meses: { mes: string; receitas: number }[]; media: number; menor: number; maior: number; variacao: number };
+  renda?: { meses: { mes: string; receitas: number }[]; media: number; menor: number; maior: number; variacao: number };
   comprometido: { mes: string; valor: number }[];
   pulso: {
     lancamentos: number;
@@ -122,8 +179,8 @@ export interface Financas {
 
 export interface Analises {
   mes: string;
-  resumo: { receitas: number; despesas: number; lancamentos: number };
-  fluxo: { mes: string; receitas: number; despesas: number }[];
+  resumo: { receitas?: number; despesas: number; lancamentos: number };
+  fluxo: { mes: string; receitas?: number; despesas: number }[];
   porCategoria: Grupo[];
   porReceita: Grupo[];
   porPagamento: Grupo[];

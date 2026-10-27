@@ -5,7 +5,8 @@ import { api, limparSessao } from "./api";
 import AppIcon from "./components/AppIcon.vue";
 import AssessorAvatar from "./components/AssessorAvatar.vue";
 import BotaoWhatsapp from "./components/BotaoWhatsapp.vue";
-import { MESAS, SUBMENU_FINANCAS, mesaPorId } from "./mesas";
+import { carregarEu, eu as me, pode } from "./estado";
+import { MESAS, SUBMENU_FINANCAS, mesaLiberada, mesaPorId } from "./mesas";
 
 const route = useRoute();
 const router = useRouter();
@@ -13,11 +14,15 @@ const publica = computed(() => Boolean(route.meta.publica));
 const mesaAtual = computed(() => mesaPorId(String(route.meta.mesa ?? "financas")));
 const menuAberto = ref(false);
 const tema = ref(document.documentElement.dataset.theme === "light" ? "light" : "dark");
-const me = ref<{ nome: string | null; email: string | null; telefone: string; ia: string; whatsapp: string | null } | null>(null);
+const mesas = computed(() => MESAS.filter((m) => mesaLiberada(m, pode)));
 
 watch(() => route.fullPath, () => (menuAberto.value = false));
 // Carrega a conta ao entrar na area logada (inclusive logo depois do login).
-watch(publica, (p) => !p && !me.value && carregarMe());
+watch(publica, (p) => !p && !me.value && carregarEu());
+// Mesa fora do perfil (link antigo, rota digitada) leva para a primeira liberada.
+watch([me, () => route.path], () => {
+  if (me.value && !publica.value && !mesaLiberada(mesaAtual.value, pode)) router.replace(mesas.value[0]?.rota ?? "/operacao");
+});
 
 function alternarTema() {
   tema.value = tema.value === "dark" ? "light" : "dark";
@@ -26,14 +31,6 @@ function alternarTema() {
     localStorage.setItem("assessor-tema", tema.value);
   } catch {
     // Preferencia so desta sessao.
-  }
-}
-
-async function carregarMe() {
-  try {
-    me.value = await api.get("/me");
-  } catch {
-    me.value = null;
   }
 }
 
@@ -47,7 +44,7 @@ async function sair() {
 // Antes de o roteador resolver a primeira rota, meta.publica ainda nao reflete a pagina aberta.
 onMounted(async () => {
   await router.isReady();
-  if (!publica.value) carregarMe();
+  if (!publica.value) carregarEu();
 });
 </script>
 
@@ -67,7 +64,7 @@ onMounted(async () => {
 
       <nav>
         <div class="eyebrow secao">Mesas</div>
-        <template v-for="m in MESAS" :key="m.id">
+        <template v-for="m in mesas" :key="m.id">
           <RouterLink :to="m.rota" class="item-mesa" :class="{ ativo: mesaAtual.id === m.id }">
             <span class="dot" :style="{ background: m.cor }" />
             {{ m.nome }}
@@ -86,7 +83,9 @@ onMounted(async () => {
           <span class="iniciais">{{ (me?.nome ?? "Você")[0] }}</span>
           <div class="quem">
             <div class="nome">{{ me?.nome ?? "Você" }}</div>
-            <div class="faint tel">{{ me?.email ?? me?.telefone ?? "" }}</div>
+            <div class="faint tel">
+              {{ me?.conta.perfil && me.conta.perfil !== "titular" ? `na conta de ${me.conta.titular ?? "titular"}` : (me?.email ?? me?.telefone ?? "") }}
+            </div>
           </div>
         </div>
         <button class="icon-btn sair" title="Sair" aria-label="Sair" @click="sair"><AppIcon name="sair" :size="17" /></button>
@@ -99,7 +98,7 @@ onMounted(async () => {
         <button class="icon-btn so-mobile" aria-label="Abrir menu" @click="menuAberto = true"><AppIcon name="menu" /></button>
         <nav class="abas">
           <RouterLink
-            v-for="m in MESAS"
+            v-for="m in mesas"
             :key="m.id"
             :to="m.rota"
             class="aba"

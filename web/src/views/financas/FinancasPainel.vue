@@ -12,10 +12,12 @@ import StatusCarga from "../../components/StatusCarga.vue";
 import ValorGrande from "../../components/ValorGrande.vue";
 import { brl, brlSinal, dataCurta, mesCurto, mesNome, pagamentoNome, pct } from "../../format";
 import GraficoBarras from "../../components/graficos/GraficoBarras.vue";
-import { HOJE, mesSelecionado, useCarregar } from "../../estado";
+import { HOJE, mesSelecionado, pode, useCarregar } from "../../estado";
 import { PALETA } from "../../mesas";
 
 const { dados: f, carregando, erro, recarregar } = useCarregar(() => api.get<Financas>("/financas", { mes: mesSelecionado.value }), [mesSelecionado]);
+// Perfil so gastos: a API nao manda receitas, saldo nem renda.
+const veReceitas = computed(() => pode("receitas") && f.value?.saldoAtual !== undefined);
 
 const ehAtual = computed(() => mesSelecionado.value === HOJE.slice(0, 7));
 const vazio = computed(() => f.value && f.value.pulso.lancamentos === 0);
@@ -35,12 +37,12 @@ const maioresSaidas = computed(() =>
 );
 
 const rendaSerie = computed(() => ({
-  rotulos: (f.value?.renda.meses ?? []).map((m) => mesCurto(m.mes)),
-  series: [{ nome: "Entradas", cor: "#10b981", valores: (f.value?.renda.meses ?? []).map((m) => m.receitas) }],
+  rotulos: (f.value?.renda?.meses ?? []).map((m) => mesCurto(m.mes)),
+  series: [{ nome: "Entradas", cor: "#10b981", valores: (f.value?.renda?.meses ?? []).map((m) => m.receitas) }],
 }));
 const estabilidade = computed(() => {
-  const v = f.value?.renda.variacao ?? 0;
-  if (!f.value?.renda.media) return { rotulo: "sem entradas registradas", classe: "" };
+  const v = f.value?.renda?.variacao ?? 0;
+  if (!f.value?.renda?.media) return { rotulo: "sem entradas registradas", classe: "" };
   if (v > 0.25) return { rotulo: "renda variável", classe: "warning" };
   return { rotulo: "renda estável", classe: "ok" };
 });
@@ -84,15 +86,15 @@ const pagamentos = computed(() => {
     </EstadoVazio>
 
     <template v-else-if="f">
-      <BlocoMesa titulo="Saldo do período">
-        <ValorGrande :valor="f.saldoAtual" />
+      <BlocoMesa v-if="veReceitas" titulo="Saldo do período">
+        <ValorGrande :valor="f.saldoAtual ?? 0" />
         <div class="mini">
-          <div><span class="eyebrow">Recebido</span><strong class="num pos">{{ brl(f.receitas) }}</strong></div>
+          <div><span class="eyebrow">Recebido</span><strong class="num pos">{{ brl(f.receitas ?? 0) }}</strong></div>
           <div><span class="eyebrow">Pago</span><strong class="num">{{ brl(f.despesas) }}</strong></div>
-          <div><span class="eyebrow">Início do mês</span><strong class="num">{{ brl(f.inicioDoMes) }}</strong></div>
+          <div><span class="eyebrow">Início do mês</span><strong class="num">{{ brl(f.inicioDoMes ?? 0) }}</strong></div>
         </div>
         <AssessorBalao mesa="financas">
-          seu saldo está em <b>{{ brl(f.saldoAtual) }}</b>
+          seu saldo está em <b>{{ brl(f.saldoAtual ?? 0) }}</b>
           <template v-if="topCategoria">, com <b>{{ topCategoria.nome }}</b> puxando os gastos</template>.
         </AssessorBalao>
         <template #lado>
@@ -126,9 +128,10 @@ const pagamentos = computed(() => {
       </BlocoMesa>
 
       <BlocoMesa v-if="f.projecao" :titulo="ehAtual ? 'O fim do mês, projetado' : 'Como o mês fechou'">
-        <ValorGrande :valor="f.projecao.saldoFinal" />
+        <ValorGrande :valor="veReceitas ? (f.projecao.saldoFinal ?? 0) : f.projecao.despesas" />
         <p class="muted">
-          <template v-if="ehAtual">o saldo se os gastos seguirem no ritmo de <b>{{ brl(f.projecao.ritmoDiario) }}</b> por dia.</template>
+          <template v-if="!veReceitas">em gastos no mês, no ritmo de <b>{{ brl(f.projecao.ritmoDiario) }}</b> por dia.</template>
+          <template v-else-if="ehAtual">o saldo se os gastos seguirem no ritmo de <b>{{ brl(f.projecao.ritmoDiario) }}</b> por dia.</template>
           <template v-else>saldo no último dia do mês.</template>
         </p>
         <div class="mini">
@@ -137,8 +140,9 @@ const pagamentos = computed(() => {
           <div v-if="ehAtual"><span class="eyebrow">Ainda por vir</span><strong class="num">{{ brl(aindaVem) }}</strong></div>
         </div>
         <AssessorBalao mesa="financas">
-          <template v-if="ehAtual">no ritmo de agora, você fecha {{ mesNome(f.mes).split(" ")[0] }} com <b>{{ brl(f.projecao.saldoFinal) }}</b>.</template>
-          <template v-else>você fechou o mês com <b>{{ brl(f.projecao.saldoFinal) }}</b>.</template>
+          <template v-if="!veReceitas">no ritmo de agora, os gastos de {{ mesNome(f.mes).split(" ")[0] }} chegam a <b>{{ brl(f.projecao.despesas) }}</b>.</template>
+          <template v-else-if="ehAtual">no ritmo de agora, você fecha {{ mesNome(f.mes).split(" ")[0] }} com <b>{{ brl(f.projecao.saldoFinal ?? 0) }}</b>.</template>
+          <template v-else>você fechou o mês com <b>{{ brl(f.projecao.saldoFinal ?? 0) }}</b>.</template>
         </AssessorBalao>
         <template #lado>
           <div class="barras-proj">
@@ -152,7 +156,7 @@ const pagamentos = computed(() => {
             </div>
           </div>
           <div class="mini dois">
-            <div><span class="eyebrow">Recebido no mês</span><strong class="num pos">{{ brl(f.receitas) }}</strong></div>
+            <div v-if="veReceitas"><span class="eyebrow">Recebido no mês</span><strong class="num pos">{{ brl(f.receitas ?? 0) }}</strong></div>
             <div>
               <span class="eyebrow">Mês anterior</span>
               <strong class="num">{{ brl(f.mesAnterior.despesas) }}</strong>
@@ -175,7 +179,7 @@ const pagamentos = computed(() => {
         </template>
       </BlocoMesa>
 
-      <BlocoMesa titulo="Quanto você ganha por mês">
+      <BlocoMesa v-if="f.renda" titulo="Quanto você ganha por mês">
         <ValorGrande :valor="f.renda.media" />
         <p class="muted">de entrada média nos meses com receita, entre <b>{{ brl(f.renda.menor) }}</b> e <b>{{ brl(f.renda.maior) }}</b>.</p>
         <span class="chip" :class="estabilidade.classe">{{ estabilidade.rotulo }}</span>

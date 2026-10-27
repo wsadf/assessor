@@ -1,3 +1,5 @@
+import type { Capacidade } from "./api";
+
 export interface Mesa {
   id: string;
   nome: string;
@@ -5,17 +7,21 @@ export interface Mesa {
   cargo: string;
   cor: string;
   rota: string;
+  /** Basta uma dessas capacidades para ver a mesa; sem a lista, todo perfil ve. */
+  exige?: Capacidade[];
 }
 
 // Cada mesa tem um assessor com nome e cor proprios; a cor vira a --mesa da tela aberta.
 export const MESAS: Mesa[] = [
-  { id: "financas", nome: "Finanças", assessor: "Bento", cargo: "Gerente financeiro", cor: "#10b981", rota: "/financas" },
-  { id: "fiscal", nome: "Fiscal", assessor: "Clara", cargo: "Assistente fiscal", cor: "#22b8cf", rota: "/fiscal" },
-  { id: "agenda", nome: "Agenda", assessor: "Lia", cargo: "Secretária executiva", cor: "#5b9cf6", rota: "/agenda" },
-  { id: "tarefas", nome: "Tarefas", assessor: "Davi", cargo: "Gerente de projetos", cor: "#f3b23c", rota: "/tarefas" },
+  { id: "financas", nome: "Finanças", assessor: "Bento", cargo: "Gerente financeiro", cor: "#10b981", rota: "/financas", exige: ["despesas"] },
+  { id: "fiscal", nome: "Fiscal", assessor: "Clara", cargo: "Assistente fiscal", cor: "#22b8cf", rota: "/fiscal", exige: ["receitas"] },
+  { id: "agenda", nome: "Agenda", assessor: "Lia", cargo: "Secretária executiva", cor: "#5b9cf6", rota: "/agenda", exige: ["agenda"] },
+  { id: "tarefas", nome: "Tarefas", assessor: "Davi", cargo: "Gerente de projetos", cor: "#f3b23c", rota: "/tarefas", exige: ["tarefas"] },
   { id: "operacao", nome: "Operação", assessor: "Otto", cargo: "Diretor de operações", cor: "#a98bf5", rota: "/operacao" },
-  { id: "pesquisas", nome: "Pesquisas", assessor: "Nina", cargo: "Estagiária de pesquisas", cor: "#ee7aa8", rota: "/pesquisas" },
+  { id: "pesquisas", nome: "Pesquisas", assessor: "Nina", cargo: "Estagiária de pesquisas", cor: "#ee7aa8", rota: "/pesquisas", exige: ["agenda", "tarefas"] },
 ];
+
+export const mesaLiberada = (m: Mesa, pode: (c: Capacidade) => boolean) => !m.exige || m.exige.some(pode);
 
 export const SUBMENU_FINANCAS = [
   { nome: "Painel", rota: "/financas", icone: "painel" },

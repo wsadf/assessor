@@ -8,7 +8,7 @@ import MesPicker from "../../components/MesPicker.vue";
 import PainelLateral from "../../components/PainelLateral.vue";
 import StatusCarga from "../../components/StatusCarga.vue";
 import { brl, brlSinal, dataCurta, mesNome, pagamentoNome, rotuloDia } from "../../format";
-import { HOJE, mesSelecionado, useCarregar } from "../../estado";
+import { HOJE, mesSelecionado, pode, useCarregar } from "../../estado";
 import { PALETA } from "../../mesas";
 import CabecalhoSub from "./CabecalhoSub.vue";
 
@@ -115,7 +115,7 @@ async function excluir() {
     </CabecalhoSub>
 
     <div class="filtros">
-      <div class="segmentos">
+      <div v-if="pode('receitas') && pode('despesas')" class="segmentos">
         <button :class="{ ativo: !filtroTipo }" @click="filtroTipo = ''">Todas</button>
         <button :class="{ ativo: filtroTipo === 'despesa' }" @click="filtroTipo = 'despesa'">Saídas</button>
         <button :class="{ ativo: filtroTipo === 'receita' }" @click="filtroTipo = 'receita'">Entradas</button>
@@ -149,7 +149,7 @@ async function excluir() {
           <span class="corpo">
             <span class="desc">{{ t.descricao }}</span>
             <span class="eyebrow meta">
-              {{ t.categoria }}<template v-if="t.contraparte"> · {{ t.tipo === "receita" ? "de" : "para" }} {{ t.contraparte }}</template> · {{ pagamentoNome(t.pagamento) }}
+              {{ t.categoria }}<template v-if="t.contraparte"> · {{ t.tipo === "receita" ? "de" : "para" }} {{ t.contraparte }}</template> · {{ pagamentoNome(t.pagamento) }}<template v-if="t.criadoPor"> · por {{ t.criadoPor }}</template>
             </span>
           </span>
           <span class="valor">
@@ -162,7 +162,7 @@ async function excluir() {
     </div>
 
     <PainelLateral v-if="editando || criando" :titulo="editando ? 'Editar transação' : 'Nova transação'" @fechar="fechar">
-      <div class="segmentos largo">
+      <div v-if="pode('receitas') && pode('despesas')" class="segmentos largo">
         <button :class="{ ativo: form.tipo === 'despesa' }" @click="form.tipo = 'despesa'">Saída</button>
         <button :class="{ ativo: form.tipo === 'receita' }" @click="form.tipo = 'receita'">Entrada</button>
       </div>
