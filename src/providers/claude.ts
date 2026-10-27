@@ -70,13 +70,15 @@ export const claudeProvider: Provider = async (history, input, userText, execute
     }
 
     messages.push({ role: "assistant", content: response.content });
-    const results: Anthropic.Beta.BetaToolResultBlockParam[] = toolUses.map((use) => {
+    // Em sequencia, nao em paralelo: duas ferramentas podem mexer no mesmo registro.
+    const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
+    for (const use of toolUses) {
       try {
-        return { type: "tool_result", tool_use_id: use.id, content: execute(use.name, use.input) };
+        results.push({ type: "tool_result", tool_use_id: use.id, content: await execute(use.name, use.input) });
       } catch (err) {
-        return { type: "tool_result", tool_use_id: use.id, content: (err as Error).message, is_error: true };
+        results.push({ type: "tool_result", tool_use_id: use.id, content: (err as Error).message, is_error: true });
       }
-    });
+    }
     messages.push({ role: "user", content: results });
   }
   return "";

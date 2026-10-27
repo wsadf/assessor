@@ -295,7 +295,27 @@ export interface Lembrete {
   recorrencia: "diario" | "semanal" | "mensal" | null;
 }
 
+export interface GoogleStatus {
+  configurado: boolean;
+  conectada: boolean;
+  status: "conectada" | "expirada" | null;
+  email: string | null;
+  erro: string | null;
+}
+
+export interface Evento {
+  id: string;
+  titulo: string;
+  inicio: string;
+  fim: string;
+  diaInteiro: boolean;
+  convidados: string[];
+  linkVideo: string | null;
+  linkGoogle: string | null;
+}
+
 export interface Agenda {
+  google?: { conectada: boolean; eventos: Evento[]; erro: string | null };
   dia: string;
   doDia: Lembrete[];
   proximos: Lembrete[];

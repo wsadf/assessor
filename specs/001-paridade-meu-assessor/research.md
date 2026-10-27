@@ -1,8 +1,8 @@
 # Research: Paridade com o Meu Assessor
 
-Decisoes por historia. R1 a R10 sao da US1 (conta compartilhada) e R11 a R22 da US2 (documentos),
-ambas implementadas; R23 a R34 sao da US3 (avisos proativos). As demais historias acrescentam
-secoes aqui.
+Decisoes por historia. R1 a R10 sao da US1 (conta compartilhada), R11 a R22 da US2 (documentos)
+e R23 a R34 da US3 (avisos proativos), todas implementadas; R35 a R46 sao da US4 (Google Agenda).
+As demais historias acrescentam secoes aqui.
 
 # US1: Conta compartilhada
 
@@ -335,3 +335,115 @@ secoes aqui.
 - Nove ferramentas novas no bloco com cache, cerca de 1.500 tokens a mais, pagos uma vez por
   cache. Avisos sem IA. O calculo de categoria roda uma vez por dia por pessoa com o aviso ligado,
   com duas consultas agregadas por mes; para mil contas, milissegundos.
+# US4: Google Agenda
+
+## R35. Agenda de quem e
+
+- **Decision**: a conexao com o Google e por pessoa (telefone do membro), nao por conta. Cada um
+  conecta a propria conta Google e os compromissos que pede entram no calendario principal
+  (`primary`) dele. Exige a capacidade `agenda`.
+- **Rationale**: agenda e pessoal. Na conta compartilhada, o socio nao deve ver nem escrever no
+  calendario do titular (principio I).
+
+## R36. Autorizacao e escopo
+
+- **Decision**: OAuth 2.0 do Google no fluxo de servidor web, com `access_type=offline` e
+  `prompt=consent` para receber o refresh token, e um unico escopo:
+  `https://www.googleapis.com/auth/calendar.events` (ler e escrever eventos). O e-mail da conta
+  vem do `id_token` com o escopo `openid email`, so para mostrar qual conta esta ligada.
+- **Rationale**: FR-017 pede permissao limitada ao calendario. `calendar.events` le eventos para
+  achar conflito e cria, move e apaga, sem acesso a configuracoes, contatos ou Gmail.
+- **Alternatives considered**: `calendar` completo (amplo demais); `calendar.events.owned` (nao le
+  eventos de agendas compartilhadas para conflito, e a maioria das pessoas so usa a principal;
+  reavaliar se a verificacao do Google pedir).
+
+## R37. Como a pessoa conecta
+
+- **Decision**: dois caminhos que terminam no mesmo fluxo:
+  - no painel, Agenda > "Conectar Google Agenda": a API devolve a URL do Google com um `state`
+    aleatorio guardado como hash, ligado ao telefone de quem esta logado, valido por 10 minutos;
+  - no WhatsApp, a ferramenta `conectar_google_agenda` gera um link de uso unico
+    `<PAINEL_URL>/api/google/conectar/<token>`, valido por 15 minutos, que cria o `state` e
+    redireciona para o Google sem pedir login.
+  O retorno (`/api/google/retorno`) e publico, confere o `state` (uso unico, dentro da validade),
+  troca o `code` pelos tokens e mostra uma pagina simples "Google Agenda conectada, pode fechar".
+- **Rationale**: a pessoa que pede pelo WhatsApp quase nunca esta logada no painel. O `state` evita
+  que alguem ligue a propria conta Google ao telefone de outra pessoa (CSRF).
+
+## R38. Guarda do token
+
+- **Decision**: o refresh token e cifrado com AES-256-GCM (chave de 32 bytes em base64 em
+  `GOOGLE_TOKEN_KEY`, IV aleatorio por registro) antes de ir para o banco. O access token fica so
+  em memoria, com a validade devolvida pelo Google, e e renovado quando faltar menos de 1 minuto.
+- **Rationale**: o refresh token da acesso continuo ao calendario da pessoa; vazamento do arquivo
+  do banco nao pode bastar para usa-lo (principio I).
+
+## R39. Chamadas ao Google
+
+- **Decision**: REST direto com `fetch`, sem SDK, como ja e feito com o Gemini. Endpoints:
+  `oauth2.googleapis.com/token` (troca e renovacao), `oauth2.googleapis.com/revoke` (desconectar)
+  e `www.googleapis.com/calendar/v3/calendars/primary/events` (listar, criar, mover com `PATCH`,
+  apagar). Datas com `dateTime` e `timeZone` = `TIMEZONE`. Tempo limite de 10 segundos por chamada.
+- **Rationale**: principio VI; o SDK `googleapis` traz dezenas de MB para quatro chamadas.
+
+## R40. Criar compromisso
+
+- **Decision**: ferramenta `criar_compromisso` com titulo, inicio, duracao (padrao 60 minutos),
+  convidados por e-mail, `com_videochamada` e `lembrar_minutos_antes` (padrao 60). Antes de criar,
+  lista os eventos do intervalo; havendo sobreposicao e sem `confirmar_conflito: true`, devolve o
+  conflito para o modelo perguntar (cenario 3). Videochamada usa `conferenceData.createRequest`
+  com `hangoutsMeet` e `conferenceDataVersion=1`; convidados recebem convite com
+  `sendUpdates=all`. Junto, cria o lembrete interno do WhatsApp ligado ao evento
+  (`reminders.google_event_id`), para avisar no horario mesmo fora do app do Google.
+- **Rationale**: cenarios 1 e 3. O lembrete pelo WhatsApp e o que o produto entrega a mais que o
+  proprio Google; ligado ao evento, ele acompanha remarcacao e cancelamento.
+
+## R41. Sem horario, sem conexao
+
+- **Decision**: a ferramenta exige data e hora (schema); o prompt manda perguntar antes. Sem conta
+  Google conectada, `criar_compromisso` cria so o lembrete interno, como hoje, e a resposta inclui
+  o link de conexao (cenario 5). Com a integracao desligada no servidor (sem `GOOGLE_CLIENT_ID`),
+  a resposta diz que a agenda do Google nao esta disponivel (principio VII).
+
+## R42. Consultar, remarcar e cancelar
+
+- **Decision**: `consultar_agenda(data_inicio, data_fim, busca?)` devolve os eventos com o id do
+  Google, titulo, horario e convidados; `remarcar_compromisso(id, novo_inicio, duracao?)` faz
+  `PATCH` com `sendUpdates=all` (os convidados sao avisados pelo proprio Google, cenario 4) e move o
+  lembrete ligado; `cancelar_compromisso(id, confirmado)` apaga com confirmacao. Para "a reuniao de
+  sexta pode virar 15h?", o modelo consulta a sexta, e com um so evento compativel remarca; com
+  varios, pergunta qual.
+- **Rationale**: o modelo ja faz esse padrao com transacoes e documentos.
+
+## R43. Desconectar e falhas
+
+- **Decision**: `desconectar_google_agenda` (com confirmacao) e o botao no painel chamam o
+  `revoke` do Google e apagam a linha de `google_accounts` (cenario 6). Se o Google responder
+  `invalid_grant` (acesso revogado pela pessoa ou expirado), a conta vira `expirada`, o pedido em
+  curso vira lembrete interno e a pessoa recebe uma vez o aviso com o link para reconectar (chave
+  `google_expirada:<data>` no `notice_log`).
+- **Rationale**: edge case da spec ("token do Google expirado no meio de um pedido").
+
+## R44. Resumo da manha
+
+- **Decision**: o resumo da manha (US3) passa a listar os eventos do dia do Google de quem tem a
+  conta conectada, em ordem de horario. Falha do Google nao impede o resumo: ele sai sem os eventos
+  e com a linha "Nao consegui ler o Google Agenda agora".
+- **Rationale**: FR-020, sem tornar o resumo dependente de servico externo.
+
+## R45. Configuracao e limites do Google
+
+- **Decision**: novas variaveis `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_KEY` e
+  `PAINEL_URL` (base publica do painel, usada no `redirect_uri` `<PAINEL_URL>/api/google/retorno`).
+  Sem elas, tudo funciona como hoje e o painel mostra "Google Agenda nao configurada neste
+  servidor". O README explica criar o projeto no Google Cloud, a tela de consentimento e o
+  redirect.
+- **Limites que o README precisa dizer** (principio VII): com o app em modo de teste, so os
+  e-mails cadastrados como testadores conseguem conectar e o refresh token vence em 7 dias; para
+  uso aberto, o escopo `calendar.events` e sensivel e exige a verificacao do Google.
+
+## R46. Custo e testes
+
+- Seis ferramentas novas no bloco com cache. A API do Google Calendar nao cobra por chamada dentro
+  da cota padrao. Nos testes, `fetch` simulado para os endpoints do Google, como ja e feito com a
+  Meta e o Gemini.

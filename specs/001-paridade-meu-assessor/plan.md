@@ -1,68 +1,72 @@
-# Implementation Plan: Paridade com o Meu Assessor (US1 a US3)
+# Implementation Plan: Paridade com o Meu Assessor (US1 a US4)
 
-**Branch**: `001-us3-avisos` | **Date**: 2026-10-27 | **Spec**: [spec.md](spec.md)
+**Branch**: `001-us4-google-agenda` | **Date**: 2026-10-27 | **Spec**: [spec.md](spec.md)
 
 **Input**: Feature specification from `/specs/001-paridade-meu-assessor/spec.md`
 
-**Note**: o plano cresce por historia. US1 (conta compartilhada, PR #1) e US2 (documentos, PR #2)
-estao implementadas e na `main`. Esta revisao planeja a US3 (avisos proativos de financas). As
-historias 4 a 9 entram depois.
+**Note**: o plano cresce por historia. US1 (conta compartilhada, PR #1), US2 (documentos, PR #2) e
+US3 (avisos proativos, PR #3) estao implementadas e na `main`. Esta revisao planeja a US4 (Google
+Agenda). As historias 5 a 9 entram depois.
 
 ## Summary
 
-**US1, entregue**: conta compartilhada por convite, com perfis fixos e permissao aplicada nas
+**US1, entregue**: conta compartilhada por convite, com perfis e permissao aplicada nas
 ferramentas, nas rotas e numa visao do repo por perfil. Decisoes R1 a R10.
 
-**US2, entregue**: guarda e busca de documentos pelo WhatsApp e pelo painel, com arquivos no disco
-e busca FTS5. Decisoes R11 a R22.
+**US2, entregue**: guarda e busca de documentos pelo WhatsApp e pelo painel. Decisoes R11 a R22.
 
-**US3, este plano**: o assessor passa a avisar sem esperar pergunta. Contas a pagar avisam na
-vespera e viram despesa com "paguei"; lancamentos recorrentes entram sozinhos; categoria que
-gasta 15% acima do mes anterior gera aviso com a projecao do mes; resumo da noite opcional;
-comparativo com o mes anterior sob pedido. Todo aviso e montado por codigo, sem IA, com
-preferencia por pessoa e sem repeticao. Aviso que a Meta recusa fica guardado e sai na proxima
-conversa, o que tambem corrige o reenvio infinito de lembretes que falham hoje. Detalhes em
-[research.md](research.md) R23 a R34.
+**US3, entregue**: contas a pagar, recorrencias, aviso de categoria, resumos por pessoa e fila de
+avisos que a Meta recusa. Decisoes R23 a R34.
+
+**US4, este plano**: cada pessoa conecta a propria conta Google (pelo painel ou por um link de uso
+unico enviado no WhatsApp) com o escopo minimo `calendar.events`. A Lia passa a criar, consultar,
+remarcar e cancelar compromissos no calendario principal a partir de texto ou audio, com
+convidados, link do Meet, aviso de conflito e o lembrete do WhatsApp ligado ao evento. Sem conta
+conectada, tudo continua como hoje (lembrete interno) com o convite para conectar. O refresh
+token fica cifrado; chamadas por REST, sem SDK. O resumo da manha passa a trazer os compromissos
+do dia. Detalhes em [research.md](research.md) R35 a R46.
 
 ## Technical Context
 
 **Language/Version**: TypeScript 7 em ESM, Node 22
 
-**Primary Dependencies**: Fastify 5, zod 4, better-sqlite3 13, SDK da Anthropic; Gemini via REST;
-painel em Vue 3 + Vue Router + Vite. Nenhuma dependencia nova.
+**Primary Dependencies**: Fastify 5, zod 4, better-sqlite3 13, SDK da Anthropic; Gemini e agora
+Google Calendar via REST com `fetch`; painel em Vue 3. Nenhuma dependencia nova (cifra com
+`node:crypto`).
 
-**Storage**: SQLite: `bills`, `recurring`, `notice_prefs`, `notice_log`, `pending_notices`;
-colunas `recurring_id` e `bill_id` em `transactions`
+**Storage**: SQLite: `google_accounts`, `google_auth`; coluna `reminders.google_event_id`. Eventos
+nao sao copiados: lidos do Google quando preciso.
 
-**Testing**: `node --test` via `npm test`, com `test/avisos.test.ts`; `npm run typecheck`;
-`vue-tsc` no painel
+**Testing**: `node --test` via `npm test`, com `test/google.test.ts` e `fetch` simulado;
+`npm run typecheck`; `vue-tsc` no painel
 
-**Target Platform**: servidor Node unico, agendador no mesmo processo (tick de 30 s)
+**Target Platform**: servidor Node unico; retorno do OAuth na mesma porta do painel
 
 **Project Type**: web service com painel web (back-end em `src/`, front-end em `web/`)
 
-**Performance Goals**: um tick do agendador em menos de 200 ms para mil contas; SC-004 (95% dos
-avisos de vencimento na vespera, no horario, e nenhum duplicado)
+**Performance Goals**: SC-005 (compromisso pedido por audio aparece no Google em menos de 15 s
+depois da mensagem): uma listagem de conflito e uma criacao, cada uma com limite de 10 s
 
-**Constraints**: avisos sem chamada de IA; janela de 24 horas do WhatsApp (modelo aprovado ou
-fila de pendentes); horario local de `TIMEZONE`
+**Constraints**: escopo minimo; token cifrado; `state` e link de uso unico; Google em modo de teste
+limita testadores e vence o refresh token em 7 dias (R45); sem configuracao, a agenda do Google
+aparece como nao disponivel
 
-**Scale/Scope**: 9 ferramentas novas, 3 grupos de rotas, 2 telas novas, um modulo de avisos e
-mudancas no agendador e no webhook
+**Scale/Scope**: 6 ferramentas novas, 5 rotas novas e 1 alterada, um modulo `src/google.ts`,
+mudancas na mesa de Agenda e no resumo da manha
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-| Principio | Avaliacao (US3) | Status |
+| Principio | Avaliacao (US4) | Status |
 | --- | --- | --- |
-| I. Dados financeiros sao do usuario | Contas, recorrencias e avisos filtrados pela conta e pelo perfil (R32); aviso so vai para quem pode ver a area; preferencias por pessoa | Passa |
-| II. Dinheiro so leitura | "Pagar" uma conta so registra a despesa que a pessoa ja pagou; nada movimenta dinheiro | Passa |
-| III. Provedor de IA intercambiavel | Ferramentas em `src/tools.ts`; avisos nao dependem de provedor | Passa |
-| IV. Custo por conta sob controle | Avisos sem IA (R23); ferramentas no bloco com cache (R34) | Passa |
-| V. Uma fonte de verdade | WhatsApp, terminal, painel e agendador usam o mesmo modulo `src/avisos.ts` e o mesmo repo | Passa |
-| VI. Simplicidade de MVP | Agendador existente, SQLite, sem fila externa nem dependencia | Passa |
-| VII. Honestidade | Numeros dos avisos vem do banco; a tela de Avisos diz quando os avisos dependem da janela de 24 horas; resumo vazio nao e enviado | Passa |
+| I. Dados financeiros sao do usuario | Conexao por pessoa (R35); escopo minimo (R36); `state` contra CSRF e link de uso unico (R37); refresh token cifrado com AES-256-GCM (R38); desconectar revoga no Google e apaga (R43) | Passa |
+| II. Dinheiro so leitura | Nada movimenta dinheiro | Passa |
+| III. Provedor de IA intercambiavel | Ferramentas em `src/tools.ts`; Google independe do provedor | Passa |
+| IV. Custo por conta sob controle | Sem IA extra; API do Google gratuita na cota padrao (R46) | Passa |
+| V. Uma fonte de verdade | O calendario do Google e a fonte dos eventos; o produto so guarda o lembrete ligado | Passa |
+| VI. Simplicidade de MVP | REST com `fetch`, sem SDK; cifra com `node:crypto` | Passa |
+| VII. Honestidade | Sem configuracao, "nao disponivel"; acesso vencido avisa e reconecta; README diz os limites do modo de teste do Google (R45) | Passa |
 
 Reavaliado apos a Fase 1: sem violacoes. Complexity Tracking vazio.
 
@@ -73,64 +77,62 @@ Reavaliado apos a Fase 1: sem violacoes. Complexity Tracking vazio.
 ```text
 specs/001-paridade-meu-assessor/
 ├── spec.md
-├── plan.md              # US1 e US2 entregues, US3 planejada
-├── research.md          # R1 a R10 (US1), R11 a R22 (US2), R23 a R34 (US3)
-├── data-model.md        # secoes US1, US2 e US3
-├── quickstart.md        # secoes US1, US2 e US3
+├── plan.md              # US1 a US3 entregues, US4 planejada
+├── research.md          # R1 a R34 (US1 a US3), R35 a R46 (US4)
+├── data-model.md        # secoes US1 a US4
+├── quickstart.md        # secoes US1 a US4
 ├── contracts/
 │   ├── api-conta.md, ferramentas-agente.md          # US1
 │   ├── api-documentos.md, ferramentas-documentos.md # US2
-│   └── api-avisos.md, ferramentas-avisos.md         # US3
+│   ├── api-avisos.md, ferramentas-avisos.md         # US3
+│   └── api-google.md, ferramentas-agenda.md         # US4
 ├── checklists/
 │   └── requirements.md
-└── tasks.md             # US1 e US2 concluidas; US3 entra via /speckit-tasks
+└── tasks.md             # US1 a US3 concluidas; US4 entra via /speckit-tasks
 ```
 
-### Source Code (repository root), US3
+### Source Code (repository root), US4
 
 ```text
 src/
-├── avisos.ts        # novo: tabelas, contas a pagar, recorrencias, preferencias, log, pendentes, calculo de categoria, comparativo, textos dos avisos
-├── db.ts            # colunas recurring_id e bill_id; chama prepararTabelasAvisos
-├── scheduler.ts     # roda vencimentos, recorrencias, categoria e resumos por pessoa; envio com fila de pendentes; lembrete que falha nao repete
-├── server.ts        # entrega os pendentes antes da resposta
-├── tools.ts         # 9 ferramentas novas
-├── prompt.ts        # regras de pagar, recorrencia e configurar avisos
-├── api.ts           # /contas-pagar, /recorrencias, /avisos; recorrente e contaPagarId em /transacoes; contasProximas em /financas
-└── seed.ts          # contas a pagar e recorrencias de exemplo
+├── google.ts        # novo: tabelas, cifra do token, fluxo OAuth (state e link), renovacao, eventos (listar, criar, mover, apagar), revogar
+├── config.ts        # google: clientId, clientSecret, tokenKey, painelUrl; configurado()
+├── db.ts            # coluna reminders.google_event_id; chama prepararTabelasGoogle
+├── tools.ts         # 6 ferramentas novas
+├── prompt.ts        # regras de compromisso, conflito e consulta antes de mover
+├── avisos.ts        # resumo da manha com os eventos do dia
+├── scheduler.ts     # limpeza de google_auth
+└── api.ts           # /api/google, /api/google/conectar, retorno publico, /api/agenda com eventos
 
 web/src/
-├── views/financas/ContasView.vue   # novo: contas a pagar e recorrencias
-├── views/operacao/AvisosView.vue   # novo: preferencias de aviso
-├── views/financas/FinancasPainel.vue  # bloco "Vence nos proximos dias"
-├── views/OperacaoMesa.vue          # atalho Avisos
-├── mesas.ts, router.ts             # submenu e rotas
-└── api.ts                          # tipos
+├── views/AgendaMesa.vue   # conexao (status, conectar, desconectar) e eventos do Google no dia
+└── api.ts                 # tipos GoogleStatus e Evento
 
 test/
-└── avisos.test.ts   # incluido no script test
+└── google.test.ts   # incluido no script test
+
+.env.example         # GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_TOKEN_KEY, PAINEL_URL
 ```
 
-**Structure Decision**: mesmo layout das historias anteriores. `src/avisos.ts` segue o estilo de
-`conta.ts` e `documentos.ts`. O agendador continua um so arquivo, chamando funcoes puras de
-`avisos.ts` que recebem `now`, o que deixa os testes sem espera de relogio.
+**Structure Decision**: mesmo layout das historias anteriores. Tudo que fala com o Google fica em
+`src/google.ts`, como `whatsapp.ts` concentra a Meta; as ferramentas so chamam funcoes dele.
 
-## Ordem sugerida (US3)
+## Ordem sugerida (US4)
 
-1. `avisos.ts`: tabelas, preferencias, log e pendentes, com testes.
-2. Contas a pagar e recorrencias no dominio, com testes de datas.
-3. Calculo de categoria, comparativo e resumo da noite.
-4. Agendador com fila de pendentes; webhook entrega pendentes.
-5. Ferramentas e prompt.
-6. API.
-7. Painel: Contas e recorrencias, Avisos, bloco no painel de Financas.
-8. Seed, README, quickstart.
+1. Config, tabelas e cifra, com testes.
+2. Fluxo OAuth (state, link, troca, renovacao, revogar) com `fetch` simulado.
+3. Eventos (listar, criar com conflito e Meet, mover, apagar) e lembrete ligado.
+4. Ferramentas e prompt, com as falhas de R43.
+5. Rotas da API, inclusive as publicas de conexao e retorno.
+6. Painel: mesa de Agenda.
+7. Resumo da manha, README, `.env.example`, quickstart com conta Google de teste.
 
-## Fora desta entrega (US3)
+## Fora desta entrega (US4)
 
-- Fatura lida do banco (US8, Open Finance).
-- Aviso por e-mail ou push; so WhatsApp.
-- Alertas configuraveis por valor ("me avisa se passar de R$ 500 em mercado").
+- Outros calendarios (Outlook, iCloud) e agendas secundarias do Google.
+- Aceitar ou recusar convites recebidos.
+- Sincronizar lembretes antigos para o Google.
+- Pagina publica de agendamento (US5, que depende desta).
 
 ## Complexity Tracking
 

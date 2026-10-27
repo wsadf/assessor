@@ -1,9 +1,9 @@
 ---
 
-description: "Tarefas da feature 001: US1 e US2 (concluidas) e US3 (avisos proativos)"
+description: "Tarefas da feature 001: US1 a US3 (concluidas) e US4 (Google Agenda)"
 ---
 
-# Tasks: Paridade com o Meu Assessor (US1 a US3)
+# Tasks: Paridade com o Meu Assessor (US1 a US4)
 
 **Input**: Design documents from `/specs/001-paridade-meu-assessor/`
 
@@ -14,12 +14,13 @@ description: "Tarefas da feature 001: US1 e US2 (concluidas) e US3 (avisos proat
 nova, e isolamento por usuario e o principio I.
 
 **Escopo**: fases 1 a 4 sao da US1 (T001 a T033, PR #1); fases 5 a 8 da US2 (T034 a T064, PR #2);
-fases 9 a 12 da US3 (T065 em diante). As historias 4 a 9 entram aqui depois dos proprios planos.
+fases 9 a 12 da US3 (T065 a T097, PR #3); fases 13 a 16 da US4 (T098 em diante). As historias 5 a 9
+entram aqui depois dos proprios planos.
 
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: pode rodar em paralelo (arquivos diferentes, sem dependencia de tarefa aberta)
-- **[Story]**: historia da spec (US1, US2 ou US3)
+- **[Story]**: historia da spec (US1 a US4)
 - Caminhos relativos a raiz do repositorio: back-end em `src/`, painel em `web/src/`, testes em
   `test/`
 
@@ -295,6 +296,81 @@ avancar o relogio de teste e verificar que o aviso e o lancamento automatico aco
 
 ---
 
+## Phase 13: Setup (US4)
+
+**Purpose**: arquivo de testes e configuracao. Decisoes em [research.md](research.md) R35 a R46;
+tabelas em [data-model.md](data-model.md#us4-google-agenda).
+
+- [X] T098 Criar `test/google.test.ts` com o mesmo cabecalho de `test/avisos.test.ts`, mais `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_KEY` (32 bytes aleatorios em base64) e `PAINEL_URL=http://localhost:3001` definidos antes dos imports, e um helper `googleFalso()` que troca `globalThis.fetch` por um roteador dos endpoints do Google (`oauth2.googleapis.com/token`, `/revoke`, `www.googleapis.com/calendar/v3/calendars/primary/events`) registrando as chamadas; incluir o arquivo no script `test` de `package.json` depois de `test/avisos.test.ts`
+- [X] T099 [P] Em `src/config.ts`, bloco `google: { clientId, clientSecret, tokenKey, painelUrl }` lido de `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_KEY` (base64 que precisa dar exatamente 32 bytes; senao `null`) e `PAINEL_URL` (sem barra no fim), e `googleConfigurado()` verdadeiro so com os quatro; em `.env.example`, as quatro variaveis com comentario curto e o comando para gerar a chave
+
+---
+
+## Phase 14: Foundational (US4)
+
+**Purpose**: tabelas, cifra do token e fluxo de autorizacao. Bloqueia a Phase 15.
+
+- [X] T100 Criar `src/google.ts` com `prepararTabelasGoogle(db)` (chamada no fim de `openDb` em `src/db.ts`): `google_accounts` (`phone TEXT PRIMARY KEY`, `email TEXT`, `refresh_token_enc TEXT NOT NULL`, `scope TEXT NOT NULL`, `status TEXT NOT NULL CHECK (status IN ('conectada','expirada'))`, `connected_at TEXT NOT NULL`, `last_error TEXT`) e `google_auth` (`token_hash TEXT PRIMARY KEY`, `kind TEXT NOT NULL CHECK (kind IN ('state','link'))`, `phone TEXT NOT NULL`, `expires_at TEXT NOT NULL`, `used_at TEXT`); em `src/db.ts`, acrescentar `reminders.google_event_id TEXT` ao laco de colunas, o campo na interface `Reminder` e em `addReminder` (parametro `quem` ganha `google_event_id?`), e os metodos `remindersDoEvento(phone, eventId)` e `moverLembreteDoEvento(phone, eventId, novoHorario)` (depende de T099)
+- [X] T101 Em `src/google.ts`, `cifrar(texto)` e `decifrar(valor)` com AES-256-GCM, IV de 12 bytes aleatorio por chamada e formato `iv.tag.cifrado` em base64url, usando `config.google.tokenKey`; sem chave, erro `Google Agenda nao configurada neste servidor.` (depende de T100)
+- [X] T102 Em `src/google.ts`, o fluxo de R37: `criarLink(db, phone)` (token aleatorio de 32 bytes, guardado como SHA-256, `kind = 'link'`, 15 min; devolve `<PAINEL_URL>/api/google/conectar/<token>`); `usarLink(db, token)` (uso unico, dentro da validade; devolve o telefone ou `null`); `urlDeAutorizacao(db, phone)` (cria `state` de 10 min e monta a URL de `accounts.google.com/o/oauth2/v2/auth` com `client_id`, `redirect_uri=<PAINEL_URL>/api/google/retorno`, `response_type=code`, `scope="openid email https://www.googleapis.com/auth/calendar.events"`, `access_type=offline`, `prompt=consent`, `include_granted_scopes=true` e `state`); `concluirConexao(db, code, state)` (consome o `state` uma vez, troca o `code` em `oauth2.googleapis.com/token`, recusa se `scope` nao trouxer `calendar.events`, le o e-mail do payload do `id_token`, grava `refresh_token` cifrado com `status = 'conectada'` e devolve o telefone) (depende de T101)
+- [X] T103 Em `src/google.ts`, `accessToken(db, phone)` com cache em memoria (renova so quando faltar menos de 60 s), classes `GoogleNaoConectado`, `GoogleExpirado` (resposta `invalid_grant`; marca `status = 'expirada'` e grava `last_error`) e `GoogleIndisponivel` (rede, tempo limite de 10 s ou 5xx); `estado(db, phone)` para o painel; `desconectar(db, phone)` que chama `oauth2.googleapis.com/revoke` (falha do revoke nao impede) e apaga a linha e o cache; `limparAutorizacoes(db, agora)` que apaga `google_auth` vencidos ha mais de 1 dia (depende de T102)
+- [X] T104 Em `test/google.test.ts`, testar a fundacao: o banco nunca contem o refresh token em claro; outra `GOOGLE_TOKEN_KEY` nao decifra; link e `state` de uso unico e com validade; `concluirConexao` com `state` vencido, repetido ou inexistente nao grava nada; escopo sem `calendar.events` e recusado; access token reaproveitado ate faltar 60 s e renovado depois; `invalid_grant` marca `expirada`; `desconectar` chama o revoke e apaga (depende de T098, T103)
+
+**Checkpoint**: conexao com o Google testada; nada exposto ao assessor ou ao painel ainda.
+
+---
+
+## Phase 15: User Story 4 - Google Agenda pelo WhatsApp (Priority: P4)
+
+**Goal**: a pessoa conecta a propria conta Google e a Lia cria, consulta, remarca e cancela
+compromissos no calendario principal pelo WhatsApp, com convidados, Meet, aviso de conflito e o
+lembrete do WhatsApp ligado; o resumo da manha traz os compromissos do dia.
+
+**Independent Test**: conectar uma conta Google de teste, pedir "reuniao com a Ana terca 10h com
+link" e conferir o evento no Google Agenda com convidado e link de videochamada (spec, US4).
+
+### Tests for User Story 4
+
+> Escrever antes da implementacao correspondente e ver falhar.
+
+- [X] T105 [US4] Em `test/google.test.ts`, testar eventos com o Google simulado: `criarEvento` com 60 min por padrao, `timeZone` igual a `TIMEZONE`, `attendees` e `sendUpdates=all` quando ha convidados, `conferenceData.createRequest` com `hangoutsMeet` e `conferenceDataVersion=1` quando pedido; conflito detectado pela listagem do intervalo; lembrete interno criado com `google_event_id` e `lembrar_minutos_antes`; `moverEvento` faz `PATCH` e move o lembrete; `apagarEvento` faz `DELETE` e cancela o lembrete
+- [X] T106 [US4] Em `test/google.test.ts`, testar as 6 ferramentas: `criar_compromisso` cria e responde com dia, hora e quando lembra; com conflito e sem `confirmar_conflito`, nao cria e descreve o conflito; sem conta conectada, cria so o lembrete interno e devolve o link; sem configuracao no servidor, diz que nao esta disponivel e cria o lembrete interno; com `invalid_grant`, marca `expirada`, cria o lembrete interno e devolve o link de reconexao; `consultar_agenda`, `remarcar_compromisso`, `cancelar_compromisso` (pede confirmacao) e `desconectar_google_agenda` (pede confirmacao); so gastos recebe `Sem permissao`; a conta Google do titular nao e usada quando a Bia (completo) pede
+- [X] T107 [US4] Em `test/google.test.ts`, testar API e resumo: `GET /api/google` com `configurado`, `conectada` e `email`; `POST /api/google/conectar` devolve a URL do Google com `state`; `GET /api/google/conectar/:token` responde `302` para o Google e, repetido, a pagina de link vencido; `GET /api/google/retorno` grava e responde a pagina de sucesso, e com `error=access_denied` nao grava; `DELETE /api/google` revoga e apaga; `GET /api/agenda` traz `google.eventos` do dia; resumo da manha lista os eventos do dia e, com o Google fora, sai com "Nao consegui ler o Google Agenda agora"
+
+### Implementation for User Story 4
+
+**Google e assessor**
+
+- [X] T108 [US4] Em `src/google.ts`, eventos de R39 a R42 com o tipo `Evento` de [contracts/api-google.md](contracts/api-google.md#evento): `listarEventos(db, phone, de, ate, busca?)` (`singleEvents=true`, `orderBy=startTime`, `q` com a busca), `conflitos(db, phone, inicio, fim)`, `criarEvento(db, phone, { titulo, inicio, duracaoMin, convidados, comVideo })`, `moverEvento(db, phone, id, inicio, duracaoMin?)` (`PATCH` com `sendUpdates=all`), `apagarEvento(db, phone, id)` (`sendUpdates=all`); horarios montados com `fromLocal` e enviados com `timeZone: config.timezone` (depende de T103)
+- [X] T109 [US4] Em `src/prompt.ts`, `ToolExecutor` passa a devolver `string | Promise<string>`; em `src/providers/gemini.ts` e `src/providers/claude.ts`, aguardar (`await`) o resultado de `execute`; em `src/tools.ts`, `executeTool` passa a devolver `string | Promise<string>` e trata `SemPermissao` e `AuthError` tambem quando a promessa rejeita; as ferramentas atuais continuam sincronas e os testes existentes seguem iguais (depende de T108)
+- [X] T110 [US4] Em `src/tools.ts`, as 6 ferramentas de [contracts/ferramentas-agenda.md](contracts/ferramentas-agenda.md) com capacidade `agenda` em `CAPACIDADE` e schemas zod (`titulo` de 1 a 120, `inicio` em `AAAA-MM-DDTHH:mm`, `duracao_minutos` de 5 a 720, ate 20 `convidados` com `z.string().email()`, `lembrar_minutos_antes` de 0 a 1440, `confirmado` booleano); `criar_compromisso` cria o lembrete ligado e trata as falhas da tabela do contrato com o lembrete interno e o link; usa sempre a conta Google de `ctx.membro` (depende de T109)
+- [X] T111 [US4] Em `src/prompt.ts`, as regras de [contracts/ferramentas-agenda.md](contracts/ferramentas-agenda.md#prompt): compromisso com hora vai para `criar_compromisso`; sem data ou hora, perguntar; conflito, perguntar; mover ou cancelar so depois de `consultar_agenda`, sem inventar id (depende de T110)
+- [X] T112 [US4] Em `src/avisos.ts`, `resumoManha(repo, ctx, now, eventos?)` recebe `Evento[]` ou `"falhou"` e acrescenta "Compromissos de hoje: 09:00 Reuniao; 15:00 Dentista" ou "Nao consegui ler o Google Agenda agora"; em `src/scheduler.ts`, antes do resumo da manha, buscar os eventos do dia de quem tem conta `conectada` (falha vira `"falhou"`) e chamar `limparAutorizacoes` na limpeza horaria (depende de T108)
+
+**API do painel**
+
+- [X] T113 [US4] Em `src/api.ts`, rotas privadas de [contracts/api-google.md](contracts/api-google.md#rotas-privadas-sessao-do-painel) (`GET /api/google`, `POST /api/google/conectar` com `503` sem configuracao, `DELETE /api/google`) com `["agenda"]` em `CAPACIDADE_ROTA`, sempre para `ctx.membro` (depende de T103)
+- [X] T114 [US4] Em `src/api.ts`, rotas publicas `GET /api/google/conectar/:token` e `GET /api/google/retorno` num plugin proprio com prefixo `/api/google`, registrado fora do plugin privado para nao passar pelo hook de sessao; respostas em HTML curto, sem dados da conta, conforme [contracts/api-google.md](contracts/api-google.md#rotas-publicas-fora-de-apiauth-sem-sessao) (depende de T102)
+- [X] T115 [US4] Em `src/api.ts`, `GET /api/agenda` ganha `google: { conectada, eventos, erro }` com os eventos do `dia` pedido de quem esta logado; falha do Google preenche `erro` sem derrubar a rota (depende de T108)
+
+**Painel web**
+
+- [X] T116 [P] [US4] Em `web/src/api.ts`, tipos `GoogleStatus` e `Evento`, e `google?` em `Agenda` (depende de T113, T115)
+- [X] T117 [US4] Em `web/src/views/AgendaMesa.vue`, bloco "Google Agenda": sem configuracao, "Google Agenda não configurada neste servidor"; desconectada, botao "Conectar Google Agenda" que chama `POST /api/google/conectar` e vai para a URL devolvida; conectada, o e-mail e o botao "Desconectar" com confirmacao; expirada, aviso e botao "Reconectar"; no bloco do dia, os eventos do Google junto dos lembretes, com hora, titulo e link do Meet (depende de T116)
+
+**Checkpoint**: US4 completa; T104 a T107 verdes; roteiro de [quickstart.md](quickstart.md#us4-google-agenda) passando.
+
+---
+
+## Phase 16: Polish (US4)
+
+- [X] T118 [P] Em `README.md`, secao Google Agenda: criar o projeto no Google Cloud, ativar a Calendar API, tela de consentimento em modo de teste com testadores, credencial do tipo "Aplicativo da Web" com o redirect `<PAINEL_URL>/api/google/retorno`, as quatro variaveis, o que funciona pelo WhatsApp e pelo painel, os limites do modo de teste (so testadores, acesso vence em 7 dias) e a verificacao exigida para uso aberto; tabela "Como esta organizado" com `src/google.ts`
+- [X] T119 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
+- [ ] T120 Executar o roteiro de [quickstart.md](quickstart.md#us4-google-agenda) com um projeto real no Google Cloud (depende de a pessoa criar o projeto e preencher o `.env`), com `AI_PROVIDER=gemini` e com `AI_PROVIDER=claude` quando houver `ANTHROPIC_API_KEY`
+  - 2026-10-27: sem projeto no Google Cloud. Conferido no painel e na API sem configuracao: mesa de Agenda mostra "nao configurada", `POST /api/google/conectar` responde 503 e a rota publica do link responde sem exigir sessao. O fluxo com o Google foi validado so com o Google simulado dos testes.
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -311,6 +387,10 @@ avancar o relogio de teste e verificar que o aviso e o lancamento automatico aco
 - **Foundational US3 (Phase 10)**: depende da Phase 9; bloqueia a US3
 - **US3 (Phase 11)**: depende da Phase 10
 - **Polish US3 (Phase 12)**: depende da US3
+- **Setup US4 (Phase 13)**: sem dependencia alem do codigo ja na `main`
+- **Foundational US4 (Phase 14)**: depende da Phase 13; bloqueia a US4
+- **US4 (Phase 15)**: depende da Phase 14
+- **Polish US4 (Phase 16)**: depende da US4; T120 depende tambem de um projeto no Google Cloud
 
 ### Dentro da US1
 
@@ -347,6 +427,14 @@ T017 (webhook) depende so de T006
 - Testes: T071 antes de T076 e T077; T072 antes de T078 e T079; T073 antes de T080 e T081;
   T074 antes de T082; T075 antes de T084.
 
+### Dentro da US4
+
+- Fundacao: T099 > T100 > T101 > T102 > T103 > T104.
+- Google e assessor: T103 > T108 > T109 > T110 > T111; T108 > T112.
+- API: T103 > T113; T102 > T114; T108 > T115.
+- Painel: T113 e T115 > T116 > T117.
+- Testes: T105 antes de T108; T106 antes de T110; T107 antes de T112 a T115.
+
 ### Parallel Opportunities
 
 - T002 e T003 em paralelo (arquivos diferentes).
@@ -360,6 +448,9 @@ T017 (webhook) depende so de T006
 - US3: o dominio inteiro fica em `src/avisos.ts` e a API em `src/api.ts`, por isso quase tudo e
   sequencial; no painel, T091, T092 e T093 em paralelo depois de T089; T094 e T095 em paralelo.
 - T070 a T075 tocam o mesmo arquivo (`test/avisos.test.ts`): sequenciais.
+- US4: T099 em paralelo com T098; T116 depois da API; T118 em paralelo com qualquer tarefa da
+  Phase 15. O resto toca `src/google.ts`, `src/tools.ts` ou `src/api.ts` e e sequencial.
+- T104 a T107 tocam o mesmo arquivo (`test/google.test.ts`): sequenciais.
 
 ---
 
@@ -394,6 +485,17 @@ Task: "Ver comprovante em web/src/views/financas/TransacoesView.vue"
 Task: "Criar web/src/views/operacao/AvisosView.vue"
 Task: "Bloco Vence nos proximos dias em web/src/views/financas/FinancasPainel.vue"
 Task: "Atalho Avisos em OperacaoMesa.vue e chip recorrente em TransacoesView.vue"
+```
+
+## Parallel Example: User Story 4
+
+```bash
+# Setup, arquivos diferentes:
+Task: "Criar test/google.test.ts com o Google simulado"
+Task: "Bloco google em src/config.ts e variaveis em .env.example"
+
+# Durante a Phase 15:
+Task: "Secao Google Agenda no README.md"
 ```
 
 ---
@@ -433,6 +535,16 @@ Task: "Atalho Avisos em OperacaoMesa.vue e chip recorrente em TransacoesView.vue
 5. **Parar e validar** com a [secao US3 do quickstart](quickstart.md#us3-avisos-proativos).
 6. Commits por bloco, na branch `001-us3-avisos`.
 
+### US4
+
+1. Phases 13 e 14: cifra e fluxo de autorizacao testados com o Google simulado.
+2. Google e assessor (T108 a T112): ja entrega compromissos pelo WhatsApp e o resumo com os
+   eventos; a conexao pode ser feita pelo link que o assessor manda.
+3. API e painel (T113 a T117).
+4. **Parar e validar** com a [secao US4 do quickstart](quickstart.md#us4-google-agenda), que
+   precisa de um projeto real no Google Cloud.
+5. Commits por bloco, na branch `001-us4-google-agenda`.
+
 ---
 
 ## Notes
@@ -445,3 +557,5 @@ Task: "Atalho Avisos em OperacaoMesa.vue e chip recorrente em TransacoesView.vue
   armazenamento externo.
 - Fora da US3: fatura lida do banco (US8), avisos por e-mail ou push, alerta por valor definido
   pela pessoa.
+- Fora da US4: Outlook e iCloud, agendas secundarias do Google, aceitar ou recusar convites
+  recebidos, sincronizar lembretes antigos, pagina publica de agendamento (US5).

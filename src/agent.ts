@@ -7,7 +7,7 @@ import type { HistoryItem, Provider, UserInput } from "./prompt.js";
 import { claudeProvider } from "./providers/claude.js";
 import { geminiProvider } from "./providers/gemini.js";
 import { nowContext } from "./time.js";
-import { executeTool } from "./tools.js";
+import { executarFerramenta } from "./tools.js";
 
 export type { UserInput } from "./prompt.js";
 
@@ -43,7 +43,7 @@ export async function runAgent(repo: Repo, phone: string, input: UserInput, opco
   const extras = { anexoId: opcoes.anexoId, enviar: (id: number) => void pedidos.push(id) };
   const reply =
     (await providers[config.aiProvider](history, input, userText, (name, args) =>
-      executeTool(repo, ctx, name, args, extras),
+      executarFerramenta(repo, ctx, name, args, extras),
     )) || "Tive um problema para concluir esse pedido. Pode tentar de novo?";
 
   const saved = input.image

@@ -6,6 +6,23 @@ import { conta, repoDoContexto, type Membro } from "./conta.js";
 import type { Kind, Recurrence, Repo, Task, Transaction } from "./db.js";
 import { documentos, nomePasta, PASTA_IDS, PASTAS, podeVerDocumento, type Documento } from "./documentos.js";
 import {
+  apagarEvento,
+  conflitos,
+  criarEvento,
+  criarLink,
+  desconectar as desconectarGoogle,
+  estado as estadoGoogle,
+  evento as eventoGoogle,
+  GoogleExpirado,
+  GoogleIndisponivel,
+  GoogleNaoConectado,
+  GoogleNaoConfigurado,
+  listarEventos,
+  moverEvento,
+  type Evento,
+} from "./google.js";
+import {
+  addDias,
   alterarRecorrencia,
   cancelarConta,
   compararMeses,
@@ -36,6 +53,7 @@ import { brl, formatLocal, fromLocal, localDate } from "./time.js";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "use YYYY-MM-DD");
 const nullableIsoDate = isoDate.nullish();
+const dataHora = z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "use YYYY-MM-DDTHH:mm");
 const kind = z.enum(["despesa", "receita"]);
 const recurrence = z.enum(["diario", "semanal", "mensal"]).nullish();
 
@@ -147,6 +165,20 @@ const schemas = {
     ligado: z.boolean(),
     hora: z.number().int().min(0).max(23).nullish(),
   }),
+  conectar_google_agenda: z.object({}),
+  criar_compromisso: z.object({
+    titulo: z.string().min(1).max(120),
+    inicio: dataHora,
+    duracao_minutos: z.number().int().min(5).max(720).nullish(),
+    convidados: z.array(z.string().email()).max(20).nullish(),
+    com_videochamada: z.boolean().nullish(),
+    lembrar_minutos_antes: z.number().int().min(0).max(1440).nullish(),
+    confirmar_conflito: z.boolean().nullish(),
+  }),
+  consultar_agenda: z.object({ data_inicio: isoDate, data_fim: isoDate, busca: z.string().min(1).nullish() }),
+  remarcar_compromisso: z.object({ id: z.string().min(1), novo_inicio: dataHora, duracao_minutos: z.number().int().min(5).max(720).nullish() }),
+  cancelar_compromisso: z.object({ id: z.string().min(1), confirmado: z.boolean() }),
+  desconectar_google_agenda: z.object({ confirmado: z.boolean() }),
 };
 
 /** O que o turno do agente oferece as ferramentas alem da entrada do modelo. */
@@ -180,7 +212,22 @@ const CAPACIDADE: Partial<Record<keyof typeof schemas, Capacidade>> = {
   pagar_conta: "despesas",
   cancelar_conta_pagar: "despesas",
   comparar_meses: "despesas",
+  conectar_google_agenda: "agenda",
+  criar_compromisso: "agenda",
+  consultar_agenda: "agenda",
+  remarcar_compromisso: "agenda",
+  cancelar_compromisso: "agenda",
+  desconectar_google_agenda: "agenda",
 };
+
+const GOOGLE = new Set<string>([
+  "conectar_google_agenda",
+  "criar_compromisso",
+  "consultar_agenda",
+  "remarcar_compromisso",
+  "cancelar_compromisso",
+  "desconectar_google_agenda",
+]);
 
 const capDoTipo = (k: Kind): Capacidade => (k === "receita" ? "receitas" : "despesas");
 
@@ -401,6 +448,37 @@ export const toolDefinitions: Anthropic.Tool[] = [
       hora: nullable({ type: "integer", description: "Hora local de 0 a 23. null mantem a atual" }),
     },
   ),
+  tool("conectar_google_agenda", "Manda o link para a pessoa ligar a propria conta do Google Agenda ao assessor.", {}),
+  tool(
+    "criar_compromisso",
+    "Marca um compromisso com dia e hora no Google Agenda de quem fala e cria o lembrete no WhatsApp. Sem Google conectado, cria so o lembrete. Para aviso solto sem compromisso, use criar_lembrete.",
+    {
+      titulo: { ...str, description: "Curto, ex.: Dentista, Reuniao com a Ana" },
+      inicio: { ...str, description: "YYYY-MM-DDTHH:mm no horario local" },
+      duracao_minutos: nullable({ type: "integer", description: "null = 60" }),
+      convidados: nullable({ type: "array", items: { type: "string" }, description: "E-mails de quem convidar" }),
+      com_videochamada: nullable({ type: "boolean", description: "true para criar link do Google Meet" }),
+      lembrar_minutos_antes: nullable({ type: "integer", description: "Aviso no WhatsApp antes do compromisso. null = 60, 0 = sem aviso" }),
+      confirmar_conflito: nullable({ type: "boolean", description: "true so depois que o usuario aceitar marcar em cima de outro compromisso" }),
+    },
+  ),
+  tool("consultar_agenda", "Lista os compromissos do Google Agenda de quem fala num periodo, com o id de cada um.", {
+    data_inicio: { ...str, description: dateDesc },
+    data_fim: { ...str, description: `${dateDesc}, inclusiva` },
+    busca: nullable({ ...str, description: "Palavra do titulo, ex.: dentista" }),
+  }),
+  tool("remarcar_compromisso", "Muda o horario de um compromisso pelo id que veio de consultar_agenda. Os convidados sao avisados pelo Google.", {
+    id: str,
+    novo_inicio: { ...str, description: "YYYY-MM-DDTHH:mm no horario local" },
+    duracao_minutos: nullable({ type: "integer", description: "null mantem a duracao" }),
+  }),
+  tool("cancelar_compromisso", "Apaga um compromisso pelo id. Chame com confirmado false, mostre qual e, e so chame com true depois que o usuario confirmar.", {
+    id: str,
+    confirmado: { type: "boolean" },
+  }),
+  tool("desconectar_google_agenda", "Desliga o Google Agenda de quem fala e apaga o acesso guardado. Confirme antes.", {
+    confirmado: { type: "boolean" },
+  }),
 ];
 
 const describeConta = (c: ContaPagar) =>
@@ -508,22 +586,50 @@ export function nextOccurrence(current: Date, rec: Recurrence): Date | null {
 }
 
 /** `quem` aceita so o telefone para o titular de uma conta sem membros, como no terminal. */
-export function executeTool(repoConta: Repo, quem: string | Contexto, name: string, rawInput: unknown, extras: ExtrasFerramenta = {}): string {
+/** Recusa volta como resposta, nao como erro: o modelo precisa repassar ao usuario. */
+const recusa = (err: unknown) => {
+  if (err instanceof SemPermissao || err instanceof AuthError) return err.message;
+  throw err;
+};
+
+function preparar(quem: string | Contexto, name: string, rawInput: unknown) {
   if (!(name in schemas)) throw new Error(`Ferramenta desconhecida: ${name}`);
   const toolName = name as ToolName;
   const parsed = schemas[toolName].safeParse(rawInput);
   if (!parsed.success) {
     throw new Error(`Entrada invalida: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
   }
-  const ctx = typeof quem === "string" ? contextoTitular(quem) : quem;
+  return { toolName, input: parsed.data as any, ctx: typeof quem === "string" ? contextoTitular(quem) : quem };
+}
+
+/** Ferramentas locais, sincronas. `quem` aceita so o telefone para o titular de uma conta sem membros. */
+export function executeTool(repoConta: Repo, quem: string | Contexto, name: string, rawInput: unknown, extras: ExtrasFerramenta = {}): string {
+  if (GOOGLE.has(name)) throw new Error(`${name} fala com o Google e e assincrona: use executarFerramenta.`);
+  const { toolName, input, ctx } = preparar(quem, name, rawInput);
   try {
     const cap = CAPACIDADE[toolName];
     if (cap) exigir(ctx, cap);
-    return run(repoDoContexto(repoConta, ctx), ctx, toolName, parsed.data as any, extras);
+    return run(repoDoContexto(repoConta, ctx), ctx, toolName, input, extras);
   } catch (err) {
-    // Volta como resposta, nao como erro: o modelo precisa repassar a recusa ao usuario.
-    if (err instanceof SemPermissao || err instanceof AuthError) return err.message;
-    throw err;
+    return recusa(err);
+  }
+}
+
+/** Qualquer ferramenta, inclusive as do Google; e a que o agente usa. */
+export async function executarFerramenta(
+  repoConta: Repo,
+  quem: string | Contexto,
+  name: string,
+  rawInput: unknown,
+  extras: ExtrasFerramenta = {},
+): Promise<string> {
+  if (!GOOGLE.has(name)) return executeTool(repoConta, quem, name, rawInput, extras);
+  const { toolName, input, ctx } = preparar(quem, name, rawInput);
+  try {
+    exigir(ctx, CAPACIDADE[toolName]!);
+    return await agendaGoogle(repoDoContexto(repoConta, ctx), ctx, toolName, input);
+  } catch (err) {
+    return recusa(err);
   }
 }
 
@@ -832,5 +938,117 @@ function run(repo: Repo, ctx: Contexto, toolName: ToolName, input: any, extras: 
       const hora = input.hora ?? atual.hora;
       return input.ligado ? `${atual.nome} ligado, as ${hora}h.` : `${atual.nome} desligado.`;
     }
+
+    default:
+      throw new Error(`${toolName} fala com o Google e e assincrona: use executarFerramenta.`);
   }
+}
+
+const hora = (iso: string | Date) =>
+  new Intl.DateTimeFormat("pt-BR", { timeZone: config.timezone, hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+const describeEvento = (e: Evento) =>
+  `${e.id} | ${e.diaInteiro ? `${e.inicio} (dia inteiro)` : `${formatLocal(new Date(e.inicio))} a ${hora(e.fim)}`} | ${e.titulo}` +
+  `${e.convidados.length ? ` | com ${e.convidados.join(", ")}` : ""}${e.linkVideo ? ` | ${e.linkVideo}` : ""}`;
+
+/** Lembrete do WhatsApp que acompanha o compromisso; sem Google, e o unico registro dele. */
+function lembreteDoCompromisso(repo: Repo, ctx: Contexto, titulo: string, inicio: Date, minutosAntes: number, eventId?: string) {
+  const quando = new Date(inicio.getTime() - minutosAntes * 60_000);
+  if (quando.getTime() < Date.now()) return null;
+  return repo.addReminder(ctx.conta, `${titulo} as ${hora(inicio)}`, quando, null, {
+    created_by: ctx.membro,
+    notify_phone: ctx.membro,
+    google_event_id: eventId ?? null,
+  });
+}
+
+/** Explica a falha do Google para o modelo; conexao vencida ou ausente leva o link para resolver. */
+function falhaGoogle(repo: Repo, ctx: Contexto, err: unknown): string {
+  if (err instanceof GoogleNaoConfigurado) return err.message;
+  if (err instanceof GoogleNaoConectado) return `Google Agenda nao conectada. Link para conectar (vale 15 min): ${criarLink(repo.db, ctx.membro)}`;
+  if (err instanceof GoogleExpirado) return `O acesso ao Google Agenda venceu. Link para reconectar (vale 15 min): ${criarLink(repo.db, ctx.membro)}`;
+  if (err instanceof GoogleIndisponivel) return err.message;
+  throw err;
+}
+
+/** A agenda e de quem fala (ctx.membro), nunca do titular da conta. */
+async function agendaGoogle(repo: Repo, ctx: Contexto, toolName: ToolName, input: any): Promise<string> {
+  const db = repo.db;
+  const quem = ctx.membro;
+  switch (toolName) {
+    case "conectar_google_agenda": {
+      const e = estadoGoogle(db, quem);
+      if (!e.configurado) return new GoogleNaoConfigurado().message;
+      if (e.conectada) return `O Google Agenda ja esta conectado${e.email ? ` com ${e.email}` : ""}.`;
+      return `Link para conectar o Google Agenda (vale 15 min, uso unico): ${criarLink(db, quem)}`;
+    }
+
+    case "criar_compromisso": {
+      const inicio = fromLocal(input.inicio);
+      if (inicio.getTime() < Date.now() - 60_000) return `Esse horario (${formatLocal(inicio)}) ja passou. Confirme a data com o usuario.`;
+      const duracao = input.duracao_minutos ?? 60;
+      const antes = input.lembrar_minutos_antes ?? 60;
+      const fim = new Date(inicio.getTime() + duracao * 60_000);
+      const aviso = antes ? ` Lembro ${antes} min antes pelo WhatsApp.` : "";
+      try {
+        const choques = await conflitos(db, quem, inicio, fim);
+        if (choques.length && !input.confirmar_conflito) {
+          const lista = choques.map((c) => `${c.titulo} (${formatLocal(new Date(c.inicio))} a ${hora(c.fim)})`).join("; ");
+          return `Conflito com ${lista}. Pergunte se marca assim mesmo; se sim, chame de novo com confirmar_conflito true.`;
+        }
+        const ev = await criarEvento(db, quem, { titulo: input.titulo, inicio, duracaoMin: duracao, convidados: input.convidados ?? [], comVideo: !!input.com_videochamada });
+        if (antes) lembreteDoCompromisso(repo, ctx, input.titulo, inicio, antes, ev.id);
+        const extras = [ev.linkVideo && `Meet: ${ev.linkVideo}`, ev.convidados.length && `convite enviado para ${ev.convidados.join(", ")}`].filter(Boolean);
+        return `Marcado no Google Agenda: ${ev.titulo}, ${formatLocal(inicio)} a ${hora(fim)}${extras.length ? `, ${extras.join(", ")}` : ""} (id ${ev.id}).${aviso}`;
+      } catch (err) {
+        const motivo = falhaGoogle(repo, ctx, err);
+        const r = lembreteDoCompromisso(repo, ctx, input.titulo, inicio, antes);
+        return `${motivo}\n${r ? `Criei o lembrete interno para ${formatLocal(new Date(r.next_run_at))}: ${r.text}.` : "Nao criei lembrete: o horario do aviso ja passou."}`;
+      }
+    }
+
+    case "consultar_agenda": {
+      try {
+        const de = fromLocal(`${input.data_inicio}T00:00`);
+        const ate = fromLocal(`${addDias(input.data_fim, 1)}T00:00`);
+        const eventos = await listarEventos(db, quem, de, ate, input.busca);
+        return eventos.length ? eventos.map(describeEvento).join("\n") : "Nenhum compromisso no periodo.";
+      } catch (err) {
+        return falhaGoogle(repo, ctx, err);
+      }
+    }
+
+    case "remarcar_compromisso": {
+      try {
+        const r = await moverEvento(db, quem, input.id, fromLocal(input.novo_inicio), input.duracao_minutos);
+        if (!r) return `Compromisso ${input.id} nao encontrado. Use consultar_agenda para achar o id.`;
+        // O lembrete ligado mantem a mesma antecedencia em relacao ao compromisso.
+        for (const l of repo.remindersDoEvento(ctx.conta, input.id)) {
+          const antecedencia = new Date(r.antes.inicio).getTime() - new Date(l.next_run_at).getTime();
+          repo.moverLembreteDoEvento(ctx.conta, input.id, new Date(new Date(r.depois.inicio).getTime() - antecedencia));
+        }
+        return `Remarcado. Os convidados sao avisados pelo Google.\nAntes: ${describeEvento(r.antes)}\nAgora: ${describeEvento(r.depois)}`;
+      } catch (err) {
+        return falhaGoogle(repo, ctx, err);
+      }
+    }
+
+    case "cancelar_compromisso": {
+      try {
+        const e = await eventoGoogle(db, quem, input.id);
+        if (!e) return `Compromisso ${input.id} nao encontrado. Use consultar_agenda para achar o id.`;
+        if (!input.confirmado) return `Confirme com o usuario antes de apagar: ${describeEvento(e)}.`;
+        await apagarEvento(db, quem, input.id);
+        for (const l of repo.remindersDoEvento(ctx.conta, input.id)) repo.cancelReminder(ctx.conta, l.id);
+        return `Cancelado: ${e.titulo}. Os convidados sao avisados pelo Google.`;
+      } catch (err) {
+        return falhaGoogle(repo, ctx, err);
+      }
+    }
+
+    case "desconectar_google_agenda": {
+      if (!input.confirmado) return "Confirme com o usuario: desligar o Google Agenda? Os compromissos continuam no Google, mas eu paro de ler e marcar.";
+      return (await desconectarGoogle(db, quem)) ? "Desconectei o Google Agenda e apaguei o acesso guardado." : "O Google Agenda ja estava desconectado.";
+    }
+  }
+  throw new Error(`Ferramenta desconhecida: ${toolName}`);
 }
