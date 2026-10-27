@@ -1,9 +1,9 @@
 ---
 
-description: "Tarefas da feature 001: US1 (conta compartilhada, concluida) e US2 (documentos)"
+description: "Tarefas da feature 001: US1 e US2 (concluidas) e US3 (avisos proativos)"
 ---
 
-# Tasks: Paridade com o Meu Assessor (US1 e US2)
+# Tasks: Paridade com o Meu Assessor (US1 a US3)
 
 **Input**: Design documents from `/specs/001-paridade-meu-assessor/`
 
@@ -13,13 +13,13 @@ description: "Tarefas da feature 001: US1 (conta compartilhada, concluida) e US2
 **Tests**: incluidos. A constituicao (Fluxo de Desenvolvimento) exige teste para regra de dominio
 nova, e isolamento por usuario e o principio I.
 
-**Escopo**: fases 1 a 4 sao da US1 (T001 a T033, na `main` pelo PR #1). Fases 5 a 8 sao da US2
-(T034 em diante). As historias 3 a 9 entram aqui depois dos proprios planos.
+**Escopo**: fases 1 a 4 sao da US1 (T001 a T033, PR #1); fases 5 a 8 da US2 (T034 a T064, PR #2);
+fases 9 a 12 da US3 (T065 em diante). As historias 4 a 9 entram aqui depois dos proprios planos.
 
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: pode rodar em paralelo (arquivos diferentes, sem dependencia de tarefa aberta)
-- **[Story]**: historia da spec (US1 ou US2)
+- **[Story]**: historia da spec (US1, US2 ou US3)
 - Caminhos relativos a raiz do repositorio: back-end em `src/`, painel em `web/src/`, testes em
   `test/`
 
@@ -202,6 +202,97 @@ certa e recuperar um deles descrevendo o conteudo sem citar o nome do arquivo (s
 
 ---
 
+## Phase 9: Setup (US3)
+
+**Purpose**: arquivo de testes. Decisoes em [research.md](research.md) R23 a R34; tabelas em
+[data-model.md](data-model.md#us3-avisos-proativos).
+
+- [ ] T065 Criar `test/avisos.test.ts` com o mesmo cabecalho de `test/documentos.test.ts` (variaveis de ambiente, `openDb(":memory:")`, helper `contaCom`, um `now` fixo com `fromLocal`) e incluir o arquivo no script `test` de `package.json` depois de `test/documentos.test.ts`
+
+---
+
+## Phase 10: Foundational (US3)
+
+**Purpose**: tabelas, preferencias, registro de envio e fila de pendentes. Bloqueia a Phase 11.
+
+- [ ] T066 Criar `src/avisos.ts` com `prepararTabelasAvisos(db)` (chamada no fim de `openDb` em `src/db.ts`), criando exatamente as tabelas de [data-model.md](data-model.md#us3-avisos-proativos): `bills` (`description TEXT NOT NULL CHECK (length(description) BETWEEN 1 AND 80)`, `amount_cents INTEGER CHECK (amount_cents IS NULL OR amount_cents > 0)`, `category TEXT NOT NULL DEFAULT 'Contas'`, `due_on TEXT NOT NULL`, `due_day INTEGER CHECK (due_day IS NULL OR due_day BETWEEN 1 AND 31)`, `status TEXT NOT NULL CHECK (status IN ('aberta','paga','cancelada'))`), `recurring` (`kind` em `despesa|receita`, `amount_cents > 0`, `description` de 1 a 80, `frequency` em `diaria|semanal|mensal`, `anchor_day` de 0 a 31 ou NULL, `status` em `ativa|pausada|cancelada`), `notice_prefs` (PK `(phone, kind)`, `kind` em `vencimentos|categoria|recorrentes|resumo_manha|resumo_noite`, `enabled` 0 ou 1, `hour` de 0 a 23), `notice_log` (PK `(phone, kind, key)`) e `pending_notices`; em `src/db.ts`, acrescentar ao laco de colunas `transactions.recurring_id INTEGER` e `transactions.bill_id INTEGER`, e o indice `CREATE UNIQUE INDEX IF NOT EXISTS idx_tx_recorrencia ON transactions (recurring_id, occurred_on) WHERE recurring_id IS NOT NULL`
+- [ ] T067 Em `src/avisos.ts`, preferencias: `TIPOS_AVISO` com nome e descricao de cada tipo; padroes de R28 (titular: `vencimentos`, `categoria`, `recorrentes` e `resumo_manha` ligados, `resumo_noite` desligado; membro: tudo desligado; horas 9, 9, 9, `config.dailySummaryHour` e 21); `preferencias(db, ctx)` devolvendo os cinco tipos com `ligado`, `hora` e `disponivel` (categoria, vencimentos e recorrentes exigem `despesas` ou, em recorrentes, `receitas`); `definirPreferencia(db, phone, tipo, { ligado, hora? })` com `INSERT ... ON CONFLICT DO UPDATE` (depende de T066)
+- [ ] T068 Em `src/avisos.ts`, registro e fila: `marcarEnvio(db, phone, tipo, chave)` com `INSERT OR IGNORE` devolvendo `true` so na primeira vez (R30); `enfileirar(db, phone, texto)`; `retirarPendentes(db, phone, agora)` que devolve os textos com ate 7 dias, marca `delivered_at` e apaga os mais velhos; `limparRegistros(db, agora)` que apaga `notice_log` com mais de 90 dias (depende de T066)
+- [ ] T069 Em `src/avisos.ts`, `entregar(db, send, phone, tipo, chave, texto)`: se `marcarEnvio` devolver `false`, nao faz nada; senao chama `send`; se `send` lancar erro, guarda o texto com `enfileirar` e registra o erro com `console.error`, sem relancar (R29) (depende de T068)
+- [ ] T070 Em `test/avisos.test.ts`, testar a fundacao: padroes de preferencia para titular e membro e `disponivel` por perfil; `definirPreferencia` muda e persiste; `marcarEnvio` so devolve `true` uma vez por chave; `entregar` com `send` que falha deixa o texto pendente e `retirarPendentes` devolve e marca entregue; pendente com 8 dias e descartado (depende de T065, T069)
+
+**Checkpoint**: infraestrutura de avisos pronta; agendador ainda igual.
+
+---
+
+## Phase 11: User Story 3 - Avisos proativos de financas (Priority: P3)
+
+**Goal**: o assessor avisa sem esperar pergunta: vencimento na vespera, categoria acima do mes
+anterior com projecao, lancamento recorrente feito sozinho, resumo da noite; comparativo sob
+pedido; cada tipo ligado ou desligado por pessoa.
+
+**Independent Test**: cadastrar uma conta com vencimento amanha e uma despesa recorrente semanal,
+avancar o relogio de teste e verificar que o aviso e o lancamento automatico acontecem uma vez so
+(spec, US3).
+
+### Tests for User Story 3
+
+> Escrever antes da implementacao correspondente e ver falhar.
+
+- [ ] T071 [US3] Em `test/avisos.test.ts`, testar contas a pagar e recorrencias no dominio: criar conta unica e mensal; pagar unica vira `paga` e cria despesa com `bill_id`; pagar mensal com vencimento em 31/01 avanca para o ultimo dia de fevereiro e depois volta ao dia 31 em marco; pagar sem valor cadastrado nem informado recusa; recorrencia semanal criada numa segunda lanca toda segunda; `lancarDevidas` duas vezes no mesmo dia cria uma transacao so; pausada nao lanca; retomar recalcula `next_on` a partir de hoje; parado por 10 dias lanca so as ocorrencias dos ultimos 7
+- [ ] T072 [US3] Em `test/avisos.test.ts`, testar categoria, comparativo e resumo: Mercado com R$ 300 no mes anterior ate o dia 10 e R$ 360 neste mes ate o dia 10 avisa com 20% e a projecao; R$ 330 (10%) nao avisa; diferenca abaixo de R$ 50 ou mes anterior abaixo de R$ 100 nao avisa; `comparar_meses` traz total, diferenca e as 3 maiores variacoes; resumo da noite conta gastos, lembretes, tarefas e documentos do dia e omite areas fora do perfil; dia sem registro devolve `null`
+- [ ] T073 [US3] Em `test/avisos.test.ts`, testar o agendador com `now` injetado: conta que vence amanha avisa uma vez na hora configurada e nao repete no tick seguinte nem depois de paga; o aviso de categoria nao sai duas vezes na mesma semana ISO; `recorrentes` desligado lanca a transacao sem avisar; membro com tudo desligado nao recebe nada; lembrete com `send` que falha avanca e fica pendente (nao e reenviado no proximo tick); webhook com pendentes manda "Avisos que ficaram para depois:" antes da resposta do assessor (fetch simulado como em `test/conta.test.ts`)
+- [ ] T074 [US3] Em `test/avisos.test.ts`, testar as 9 ferramentas e a matriz de perfis: titular e completo usam todas; so gastos usa contas a pagar, recorrencia de despesa, `comparar_meses` e `configurar_avisos`, e recebe `Sem permissao` em recorrencia de receita; agenda e tarefas recebe `Sem permissao` em tudo, exceto `configurar_avisos`, que responde que o tipo nao se aplica para `categoria`
+- [ ] T075 [US3] Em `test/avisos.test.ts`, testar a API de [contracts/api-avisos.md](contracts/api-avisos.md): criar, listar, pagar e cancelar conta; `400` ao pagar sem valor; criar, pausar e cancelar recorrencia; `403` para recorrencia de receita como so gastos; `GET /api/avisos` com `disponivel` e `modeloAprovado`; `PUT /api/avisos/categoria` muda so a preferencia de quem esta logado; `recorrente` e `contaPagarId` em `/api/transacoes`; `contasProximas` em `/api/financas`
+
+### Implementation for User Story 3
+
+**Dominio**
+
+- [ ] T076 [US3] Em `src/avisos.ts`, contas a pagar: `criarConta(db, ctx, { descricao, vencimento, valor?, categoria?, mensal })` (`due_day` = dia de `vencimento` quando mensal), `listarContas(db, conta, { incluirPagas })` ordenada por `due_on` com `vencida` calculada, `pagarConta(repo, ctx, id, { valor?, data?, pagamento? })` que registra a despesa com `bill_id` e `created_by`, e na mensal avanca `due_on` para o mes seguinte usando `due_day` (31 vira o ultimo dia do mes), `cancelarConta`, `contasAVencer(db, conta, de, ate)` (depende de T066)
+- [ ] T077 [US3] Em `src/avisos.ts`, recorrencias: `criarRecorrencia(db, ctx, {...})` com `anchor_day` vindo de `inicio` (dia da semana na semanal, dia do mes na mensal) e `next_on = inicio`; `proximaData(rec, data)` (31 vira o ultimo dia do mes); `listarRecorrencias(db, conta)`; `alterarRecorrencia(db, id, acao, agora)` (retomar recalcula a partir de hoje); `lancarDevidas(repo, hoje)` que, para cada recorrencia `ativa` com `next_on <= hoje`, lanca as datas de no maximo 7 dias atras ate hoje com `recurring_id` (inserir com `INSERT OR IGNORE` pelo indice unico) e avanca `next_on`; devolve as transacoes criadas (depende de T066)
+- [ ] T078 [US3] Em `src/avisos.ts`, `categoriasAcima(repo, conta, hoje)` com as regras de R26 (pelo menos 15% acima, diferenca maior que R$ 50, mes anterior com pelo menos R$ 100, mesmo intervalo do mes anterior com dia 31 virando o ultimo dia, projecao `gasto / dias passados * dias do mes`) e `compararMeses(repo, conta, mes, hoje)` de R31 (depende de T066)
+- [ ] T079 [US3] Em `src/avisos.ts`, os textos de [contracts/ferramentas-avisos.md](contracts/ferramentas-avisos.md#textos-dos-avisos): `textoVencimento`, `textoCategoria`, `textoRecorrente`, `resumoManha(repo, ctx, now)` (o resumo atual de `buildDailySummary` mais os vencimentos do dia) e `resumoNoite(repo, ctx, now)` (contagens so das areas do perfil; `null` sem registro) (depende de T076, T078)
+
+**Agendador e webhook**
+
+- [ ] T080 [US3] Em `src/scheduler.ts`, `rodarAvisos(repo, send, now)`: lanca as recorrencias devidas uma vez por tick e avisa quem tem `recorrentes` ligado (chave `recorrente:<id>:<data>`); para cada pessoa em `users`, resolve o contexto e, para cada tipo ligado e disponivel cuja hora ja chegou hoje, monta e entrega pela `entregar` com as chaves de R30 (vencimentos de amanha, categorias acima, resumos); trocar `runSummaryOnce` por `rodarAvisos` e manter `buildDailySummary` exportado para os testes existentes; em `runRemindersOnce`, envio que falha vai para `enfileirar` e o lembrete avanca; chamar `limparRegistros` junto da limpeza de documentos (depende de T069, T077, T079)
+- [ ] T081 [US3] Em `src/server.ts`, antes de `sendText(msg.from, answer)`, chamar `retirarPendentes(repo.db, msg.from, new Date())` e, se houver, mandar um texto unico `Avisos que ficaram para depois:\n- ...` (depende de T068)
+
+**Assessor**
+
+- [ ] T082 [US3] Em `src/tools.ts`, as 9 ferramentas de [contracts/ferramentas-avisos.md](contracts/ferramentas-avisos.md) com schemas zod (`descricao` de 1 a 80, `valor` positivo, datas `AAAA-MM-DD`, `frequencia` em `diaria|semanal|mensal`, `acao` em `pausar|retomar|cancelar`, `tipo` de aviso no enum, `hora` de 0 a 23) e capacidade em `CAPACIDADE` (`despesas` para contas e `comparar_meses`; recorrencias conferem o tipo com `exigir`; `configurar_avisos` sem capacidade, gravando para `ctx.membro`) (depende de T067, T076, T077, T078)
+- [ ] T083 [US3] Em `src/prompt.ts`, as regras de [contracts/ferramentas-avisos.md](contracts/ferramentas-avisos.md#prompt): "paguei X" com conta cadastrada usa `pagar_conta`; frase de recorrencia usa `criar_recorrencia`; ligar, desligar e mudar hora de aviso usa `configurar_avisos` (depende de T082)
+
+**API do painel**
+
+- [ ] T084 [US3] Em `src/api.ts`, rotas de contas a pagar de [contracts/api-avisos.md](contracts/api-avisos.md#contas-a-pagar-capacidade-despesas) com zod e entradas `["despesas"]` em `CAPACIDADE_ROTA` (depende de T076)
+- [ ] T085 [US3] Em `src/api.ts`, rotas de recorrencias com entradas `["despesas", "receitas"]` em `CAPACIDADE_ROTA` e conferencia do tipo (`403` com `SEM_ACESSO`); `GET` so com os tipos visiveis (depende de T077)
+- [ ] T086 [US3] Em `src/api.ts`, `GET /api/avisos` e `PUT /api/avisos/:tipo` para `ctx.membro`, com `disponivel` e `modeloAprovado` (`Boolean(config.whatsapp.noticeTemplate)`) (depende de T067)
+- [ ] T087 [US3] Em `src/api.ts`, `recorrente` e `contaPagarId` em cada item de `GET /api/transacoes` e `contasProximas` (ate 5 contas abertas que vencem nos proximos 7 dias) em `GET /api/financas` (depende de T076)
+
+**Painel web**
+
+- [ ] T088 [P] [US3] Em `web/src/api.ts`, tipos `ContaPagar`, `Recorrencia`, `Aviso`, `Avisos`; `recorrente?` e `contaPagarId?` em `Transacao`; `contasProximas?` em `Financas` (depende de T084 a T087)
+- [ ] T089 [US3] Em `web/src/mesas.ts`, item "Contas e recorrências" (`/financas/contas`, icone `repetir`) em `SUBMENU_FINANCAS`; em `web/src/router.ts`, rotas `/financas/contas` (mesa financas) e `/operacao/avisos` (mesa operacao) (depende de T088)
+- [ ] T090 [US3] Criar `web/src/views/financas/ContasView.vue` no padrao de `TransacoesView.vue` (com `CabecalhoSub`): bloco de contas a pagar (vencidas em destaque, proximas, pagas no mes), botao "Pagar" com `PainelLateral` para valor, data e forma; bloco de recorrencias com frequencia em palavras e proxima data, pausar, retomar e cancelar; formularios de nova conta e nova recorrencia; recorrencia de receita so com `pode("receitas")` (depende de T089)
+- [ ] T091 [P] [US3] Criar `web/src/views/operacao/AvisosView.vue` no padrao de `AcessosView.vue`: um item por tipo com nome, descricao, interruptor e seletor de hora; tipos indisponiveis aparecem desabilitados com o motivo; sem `modeloAprovado`, aviso "Sem modelo aprovado na Meta, os avisos so chegam se você falou com o assessor nas últimas 24 horas" (depende de T089)
+- [ ] T092 [P] [US3] Em `web/src/views/financas/FinancasPainel.vue`, bloco "Vence nos próximos dias" com `contasProximas` (descricao, data, valor ou "valor variável") e link para `/financas/contas`; nao aparece sem contas (depende de T088)
+- [ ] T093 [P] [US3] Em `web/src/views/OperacaoMesa.vue`, atalho "Avisos →" para `/operacao/avisos` ao lado de "Equipe e acesso"; em `web/src/views/financas/TransacoesView.vue`, chip "recorrente" quando `t.recorrente` (depende de T089)
+
+**Checkpoint**: US3 completa; T070 a T075 verdes; roteiro de [quickstart.md](quickstart.md#us3-avisos-proativos) passando.
+
+---
+
+## Phase 12: Polish (US3)
+
+- [ ] T094 [P] Em `src/seed.ts`, criar na conta demo as contas a pagar "Condomínio" (mensal, dia 8, R$ 480), "Fatura Nubank" (mensal, dia 15, valor variável) e "IPVA" (única, daqui a 20 dias, R$ 1.240) e as recorrencias "Academia" (semanal, segunda, R$ 89,90) e "Streaming" (mensal, dia 18, R$ 55,90); ligar `resumo_noite` para o titular demo
+- [ ] T095 [P] Em `README.md`, documentar contas a pagar, recorrencias, tipos de aviso com padroes e horarios, a fila de avisos pendentes e a dependencia do modelo aprovado fora da janela de 24 horas; tabela "Como esta organizado" com `src/avisos.ts`
+- [ ] T096 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
+- [ ] T097 Executar o roteiro de [quickstart.md](quickstart.md#us3-avisos-proativos) (painel demo como titular e como Bia, terminal com `DB_PATH=data/demo.db`), com `AI_PROVIDER=gemini` e com `AI_PROVIDER=claude` quando houver `ANTHROPIC_API_KEY`
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -214,6 +305,10 @@ certa e recuperar um deles descrevendo o conteudo sem citar o nome do arquivo (s
 - **Foundational US2 (Phase 6)**: depende da Phase 5; bloqueia a US2
 - **US2 (Phase 7)**: depende da Phase 6
 - **Polish US2 (Phase 8)**: depende da US2
+- **Setup US3 (Phase 9)**: sem dependencia alem do codigo ja na `main`
+- **Foundational US3 (Phase 10)**: depende da Phase 9; bloqueia a US3
+- **US3 (Phase 11)**: depende da Phase 10
+- **Polish US3 (Phase 12)**: depende da US3
 
 ### Dentro da US1
 
@@ -238,6 +333,18 @@ T017 (webhook) depende so de T006
 - Painel: T054 > T056 > T057 > T058 e T059; T056 > T060.
 - Testes: T041 depois de T040; T042 antes de T049; T043 antes de T054; T044 antes de T047.
 
+### Dentro da US3
+
+- Fundacao: T066 > T067 e T068 > T069 > T070.
+- Dominio: T066 > T076, T077 e T078 (independentes entre si, mesmo arquivo: sequenciais);
+  T076 e T078 > T079.
+- Agendador: T069, T077 e T079 > T080; T068 > T081.
+- Assessor: T067, T076, T077 e T078 > T082 > T083.
+- API: T076 > T084 e T087; T077 > T085; T067 > T086.
+- Painel: T084 a T087 > T088 > T089 > T090, T091 e T093; T088 > T092.
+- Testes: T071 antes de T076 e T077; T072 antes de T078 e T079; T073 antes de T080 e T081;
+  T074 antes de T082; T075 antes de T084.
+
 ### Parallel Opportunities
 
 - T002 e T003 em paralelo (arquivos diferentes).
@@ -248,6 +355,9 @@ T017 (webhook) depende so de T006
   depois de T039 e T048; no painel, T059 e T060 em paralelo depois de T057 e T056; T061 e T062
   em paralelo.
 - T041 a T044 tocam o mesmo arquivo (`test/documentos.test.ts`): sequenciais.
+- US3: o dominio inteiro fica em `src/avisos.ts` e a API em `src/api.ts`, por isso quase tudo e
+  sequencial; no painel, T091, T092 e T093 em paralelo depois de T089; T094 e T095 em paralelo.
+- T070 a T075 tocam o mesmo arquivo (`test/avisos.test.ts`): sequenciais.
 
 ---
 
@@ -273,6 +383,15 @@ Task: "UserInput.document e PDF nos provedores em src/prompt.ts e src/providers/
 # Painel, depois de T056 e T057:
 Task: "Atalho Documentos em web/src/views/TarefasMesa.vue"
 Task: "Ver comprovante em web/src/views/financas/TransacoesView.vue"
+```
+
+## Parallel Example: User Story 3
+
+```bash
+# Painel, depois de T089:
+Task: "Criar web/src/views/operacao/AvisosView.vue"
+Task: "Bloco Vence nos proximos dias em web/src/views/financas/FinancasPainel.vue"
+Task: "Atalho Avisos em OperacaoMesa.vue e chip recorrente em TransacoesView.vue"
 ```
 
 ---
@@ -302,6 +421,16 @@ Task: "Ver comprovante em web/src/views/financas/TransacoesView.vue"
 4. **Parar e validar** com a [secao US2 do quickstart](quickstart.md#us2-documentos).
 5. Commits por bloco, na branch `001-us2-documentos`.
 
+### US3
+
+1. Phases 9 e 10: preferencias, registro e fila testados, sem mudar o agendador.
+2. Dominio e agendador (T076 a T081): ja entrega os avisos pelo WhatsApp e corrige o reenvio
+   infinito de lembretes, sem painel.
+3. Assessor (T082, T083): contas, recorrencias, comparativo e preferencias pela conversa.
+4. API e painel (T084 a T093).
+5. **Parar e validar** com a [secao US3 do quickstart](quickstart.md#us3-avisos-proativos).
+6. Commits por bloco, na branch `001-us3-avisos`.
+
 ---
 
 ## Notes
@@ -312,3 +441,5 @@ Task: "Ver comprovante em web/src/views/financas/TransacoesView.vue"
   perfil contador (US7) e resumo por membro (US3).
 - Fora da US2: enviar arquivo pelo painel, pastas criadas pelo usuario, ler DOCX e XLSX,
   armazenamento externo.
+- Fora da US3: fatura lida do banco (US8), avisos por e-mail ou push, alerta por valor definido
+  pela pessoa.
