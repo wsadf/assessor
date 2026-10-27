@@ -24,13 +24,12 @@ const { auth } = await import("../src/auth.js");
 const { buildServer } = await import("../src/server.js");
 const { resumoManha } = await import("../src/avisos.js");
 const { fromLocal } = await import("../src/time.js");
+const { ESCOPO, googleFalso } = await import("./googleFalso.js");
 
 type PerfilMembro = "completo" | "so_gastos" | "agenda_tarefas";
 
 const titular = "5511999990000";
 const bia = "5511912345678";
-const ESCOPO = "https://www.googleapis.com/auth/calendar.events";
-const idToken = (email: string) => `x.${Buffer.from(JSON.stringify({ email })).toString("base64url")}.y`;
 
 function contaCom(perfil?: PerfilMembro) {
   const repo = makeRepo(openDb(":memory:"));
@@ -41,65 +40,6 @@ function contaCom(perfil?: PerfilMembro) {
   return { repo, db: repo.db };
 }
 const ctxDe = (repo: ReturnType<typeof makeRepo>, phone: string) => resolverContexto(repo.db, phone);
-
-/** Google de mentira: troca `fetch` e guarda o que foi chamado. */
-function googleFalso() {
-  const chamadas: { metodo: string; url: string; corpo: any }[] = [];
-  const eventos = new Map<string, any>();
-  const estado = { refresh: "ok" as "ok" | "invalid_grant" | "fora", escopo: `openid email ${ESCOPO}`, n: 0, revogados: [] as string[] };
-  const real = globalThis.fetch;
-  globalThis.fetch = (async (url: string, init: RequestInit = {}) => {
-    const u = new URL(String(url));
-    const metodo = init.method ?? "GET";
-    const texto = init.body ? String(init.body) : "";
-    const corpo = texto.startsWith("{") ? JSON.parse(texto) : Object.fromEntries(new URLSearchParams(texto));
-    chamadas.push({ metodo, url: String(url), corpo });
-    const json = (status: number, dados: unknown) => new Response(JSON.stringify(dados), { status });
-    if (u.host === "oauth2.googleapis.com" && u.pathname === "/token") {
-      if (corpo.grant_type === "authorization_code") {
-        return json(200, { access_token: "at-0", expires_in: 3599, refresh_token: "rt-segredo", scope: estado.escopo, id_token: idToken("wesley@gmail.com") });
-      }
-      if (estado.refresh === "invalid_grant") return json(400, { error: "invalid_grant" });
-      if (estado.refresh === "fora") return json(503, { error: "backend" });
-      return json(200, { access_token: `at-${++estado.n}`, expires_in: 3599 });
-    }
-    if (u.host === "oauth2.googleapis.com" && u.pathname === "/revoke") {
-      estado.revogados.push(corpo.token);
-      return json(200, {});
-    }
-    if (u.host === "www.googleapis.com") {
-      const id = decodeURIComponent(u.pathname.split("/events/")[1] ?? "");
-      if (metodo === "GET" && !id) {
-        const de = new Date(u.searchParams.get("timeMin")!);
-        const ate = new Date(u.searchParams.get("timeMax")!);
-        const q = u.searchParams.get("q")?.toLowerCase();
-        const items = [...eventos.values()].filter(
-          (e) => new Date(e.start.dateTime) < ate && new Date(e.end.dateTime) > de && (!q || e.summary.toLowerCase().includes(q)),
-        );
-        return json(200, { items });
-      }
-      if (metodo === "POST") {
-        const ev = { ...corpo, id: `ev${eventos.size + 1}`, htmlLink: "https://calendar.google.com/x" };
-        if (corpo.conferenceData) ev.hangoutLink = "https://meet.google.com/abc-defg-hij";
-        eventos.set(ev.id, ev);
-        return json(200, ev);
-      }
-      const ev = eventos.get(id);
-      if (!ev) return json(404, {});
-      if (metodo === "GET") return json(200, ev);
-      if (metodo === "PATCH") {
-        Object.assign(ev, corpo);
-        return json(200, ev);
-      }
-      if (metodo === "DELETE") {
-        eventos.delete(id);
-        return new Response(null, { status: 204 });
-      }
-    }
-    return json(500, {});
-  }) as typeof fetch;
-  return { chamadas, eventos, estado, restaurar: () => (globalThis.fetch = real) };
-}
 
 async function conectar(db: ReturnType<typeof makeRepo>["db"], phone: string) {
   const url = new URL(g.urlDeAutorizacao(db, phone));

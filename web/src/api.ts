@@ -34,9 +34,9 @@ export function limparSessao() {
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, publica = false): Promise<T> {
   const headers: Record<string, string> = {};
-  const t = sessao();
+  const t = publica ? null : sessao();
   if (t) headers.authorization = `Bearer ${t}`;
   if (body !== undefined) headers["content-type"] = "application/json";
   const res = await fetch(`/api${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -172,7 +172,7 @@ export interface Recorrencia {
   situacao: "ativa" | "pausada" | "cancelada";
 }
 
-export type TipoAviso = "vencimentos" | "categoria" | "recorrentes" | "resumo_manha" | "resumo_noite";
+export type TipoAviso = "vencimentos" | "categoria" | "recorrentes" | "resumo_manha" | "resumo_noite" | "agendamentos";
 
 export interface Aviso {
   tipo: TipoAviso;
@@ -313,6 +313,70 @@ export interface Evento {
   linkVideo: string | null;
   linkGoogle: string | null;
 }
+
+export interface PaginaAgendamento {
+  slug: string;
+  nome: string;
+  duracoes: number[];
+  dias: number[];
+  inicio: string;
+  fim: string;
+  antecedenciaHoras: number;
+  horizonteDias: number;
+  ativa: boolean;
+}
+
+export interface MinhaPagina {
+  pagina: PaginaAgendamento | null;
+  link: string | null;
+  googleConectado: boolean;
+  podeAtivar: boolean;
+}
+
+export interface Horario {
+  inicio: string;
+  fim: string;
+}
+
+export interface Agendamento {
+  id: number;
+  cliente: string;
+  email: string;
+  whatsapp: string;
+  inicio: string;
+  fim: string;
+  situacao: "agendado" | "confirmado" | "remarcando" | "cancelado";
+  confirmacaoFalhou: boolean;
+  opcoes: Horario[] | null;
+}
+
+/** O que o cliente ve da pagina de quem atende: nada alem do nome e dos horarios livres. */
+export interface PaginaPublica {
+  nome: string;
+  duracoes: number[];
+  dias: string[];
+  fusoDoProfissional: string;
+}
+
+export interface Reserva {
+  inicio: string;
+  duracao: number;
+  nome: string;
+  email: string;
+  whatsapp: string;
+  aceite: boolean;
+  fuso: string;
+  site: string;
+}
+
+/** Chamadas da pagina publica: sem sessao, o cliente nao tem conta. */
+export const agendar = {
+  pagina: (slug: string) => request<PaginaPublica>("GET", `/agendar/${encodeURIComponent(slug)}`, undefined, true),
+  horarios: (slug: string, dia: string, duracao: number) =>
+    request<{ horarios: Horario[] }>("GET", `/agendar/${encodeURIComponent(slug)}/horarios${qs({ dia, duracao })}`, undefined, true),
+  reservar: (slug: string, r: Reserva) =>
+    request<{ inicio: string; fim: string; nome: string }>("POST", `/agendar/${encodeURIComponent(slug)}`, r, true),
+};
 
 export interface Agenda {
   google?: { conectada: boolean; eventos: Evento[]; erro: string | null };

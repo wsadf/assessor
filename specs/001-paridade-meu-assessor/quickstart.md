@@ -214,3 +214,48 @@ Os testes novos (arquivo `test/google.test.ts`), com `fetch` simulado para o Goo
 3. Conferir tudo no Google Agenda pelo navegador.
 4. "desconecta minha agenda do Google": a Agenda do painel volta a mostrar "Conectar".
 5. Repetir o passo 2 com `AI_PROVIDER=gemini` e `AI_PROVIDER=claude`.
+
+# US5: pagina publica de agendamento
+
+Contratos em [contracts/api-agendamento.md](contracts/api-agendamento.md) e
+[contracts/ferramentas-agendamento.md](contracts/ferramentas-agendamento.md). Depende da US4: o
+Google Agenda de quem atende precisa estar conectado.
+
+## 1. Testes automaticos
+
+Os testes novos (arquivo `test/agendamento.test.ts`), com o Google simulado da US4, devem cobrir:
+
+- configuracao: sem Google conectado a pagina nao ativa; `slug` aleatorio e troca de link;
+- horarios: so dentro da janela e dos dias, respeitando antecedencia e horizonte; evento do Google
+  e agendamento existente tiram os horarios sobrepostos; evento de dia inteiro nao tira; a resposta
+  nao contem titulo nem convidado dos outros eventos;
+- reserva: cria o evento com o cliente como convidado e o lembrete do dono; dois pedidos para o
+  mesmo horario, um aceito e outro `409`; Google falhando nao deixa linha `reservando`; campo
+  escondido preenchido nao grava; limites por IP e por WhatsApp; sem `aceite` recusa;
+- vespera: confirmacao sai uma vez as 18h; sem modelo aprovado marca `confirmacao nao enviada` e
+  avisa o dono; numero com PARAR nao recebe;
+- respostas do cliente pelo webhook: `1` confirma, `2` avisa o dono, opcao escolhida move evento e
+  lembrete, `PARAR` registra o opt-out, outra coisa recebe a resposta fixa; nada disso chama o
+  modelo de IA; numero sem agendamento continua ignorado;
+- ferramentas e API privada, inclusive `remarcar_agendamento` com tres opcoes e cancelamento.
+
+## 2. Painel e pagina publica
+
+Com o Google conectado (quickstart da US4) e `npm run painel`:
+
+1. Agenda > Pagina de agendamento: escolher duracoes, dias e janela, ativar; copiar o link.
+2. Em uma janela anonima, abrir o link: escolher duracao, dia e horario, preencher os dados e
+   confirmar em menos de 1 minuto (SC-006). O evento aparece no Google Agenda com o cliente
+   convidado, e o painel lista o agendamento.
+3. Em duas janelas anonimas, escolher o mesmo horario e confirmar quase juntos: uma recebe "acabou
+   de ser ocupado".
+4. Com o navegador em outro fuso (emulacao de fuso do DevTools), a pagina mostra os horarios no
+   fuso do cliente e avisa a diferenca.
+
+## 3. WhatsApp
+
+Com o numero de teste e o modelo aprovado: agendar com um WhatsApp cadastrado como destinatario,
+mudar a hora do servidor para a vespera as 18h (ou criar o agendamento para amanha e rodar o
+agendador), responder `1`, depois pedir ao assessor "nao vou poder atender a Camila amanha" e
+responder `2` com o numero de teste. Repetir o pedido ao assessor com `AI_PROVIDER=gemini` e
+`AI_PROVIDER=claude`.

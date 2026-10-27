@@ -16,6 +16,17 @@ import {
   textoVencimento,
   type Envio,
 } from "./avisos.js";
+import {
+  avisarDono,
+  clienteEmOptout,
+  limparAgendamentos,
+  marcarConfirmacao,
+  nomeDaPagina,
+  paraConfirmar,
+  textosCliente,
+  textosDono,
+} from "./agendamento.js";
+import { config } from "./config.js";
 import { repoDoContexto, resolverContexto } from "./conta.js";
 import type { Repo } from "./db.js";
 import { documentos } from "./documentos.js";
@@ -95,6 +106,34 @@ export async function rodarAvisos(repo: Repo, send: Envio, now = new Date()) {
   }
 }
 
+/**
+ * Confirmacao ao cliente a partir das 18h da vespera. O cliente quase nunca escreveu nas ultimas
+ * 24 h, entao so o modelo aprovado passa pela Meta; sem ele, nada sai e quem atende fica sabendo.
+ */
+export async function confirmarVespera(repo: Repo, send: Envio, now = new Date()) {
+  if (localHour(now) < 18) return;
+  const db = repo.db;
+  for (const b of paraConfirmar(db, addDias(localDate(now), 1))) {
+    if (clienteEmOptout(db, b.client_phone)) {
+      marcarConfirmacao(db, b.id, { enviada: false });
+      continue;
+    }
+    if (!config.whatsapp.noticeTemplate) {
+      marcarConfirmacao(db, b.id, { enviada: false });
+      await avisarDono(db, send, b, `sem-modelo:${b.id}:${b.starts_at}`, textosDono.semModelo(b), now);
+      continue;
+    }
+    try {
+      await send(b.client_phone, textosCliente.vespera(b, nomeDaPagina(db, b)));
+      marcarConfirmacao(db, b.id, { enviada: true, agora: now });
+    } catch (err) {
+      console.error(`[agendamento #${b.id}] confirmacao recusada`, err);
+      marcarConfirmacao(db, b.id, { enviada: false });
+      await avisarDono(db, send, b, `recusada:${b.id}:${b.starts_at}`, textosDono.envioRecusado(b), now);
+    }
+  }
+}
+
 /** Resumo nao depende do Google: falha vira uma linha de aviso, sem conta conectada nao aparece. */
 async function eventosDoResumo(repo: Repo, phone: string, hoje: string): Promise<Evento[] | "falhou" | undefined> {
   if (!estadoGoogle(repo.db, phone).conectada) return undefined;
@@ -114,11 +153,13 @@ export function startScheduler(repo: Repo, send: Envio) {
     try {
       await runRemindersOnce(repo, send);
       await rodarAvisos(repo, send);
+      await confirmarVespera(repo, send);
       if (Date.now() - ultimaLimpeza > 3_600_000) {
         ultimaLimpeza = Date.now();
         documentos(repo.db).limparPendentes();
         limparRegistros(repo.db, new Date());
         limparAutorizacoes(repo.db);
+        limparAgendamentos(repo.db, new Date());
       }
     } catch (err) {
       console.error("[agendador] falha no tick", err);

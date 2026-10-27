@@ -1,8 +1,8 @@
 # Research: Paridade com o Meu Assessor
 
 Decisoes por historia. R1 a R10 sao da US1 (conta compartilhada), R11 a R22 da US2 (documentos)
-e R23 a R34 da US3 (avisos proativos), todas implementadas; R35 a R46 sao da US4 (Google Agenda).
-As demais historias acrescentam secoes aqui.
+R23 a R34 da US3 (avisos proativos) e R35 a R46 da US4 (Google Agenda), todas implementadas;
+R47 a R58 sao da US5 (pagina publica de agendamento). As demais historias acrescentam secoes aqui.
 
 # US1: Conta compartilhada
 
@@ -335,6 +335,7 @@ As demais historias acrescentam secoes aqui.
 - Nove ferramentas novas no bloco com cache, cerca de 1.500 tokens a mais, pagos uma vez por
   cache. Avisos sem IA. O calculo de categoria roda uma vez por dia por pessoa com o aviso ligado,
   com duas consultas agregadas por mes; para mil contas, milissegundos.
+
 # US4: Google Agenda
 
 ## R35. Agenda de quem e
@@ -447,3 +448,106 @@ As demais historias acrescentam secoes aqui.
 - Seis ferramentas novas no bloco com cache. A API do Google Calendar nao cobra por chamada dentro
   da cota padrao. Nos testes, `fetch` simulado para os endpoints do Google, como ja e feito com a
   Meta e o Gemini.
+
+# US5: Pagina publica de agendamento
+
+## R47. De quem e a pagina
+
+- **Decision**: a pagina e de uma pessoa (o membro que atende), exige a capacidade `agenda` e o
+  Google Agenda conectado (US4). Os horarios livres vem do calendario principal dela, e o
+  agendamento vira evento nele.
+- **Rationale**: a spec diz que a US5 depende da US4. Usar o calendario real e o unico jeito de nao
+  oferecer um horario que ja esta ocupado por algo marcado fora do produto (FR-022, FR-023).
+- **Sem Google conectado**: a pagina nao pode ser ativada, e a tela diz por que (principio VII).
+
+## R48. Endereco publico
+
+- **Decision**: `<PAINEL_URL>/agendar/<slug>`, com `slug` aleatorio de 10 caracteres
+  (`[a-z0-9]`). A pagina e uma rota publica do painel Vue; os dados vem de
+  `GET /api/agendar/:slug` e a reserva de `POST /api/agendar/:slug`, num plugin publico como o do
+  retorno do Google. A pessoa pode gerar um novo `slug` (o antigo para de funcionar).
+- **Rationale**: um nome previsivel (`/agendar/wesley`) permitiria descobrir paginas de outras
+  pessoas. Trocar o `slug` resolve um link que vazou.
+
+## R49. Configuracao
+
+- **Decision**: por pagina: nome exibido (o titulo da pagina, ex.: "Julia Andrade"), duracoes
+  oferecidas (entre 15, 30, 45, 60, 90 e 120 minutos), dias da semana, janela unica de atendimento
+  (`HH:mm` a `HH:mm`, a mesma para os dias escolhidos), antecedencia minima em horas (padrao 12),
+  horizonte em dias (padrao 30, maximo 90) e situacao (ativa ou pausada).
+- **Rationale**: FR-021 com o menor formulario que cobre o caso comum de consultorio. Janelas
+  diferentes por dia ficam para depois.
+
+## R50. Horarios livres
+
+- **Decision**: para a duracao escolhida e um dia, os inicios possiveis andam de 15 em 15 minutos
+  (duracao de 15) ou de 30 em 30 (as demais), dentro da janela, a partir de `agora + antecedencia`,
+  e saem os que se sobrepoem a: eventos do Google com hora (os de dia inteiro nao bloqueiam) e
+  agendamentos da pagina ainda nao cancelados. A API devolve so `inicio` e `fim` em UTC; nunca
+  titulo, convidados ou qualquer dado dos outros compromissos (FR-022).
+- **Rationale**: a lista do Google e uma chamada por dia consultado; o navegador pede um dia por vez.
+
+## R51. Fuso do cliente
+
+- **Decision**: a API trabalha em UTC; a pagina mostra em `Intl.DateTimeFormat().resolvedOptions().timeZone`
+  do navegador do cliente, com a indicacao "horarios no seu fuso (America/Lisbon)" quando for
+  diferente de `TIMEZONE`. O evento e o lembrete do dono usam `TIMEZONE`.
+- **Rationale**: edge case da spec.
+
+## R52. Dois clientes no mesmo horario
+
+- **Decision**: a reserva comeca com uma transacao sincrona no SQLite que confere sobreposicao com
+  agendamentos `reservando`, `agendado` ou `confirmado` da mesma pagina e grava a linha como
+  `reservando`. So depois chama o Google (confere conflito de novo e cria o evento). Se o Google
+  recusar ou o horario tiver sido ocupado, a linha e apagada e a resposta e `409` "Esse horario
+  acabou de ser ocupado". Linhas `reservando` com mais de 2 minutos sao apagadas pela limpeza.
+- **Rationale**: FR-023 e cenario 5. Como o better-sqlite3 e sincrono, o segundo pedido ve a linha
+  `reservando` do primeiro antes de qualquer `await`; nao precisa de trava extra.
+
+## R53. Dados do cliente e consentimento
+
+- **Decision**: nome (2 a 80 caracteres), e-mail valido e WhatsApp (10 a 15 digitos), mais a
+  caixa "Aceito receber a confirmacao deste horario pelo WhatsApp" obrigatoria. O e-mail entra como
+  convidado do evento (o Google manda o convite). Campo escondido contra robo e limite de 5 reservas
+  por IP por hora e 3 por WhatsApp por dia.
+- **Rationale**: o cliente nao tem conta; o consentimento e o que autoriza o assessor a escrever
+  para ele (FR-024). Os limites evitam encher a agenda de alguem com reservas falsas.
+
+## R54. Confirmacao na vespera
+
+- **Decision**: o agendador manda ao cliente, as 18h da vespera, uma mensagem com dia, hora e o
+  nome de quem atende, pedindo "1 para confirmar, 2 se precisar remarcar, PARAR para nao receber
+  mais". Sai pelo modelo aprovado (`WHATSAPP_NOTICE_TEMPLATE`), porque o cliente quase nunca
+  conversou com o numero nas ultimas 24 horas. Sem modelo configurado, a confirmacao nao e enviada:
+  o agendamento fica marcado "confirmacao nao enviada" e o dono e avisado (principio VII).
+- **Rationale**: FR-024 e cenario 3, dentro da regra da Meta.
+
+## R55. Respostas do cliente
+
+- **Decision**: o webhook passa a aceitar, alem dos numeros autorizados, mensagens de um numero com
+  agendamento futuro ou de ate 1 dia atras. Essas mensagens nunca vao para o assessor de IA nem
+  veem dados do dono: um interpretador simples trata `1`/`sim`/`confirmo` (confirma), `2`/`remarcar`
+  (avisa o dono), um numero de opcao quando ha remarcacao em aberto e `PARAR` (marca o opt-out e
+  para de escrever). Qualquer outra coisa recebe uma resposta fixa com as opcoes.
+- **Rationale**: principio I: o cliente nao e usuario da conta. Principio IV: sem custo de IA.
+
+## R56. Remarcar pelo dono
+
+- **Decision**: ferramenta `remarcar_agendamento` (com `consultar_agendamentos` antes, como na
+  agenda). O assessor calcula ate tres horarios livres a partir do dia seguinte, manda ao cliente
+  "Julia precisou remarcar. Opcoes: 1) qui 27/08 19:00 2) ... 3) ... Responda com o numero" e
+  guarda as opcoes no agendamento (`remarcando`). Quando o cliente responde, o evento do Google e
+  movido, o lembrete do dono acompanha, o cliente recebe a confirmacao e o dono recebe o aviso
+  "Camila escolheu quinta, 27, as 19:00". Se nenhuma opcao servir ("0"), o dono e avisado.
+- **Rationale**: cenario 4 da spec.
+
+## R57. Avisos ao dono
+
+- **Decision**: novo tipo de aviso `agendamentos` (ligado por padrao para quem tem pagina ativa):
+  novo agendamento, confirmacao, pedido de remarcacao, escolha de nova data e falha de envio ao
+  cliente. Usa a fila e o registro da US3.
+
+## R58. Custo e privacidade
+
+- Pagina, reserva e respostas do cliente sem IA. Duas ferramentas do assessor usam o modelo como
+  qualquer outra. Dados do cliente ficam na conta do dono e somem 90 dias depois do horario.

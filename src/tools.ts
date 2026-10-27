@@ -1,5 +1,15 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
+import {
+  agendamentoDoDono,
+  cancelar,
+  linkDaPagina,
+  listarAgendamentos,
+  paginaDe,
+  remarcar,
+  type Agendamento,
+  type SituacaoAgendamento,
+} from "./agendamento.js";
 import { AuthError } from "./auth.js";
 import { config } from "./config.js";
 import { conta, repoDoContexto, type Membro } from "./conta.js";
@@ -50,6 +60,7 @@ import {
   type Contexto,
 } from "./permissoes.js";
 import { brl, formatLocal, fromLocal, localDate } from "./time.js";
+import { sendNotice } from "./whatsapp.js";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "use YYYY-MM-DD");
 const nullableIsoDate = isoDate.nullish();
@@ -179,6 +190,10 @@ const schemas = {
   remarcar_compromisso: z.object({ id: z.string().min(1), novo_inicio: dataHora, duracao_minutos: z.number().int().min(5).max(720).nullish() }),
   cancelar_compromisso: z.object({ id: z.string().min(1), confirmado: z.boolean() }),
   desconectar_google_agenda: z.object({ confirmado: z.boolean() }),
+  link_de_agendamento: z.object({}),
+  consultar_agendamentos: z.object({ data_inicio: isoDate, data_fim: isoDate, cliente: z.string().min(1).max(80).nullish() }),
+  remarcar_agendamento: z.object({ id: z.number().int() }),
+  cancelar_agendamento: z.object({ id: z.number().int(), confirmado: z.boolean() }),
 };
 
 /** O que o turno do agente oferece as ferramentas alem da entrada do modelo. */
@@ -218,6 +233,10 @@ const CAPACIDADE: Partial<Record<keyof typeof schemas, Capacidade>> = {
   remarcar_compromisso: "agenda",
   cancelar_compromisso: "agenda",
   desconectar_google_agenda: "agenda",
+  link_de_agendamento: "agenda",
+  consultar_agendamentos: "agenda",
+  remarcar_agendamento: "agenda",
+  cancelar_agendamento: "agenda",
 };
 
 const GOOGLE = new Set<string>([
@@ -227,6 +246,10 @@ const GOOGLE = new Set<string>([
   "remarcar_compromisso",
   "cancelar_compromisso",
   "desconectar_google_agenda",
+  "link_de_agendamento",
+  "consultar_agendamentos",
+  "remarcar_agendamento",
+  "cancelar_agendamento",
 ]);
 
 const capDoTipo = (k: Kind): Capacidade => (k === "receita" ? "receitas" : "despesas");
@@ -479,6 +502,26 @@ export const toolDefinitions: Anthropic.Tool[] = [
   tool("desconectar_google_agenda", "Desliga o Google Agenda de quem fala e apaga o acesso guardado. Confirme antes.", {
     confirmado: { type: "boolean" },
   }),
+  tool("link_de_agendamento", "Devolve o link da pagina publica onde os clientes de quem fala marcam horario sozinhos.", {}),
+  tool(
+    "consultar_agendamentos",
+    "Lista os horarios que clientes marcaram pela pagina de agendamento de quem fala, com o id de cada um. Use antes de remarcar ou cancelar.",
+    {
+      data_inicio: { ...str, description: dateDesc },
+      data_fim: { ...str, description: `${dateDesc}, inclusiva` },
+      cliente: nullable({ ...str, description: "Parte do nome do cliente, ex.: Camila" }),
+    },
+  ),
+  tool(
+    "remarcar_agendamento",
+    "Quando quem atende nao pode no horario marcado por um cliente: manda ao cliente ate tres horarios livres para ele escolher pelo WhatsApp.",
+    { id: { type: "integer", description: "Id que veio de consultar_agendamentos" } },
+  ),
+  tool(
+    "cancelar_agendamento",
+    "Cancela um horario marcado por cliente, apaga o evento e avisa o cliente. Chame com confirmado false, mostre qual e, e so chame com true depois que o usuario confirmar.",
+    { id: { type: "integer" }, confirmado: { type: "boolean" } },
+  ),
 ];
 
 const describeConta = (c: ContaPagar) =>
@@ -950,6 +993,16 @@ const describeEvento = (e: Evento) =>
   `${e.id} | ${e.diaInteiro ? `${e.inicio} (dia inteiro)` : `${formatLocal(new Date(e.inicio))} a ${hora(e.fim)}`} | ${e.titulo}` +
   `${e.convidados.length ? ` | com ${e.convidados.join(", ")}` : ""}${e.linkVideo ? ` | ${e.linkVideo}` : ""}`;
 
+const SITUACAO: Record<SituacaoAgendamento, string> = {
+  reservando: "reservando",
+  agendado: "agendado",
+  confirmado: "confirmado pelo cliente",
+  remarcando: "aguardando o cliente escolher novo horario",
+  cancelado: "cancelado",
+};
+const describeAgendamento = (b: Agendamento) =>
+  `#${b.id} | ${formatLocal(new Date(b.starts_at))} | ${b.client_name} | ${SITUACAO[b.status]}${b.confirmation_failed ? " (confirmacao nao enviada)" : ""}`;
+
 /** Lembrete do WhatsApp que acompanha o compromisso; sem Google, e o unico registro dele. */
 function lembreteDoCompromisso(repo: Repo, ctx: Contexto, titulo: string, inicio: Date, minutosAntes: number, eventId?: string) {
   const quando = new Date(inicio.getTime() - minutosAntes * 60_000);
@@ -1048,6 +1101,50 @@ async function agendaGoogle(repo: Repo, ctx: Contexto, toolName: ToolName, input
     case "desconectar_google_agenda": {
       if (!input.confirmado) return "Confirme com o usuario: desligar o Google Agenda? Os compromissos continuam no Google, mas eu paro de ler e marcar.";
       return (await desconectarGoogle(db, quem)) ? "Desconectei o Google Agenda e apaguei o acesso guardado." : "O Google Agenda ja estava desconectado.";
+    }
+
+    case "link_de_agendamento": {
+      const e = estadoGoogle(db, quem);
+      if (!e.configurado) return new GoogleNaoConfigurado().message;
+      if (!e.conectada) return `A pagina de agendamento precisa do Google Agenda. Link para conectar (vale 15 min): ${criarLink(db, quem)}`;
+      const p = paginaDe(db, quem);
+      if (!p) return `Ainda nao ha pagina de agendamento. Ative no painel, na mesa de Agenda: ${config.google.painelUrl}/agenda`;
+      if (p.status === "pausada") return `A pagina de agendamento esta pausada. Reative no painel, na mesa de Agenda: ${config.google.painelUrl}/agenda`;
+      return `Link da pagina de agendamento (${p.display_name}): ${linkDaPagina(p)}`;
+    }
+
+    case "consultar_agendamentos": {
+      const alvo = input.cliente ? semAcento(input.cliente) : null;
+      const lista = listarAgendamentos(db, ctx, fromLocal(`${input.data_inicio}T00:00`), fromLocal(`${addDias(input.data_fim, 1)}T00:00`)).filter(
+        (b) => !alvo || semAcento(b.client_name).includes(alvo),
+      );
+      return lista.length ? lista.map(describeAgendamento).join("\n") : "Nenhum horario marcado por cliente no periodo.";
+    }
+
+    case "remarcar_agendamento": {
+      try {
+        const r = await remarcar(repo, ctx, input.id, new Date(), sendNotice);
+        if (!r.opcoes.length) return `Nao ha horario livre nos proximos 14 dias para ${r.agendamento.client_name}. Nada foi enviado; o horario continua marcado.`;
+        const opcoes = r.opcoes.map((o, i) => `${i + 1}) ${formatLocal(new Date(o.inicio))}`).join(" ");
+        return r.enviado
+          ? `Mandei para ${r.agendamento.client_name} as opcoes ${opcoes}. Quando o cliente escolher, mudo o evento e aviso.`
+          : `Separei as opcoes ${opcoes}, mas a mensagem para ${r.agendamento.client_name} nao saiu (o cliente pediu para nao receber mensagens ou o WhatsApp recusou). Combine direto com o cliente.`;
+      } catch (err) {
+        return falhaGoogle(repo, ctx, err);
+      }
+    }
+
+    case "cancelar_agendamento": {
+      try {
+        if (!input.confirmado) {
+          const b = agendamentoDoDono(db, ctx, input.id);
+          return `Confirme com o usuario antes de cancelar: ${describeAgendamento(b)}. O cliente recebe o aviso com o link para marcar outro.`;
+        }
+        const r = await cancelar(repo, ctx, input.id, sendNotice);
+        return `Cancelado: ${r.agendamento.client_name}, ${formatLocal(new Date(r.agendamento.starts_at))}.${r.enviado ? " O cliente foi avisado." : " O aviso ao cliente nao saiu; avise por outro meio."}`;
+      } catch (err) {
+        return falhaGoogle(repo, ctx, err);
+      }
     }
   }
   throw new Error(`Ferramenta desconhecida: ${toolName}`);

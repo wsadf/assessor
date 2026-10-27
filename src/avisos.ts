@@ -12,6 +12,7 @@ export const TIPOS_AVISO = {
   recorrentes: { nome: "Lançamentos recorrentes", descricao: "Quando um gasto ou receita recorrente é lançado sozinho", exige: ["despesas", "receitas"], hora: 9 },
   resumo_manha: { nome: "Resumo da manhã", descricao: "Gastos de ontem, total do mês, lembretes e vencimentos do dia", exige: null, hora: config.dailySummaryHour },
   resumo_noite: { nome: "Resumo da noite", descricao: "O que a equipe registrou no dia", exige: null, hora: 21 },
+  agendamentos: { nome: "Agendamentos da página", descricao: "Novo horário marcado, confirmação e pedido de remarcar dos clientes", exige: ["agenda"], hora: 0 },
 } satisfies Record<string, { nome: string; descricao: string; exige: Capacidade[] | null; hora: number }>;
 
 export type TipoAviso = keyof typeof TIPOS_AVISO;
@@ -50,8 +51,28 @@ export interface Recorrencia {
   created_at: string;
 }
 
+const tabelaPreferencias = (nome: string) => `
+  CREATE TABLE IF NOT EXISTS ${nome} (
+    phone TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN (${TIPO_IDS.map((t) => `'${t}'`).join(", ")})),
+    enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+    hour INTEGER NOT NULL CHECK (hour BETWEEN 0 AND 23),
+    PRIMARY KEY (phone, kind)
+  );`;
+
+/** O CHECK de kind fica gravado na tabela: tipo novo exige recriar, copiando as linhas. */
+function atualizarTiposDeAviso(db: Db) {
+  const sql = (db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'notice_prefs'`).get() as { sql: string }).sql;
+  if (TIPO_IDS.every((t) => sql.includes(`'${t}'`))) return;
+  db.transaction(() => {
+    db.exec(tabelaPreferencias("notice_prefs_nova"));
+    db.exec(`INSERT INTO notice_prefs_nova (phone, kind, enabled, hour) SELECT phone, kind, enabled, hour FROM notice_prefs`);
+    db.exec(`DROP TABLE notice_prefs`);
+    db.exec(`ALTER TABLE notice_prefs_nova RENAME TO notice_prefs`);
+  })();
+}
+
 export function prepararTabelasAvisos(db: Db) {
-  const tipos = TIPO_IDS.map((t) => `'${t}'`).join(", ");
   db.exec(`
     CREATE TABLE IF NOT EXISTS bills (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,13 +105,7 @@ export function prepararTabelasAvisos(db: Db) {
       created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_recurring_proxima ON recurring (status, next_on);
-    CREATE TABLE IF NOT EXISTS notice_prefs (
-      phone TEXT NOT NULL,
-      kind TEXT NOT NULL CHECK (kind IN (${tipos})),
-      enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
-      hour INTEGER NOT NULL CHECK (hour BETWEEN 0 AND 23),
-      PRIMARY KEY (phone, kind)
-    );
+    ${tabelaPreferencias("notice_prefs")}
     CREATE TABLE IF NOT EXISTS notice_log (
       phone TEXT NOT NULL,
       kind TEXT NOT NULL,
@@ -107,6 +122,7 @@ export function prepararTabelasAvisos(db: Db) {
     );
     CREATE INDEX IF NOT EXISTS idx_pending_phone ON pending_notices (phone, delivered_at);
   `);
+  atualizarTiposDeAviso(db);
 }
 
 // ---------- datas ----------
@@ -150,8 +166,11 @@ const disponivel = (ctx: Contexto, tipo: TipoAviso) => {
   return !exige || exige.some((c) => pode(ctx, c));
 };
 
-/** Titular recebe o essencial como antes da conta compartilhada; membro so o que ligar. */
-const padraoLigado = (ctx: Contexto, tipo: TipoAviso) => ctx.perfil === "titular" && tipo !== "resumo_noite";
+/** Titular recebe o essencial como antes da conta compartilhada; membro so o que ligar. Agendamentos: quem tem pagina ativa. */
+const padraoLigado = (db: Db, ctx: Contexto, tipo: TipoAviso) =>
+  tipo === "agendamentos"
+    ? !!db.prepare(`SELECT 1 FROM booking_pages WHERE phone = ? AND status = 'ativa'`).get(ctx.membro)
+    : ctx.perfil === "titular" && tipo !== "resumo_noite";
 
 export function preferencias(db: Db, ctx: Contexto) {
   const linhas = db.prepare(`SELECT kind, enabled, hour FROM notice_prefs WHERE phone = ?`).all(ctx.membro) as {
@@ -165,7 +184,7 @@ export function preferencias(db: Db, ctx: Contexto) {
       tipo,
       nome: TIPOS_AVISO[tipo].nome,
       descricao: TIPOS_AVISO[tipo].descricao,
-      ligado: l ? l.enabled === 1 : padraoLigado(ctx, tipo),
+      ligado: l ? l.enabled === 1 : padraoLigado(db, ctx, tipo),
       hora: l?.hour ?? TIPOS_AVISO[tipo].hora,
       disponivel: disponivel(ctx, tipo),
     };

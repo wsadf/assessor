@@ -1,5 +1,6 @@
 <script setup lang="ts">
-defineProps<{ antes: string; destaque: string; depois?: string }>();
+/** `cliente`: pagina vista por quem nao e usuario, sem a assinatura e o rodape de venda. */
+defineProps<{ antes: string; destaque: string; depois?: string; cliente?: boolean }>();
 </script>
 
 <template>
@@ -16,12 +17,15 @@ defineProps<{ antes: string; destaque: string; depois?: string }>();
       <div class="centro">
         <div class="chamada">
           <h1>{{ antes }} <span>{{ destaque }}</span>{{ depois ?? "" }}</h1>
-          <p class="assinatura">Bento, Lia e Davi · sua equipe te esperando no WhatsApp</p>
+          <p v-if="!cliente" class="assinatura">Bento, Lia e Davi · sua equipe te esperando no WhatsApp</p>
         </div>
         <div class="lado"><slot name="lado" /></div>
       </div>
 
-      <footer>
+      <footer v-if="cliente">
+        <span>Seus dados só servem para este horário</span>
+      </footer>
+      <footer v-else>
         <span>Dados protegidos pela LGPD</span>
         <span>Sem fidelidade</span>
         <span>7 dias grátis</span>
