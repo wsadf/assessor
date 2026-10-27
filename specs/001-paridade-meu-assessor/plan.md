@@ -1,60 +1,66 @@
-# Implementation Plan: Conta compartilhada com convites e perfis (US1)
+# Implementation Plan: Paridade com o Meu Assessor (US1 e US2)
 
 **Branch**: `001-paridade-meu-assessor` | **Date**: 2026-10-27 | **Spec**: [spec.md](spec.md)
 
 **Input**: Feature specification from `/specs/001-paridade-meu-assessor/spec.md`
 
-**Note**: este plano cobre so a User Story 1 (P1). As historias 2 a 9 terao planos proprios.
+**Note**: o plano cresce por historia. A US1 (conta compartilhada) esta implementada e na `main`
+(PR #1). Esta revisao planeja a US2 (guarda e busca de documentos). As historias 3 a 9 entram
+depois.
 
 ## Summary
 
-Permitir que o titular convide pessoas por codigo para a mesma conta, cada uma com o proprio
-WhatsApp e login, com perfil fixo (completo, so gastos, agenda e tarefas) e lista de quem tem
-acesso. Abordagem: a conta continua sendo o telefone do titular; uma tabela de membros liga cada
-numero a uma conta e o contexto (membro, conta, perfil) e resolvido uma vez na entrada. As
-consultas atuais seguem filtrando por `phone`. A permissao e conferida nas ferramentas do
-assessor e nas rotas da API, nunca so no prompt. Detalhes em [research.md](research.md).
+**US1, entregue**: conta compartilhada por convite, com perfis fixos e permissao aplicada nas
+ferramentas, nas rotas e numa visao do repo por perfil. Decisoes R1 a R10.
+
+**US2, este plano**: o usuario manda PDF ou foto pelo WhatsApp e o assessor guarda o arquivo numa
+pasta padrao, com titulo e descricao que ele mesmo escreve ao ler o documento, sem chamada extra
+de IA. Depois a pessoa pede "acha o contrato do apartamento" e recebe o arquivo na conversa. O
+painel ganha a tela de Documentos (na mesa de Tarefas) e o link "ver comprovante" em Transacoes.
+Arquivos ficam no disco ao lado do banco; metadados e busca (FTS5) no SQLite. Detalhes em
+[research.md](research.md) R11 a R22.
 
 ## Technical Context
 
 **Language/Version**: TypeScript 7 em ESM, Node 22
 
-**Primary Dependencies**: Fastify 5, zod 4, better-sqlite3 13, SDK da Anthropic; Gemini via REST;
-painel em Vue 3 + Vue Router + Vite. Nenhuma dependencia nova.
+**Primary Dependencies**: Fastify 5, zod 4, better-sqlite3 13 (com FTS5, conferido), SDK da
+Anthropic; Gemini via REST; painel em Vue 3 + Vue Router + Vite. Nenhuma dependencia nova:
+upload para a Meta com `FormData` e `Blob` nativos do Node 22.
 
-**Storage**: SQLite (`data/assessor.db`, `data/demo.db`), migracao por `CREATE TABLE IF NOT
-EXISTS` e `ALTER TABLE ADD COLUMN` em `openDb` e `prepararTabelas`
+**Storage**: SQLite (`documents`, `documents_fts`) e arquivos em `data/<banco>-arquivos/`
 
-**Testing**: `node --test` em `test/core.test.ts` via `npm test`; `npm run typecheck`
+**Testing**: `node --test` via `npm test`, com o arquivo novo `test/documentos.test.ts`;
+`npm run typecheck`; `vue-tsc` no painel
 
-**Target Platform**: servidor Node unico (webhook + painel), navegador moderno para o painel
+**Target Platform**: servidor Node unico (webhook + painel), navegador moderno
 
 **Project Type**: web service com painel web (back-end em `src/`, front-end em `web/`)
 
-**Performance Goals**: resolver o contexto de quem fala em uma consulta por mensagem; nenhuma
-chamada extra ao modelo
+**Performance Goals**: busca em menos de 100 ms para ate 5 mil documentos por conta; SC-003
+(arquivo certo entre os 3 primeiros em 90% das buscas)
 
-**Constraints**: isolamento total entre contas e perfis (SC-002); custo de IA por conversa sobe
-menos de 2% (R10); janela de 24 horas do WhatsApp inalterada
+**Constraints**: 20 MB por arquivo, 1 GB por conta com aviso em 80%; so PDF e imagem ate 5 MB vao
+ao modelo; janela de 24 horas do WhatsApp vale tambem para o envio do arquivo
 
-**Scale/Scope**: contas com ate dezenas de membros; 4 ferramentas novas, 6 rotas novas, 1 tela
-nova no painel, ajustes em cadastro e ativacao
+**Scale/Scope**: 6 ferramentas novas, 4 rotas novas, 1 tela nova, webhook com tipo `document`,
+upload de midia para a Meta, limpeza de pendentes no agendador
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-| Principio | Avaliacao | Status |
+| Principio | Avaliacao (US2) | Status |
 | --- | --- | --- |
-| I. Dados financeiros sao do usuario | Toda leitura passa pela conta resolvida; perfis aplicados em ferramenta e rota; convite com hash, validade e limite de tentativas; sessoes do removido apagadas; teste de matriz perfil x ferramenta x rota | Passa |
+| I. Dados financeiros sao do usuario | Arquivo sob o telefone da conta, caminho com sufixo aleatorio; toda leitura passa pela regra de visibilidade (R18); 404 para o que nao pode ver; pendente so de quem enviou; demo e real em pastas separadas; matriz de isolamento nos testes | Passa |
 | II. Dinheiro so leitura | Nada movimenta dinheiro | Passa |
-| III. Provedor de IA intercambiavel | Ferramentas novas em `src/tools.ts`, prompt comum; quickstart valida com os dois provedores | Passa |
-| IV. Custo por conta sob controle | +1 linha de contexto so quando ha membros; ferramentas no bloco com cache; historico continua por pessoa e limitado | Passa |
-| V. Uma fonte de verdade | WhatsApp, terminal e painel resolvem o contexto pela mesma funcao e usam o mesmo repo | Passa |
-| VI. Simplicidade de MVP | Sem dependencia nova; reaproveita `phone` como chave da conta em vez de migrar todas as tabelas | Passa |
-| VII. Honestidade | Recusa explicita por falta de permissao; README atualizado com o fluxo de convite e o limite de 5 destinatarios do numero de teste | Passa |
+| III. Provedor de IA intercambiavel | `UserInput.document` tratado nos dois provedores; ferramentas em `src/tools.ts`; quickstart pede os dois | Passa |
+| IV. Custo por conta sob controle | Sem chamada extra para classificar ou buscar; arquivo vai ao modelo uma vez e so ate 5 MB; estimativa de R$ 0,10 por mes para 10 documentos (R22) | Passa |
+| V. Uma fonte de verdade | WhatsApp, terminal e painel usam a mesma tabela e as mesmas funcoes de `src/documentos.ts` | Passa |
+| VI. Simplicidade de MVP | Disco local e FTS5 do SQLite, sem servico nem dependencia nova; pastas fixas | Passa |
+| VII. Honestidade | Formato nao lido pela IA e dito na conversa; limite e uso aparecem; "nao encontrei" quando nao acha; README atualizado; envio pelo painel declarado como fora | Passa |
 
-Reavaliado apos a Fase 1 (data model e contratos): sem violacoes. Complexity Tracking vazio.
+Reavaliado apos a Fase 1: sem violacoes. Complexity Tracking vazio.
 
 ## Project Structure
 
@@ -63,66 +69,70 @@ Reavaliado apos a Fase 1 (data model e contratos): sem violacoes. Complexity Tra
 ```text
 specs/001-paridade-meu-assessor/
 ├── spec.md
-├── plan.md              # este arquivo (US1)
-├── research.md          # decisoes R1 a R10
-├── data-model.md        # tabelas novas e colunas
-├── quickstart.md        # roteiro de validacao
+├── plan.md              # este arquivo (US1 entregue, US2 planejada)
+├── research.md          # R1 a R10 (US1), R11 a R22 (US2)
+├── data-model.md        # secoes US1 e US2
+├── quickstart.md        # secoes US1 e US2
 ├── contracts/
-│   ├── api-conta.md           # rotas novas, alteradas e capacidade por rota
-│   └── ferramentas-agente.md  # ferramentas novas e capacidade por ferramenta
+│   ├── api-conta.md               # US1
+│   ├── ferramentas-agente.md      # US1
+│   ├── api-documentos.md          # US2
+│   └── ferramentas-documentos.md  # US2
 ├── checklists/
 │   └── requirements.md
-└── tasks.md             # gerado por /speckit-tasks
+└── tasks.md             # US1 concluida; US2 entra via /speckit-tasks
 ```
 
-### Source Code (repository root)
+### Source Code (repository root), US2
 
 ```text
 src/
-├── conta.ts         # novo: convites, membros, resolverContexto(phone)
-├── permissoes.ts    # novo: perfis, capacidades, exigir(contexto, capacidade)
-├── db.ts            # colunas created_by e notify_phone; repo grava autoria
-├── auth.ts          # cadastro com convite; vinculo criado na ativacao
-├── agent.ts         # historico por membro, ferramentas pela conta, linha de contexto
-├── prompt.ts        # recebe o contexto de quem fala
-├── tools.ts         # 4 ferramentas novas; capacidade em cada ferramenta
-├── api.ts           # rotas /api/conta/*, /api/auth/convite; capacidade por rota; /me com conta
-├── server.ts        # libera membros ativos de titulares autorizados
-├── scheduler.ts     # envia lembrete para notify_phone
-├── cli.ts           # resolve contexto do CLI_PHONE
-└── seed.ts          # membro demo com perfil so_gastos
+├── documentos.ts    # novo: tabelas, pastas, salvar pendente, guardar, buscar, ler, mover, excluir, limpar pendentes, visibilidade
+├── permissoes.ts    # capacidade documentos para titular e completo
+├── db.ts            # chama prepararTabelasDocumentos
+├── config.ts        # pasta de arquivos derivada de DB_PATH e limites
+├── whatsapp.ts      # tipo document no parseWebhook; uploadMedia e sendDocument
+├── server.ts        # salva pendente ao receber image/document; envia anexos depois do texto
+├── prompt.ts        # UserInput.document e regras de documento no prompt
+├── providers/gemini.ts, providers/claude.ts  # PDF no turno
+├── agent.ts         # parametro enviarArquivo; historico com [documento]
+├── tools.ts         # 6 ferramentas novas; comprovante automatico em registrar_transacao
+├── api.ts           # rotas /documentos; comprovanteId em /transacoes
+├── scheduler.ts     # limpeza de pendentes com mais de 24 h
+├── cli.ts           # imprime o caminho do arquivo enviado
+└── seed.ts          # documentos de exemplo na conta demo
 
 web/src/
-├── views/operacao/AcessosView.vue  # novo: equipe e acesso, convites
-├── views/OperacaoMesa.vue          # link para Equipe e acesso
-├── views/auth/CriarContaView.vue   # campo de convite, pula plano e pagamento
-├── views/financas/*                # esconde receitas e saldo sem a capacidade
-├── mesas.ts, router.ts, estado.ts  # mesas e rotas filtradas por capacidades de /me
-└── api.ts                          # chamadas novas
+├── views/tarefas/DocumentosView.vue  # novo
+├── views/TarefasMesa.vue             # atalho para Documentos
+├── views/financas/TransacoesView.vue # ver comprovante
+├── mesas.ts, router.ts               # cargo do Davi, rota /tarefas/documentos, mesa exige tarefas ou documentos
+└── api.ts                            # tipos e download por blob
 
 test/
-└── core.test.ts     # testes listados no quickstart
+└── documentos.test.ts   # incluido no script test
 ```
 
-**Structure Decision**: mantem o layout atual de um back-end em `src/` e o painel em `web/`. Os
-dois modulos novos (`conta.ts`, `permissoes.ts`) seguem o estilo de `auth.ts`: funcoes sobre a
-conexao do banco, sem camada extra.
+**Structure Decision**: mesmo layout da US1. O modulo novo `documentos.ts` segue o estilo de
+`conta.ts`: funcoes sobre a conexao do banco, sem camada extra. Envio de arquivo fica em
+`whatsapp.ts`, junto do envio de texto.
 
-## Ordem sugerida
+## Ordem sugerida (US2)
 
-1. `permissoes.ts` e `conta.ts` com testes (sem tocar no fluxo atual).
-2. Colunas novas e autoria no repo.
-3. Contexto no agente, ferramentas e prompt; testes de matriz.
-4. Webhook, terminal e agendador.
-5. API: hook de capacidade, rotas de conta, cadastro e ativacao com convite.
-6. Painel: tela de acessos, cadastro com convite, mesas filtradas.
-7. Seed, README e quickstart completo.
+1. `documentos.ts` com tabelas, FTS, pendente, guardar, buscar, visibilidade e limpeza, com testes.
+2. Capacidade `documentos` e regra de visibilidade.
+3. Webhook com `document`, salvar pendente, upload e envio pela Meta.
+4. Provedores com PDF, prompt e as 6 ferramentas; comprovante automatico.
+5. Agente com `enviarArquivo`, terminal e agendador.
+6. API de documentos e `comprovanteId`.
+7. Painel: tela de Documentos, mesa de Tarefas, ver comprovante.
+8. Seed, README, quickstart.
 
-## Fora desta entrega
+## Fora desta entrega (US2)
 
-- Transferencia de titularidade e exclusao da conta (FR-042).
-- Entrar na conta por mensagem no WhatsApp.
-- Perfil contador (US7) e resumo da manha por membro (US3).
+- Enviar arquivo pelo painel; pastas criadas pelo usuario.
+- Ler DOCX, XLSX e outros formatos (so guardados pelo nome).
+- Armazenamento externo (S3/R2), junto da troca de servidor.
 
 ## Complexity Tracking
 
