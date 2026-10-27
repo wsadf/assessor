@@ -355,8 +355,8 @@ link" e conferir o evento no Google Agenda com convidado e link de videochamada 
 
 **Painel web**
 
-- [ ] T116 [P] [US4] Em `web/src/api.ts`, tipos `GoogleStatus` e `Evento`, e `google?` em `Agenda` (depende de T113, T115)
-- [ ] T117 [US4] Em `web/src/views/AgendaMesa.vue`, bloco "Google Agenda": sem configuracao, "Google Agenda não configurada neste servidor"; desconectada, botao "Conectar Google Agenda" que chama `POST /api/google/conectar` e vai para a URL devolvida; conectada, o e-mail e o botao "Desconectar" com confirmacao; expirada, aviso e botao "Reconectar"; no bloco do dia, os eventos do Google junto dos lembretes, com hora, titulo e link do Meet (depende de T116)
+- [X] T116 [P] [US4] Em `web/src/api.ts`, tipos `GoogleStatus` e `Evento`, e `google?` em `Agenda` (depende de T113, T115)
+- [X] T117 [US4] Em `web/src/views/AgendaMesa.vue`, bloco "Google Agenda": sem configuracao, "Google Agenda não configurada neste servidor"; desconectada, botao "Conectar Google Agenda" que chama `POST /api/google/conectar` e vai para a URL devolvida; conectada, o e-mail e o botao "Desconectar" com confirmacao; expirada, aviso e botao "Reconectar"; no bloco do dia, os eventos do Google junto dos lembretes, com hora, titulo e link do Meet (depende de T116)
 
 **Checkpoint**: US4 completa; T104 a T107 verdes; roteiro de [quickstart.md](quickstart.md#us4-google-agenda) passando.
 
@@ -364,9 +364,10 @@ link" e conferir o evento no Google Agenda com convidado e link de videochamada 
 
 ## Phase 16: Polish (US4)
 
-- [ ] T118 [P] Em `README.md`, secao Google Agenda: criar o projeto no Google Cloud, ativar a Calendar API, tela de consentimento em modo de teste com testadores, credencial do tipo "Aplicativo da Web" com o redirect `<PAINEL_URL>/api/google/retorno`, as quatro variaveis, o que funciona pelo WhatsApp e pelo painel, os limites do modo de teste (so testadores, acesso vence em 7 dias) e a verificacao exigida para uso aberto; tabela "Como esta organizado" com `src/google.ts`
-- [ ] T119 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
+- [X] T118 [P] Em `README.md`, secao Google Agenda: criar o projeto no Google Cloud, ativar a Calendar API, tela de consentimento em modo de teste com testadores, credencial do tipo "Aplicativo da Web" com o redirect `<PAINEL_URL>/api/google/retorno`, as quatro variaveis, o que funciona pelo WhatsApp e pelo painel, os limites do modo de teste (so testadores, acesso vence em 7 dias) e a verificacao exigida para uso aberto; tabela "Como esta organizado" com `src/google.ts`
+- [X] T119 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
 - [ ] T120 Executar o roteiro de [quickstart.md](quickstart.md#us4-google-agenda) com um projeto real no Google Cloud (depende de a pessoa criar o projeto e preencher o `.env`), com `AI_PROVIDER=gemini` e com `AI_PROVIDER=claude` quando houver `ANTHROPIC_API_KEY`
+  - 2026-10-27: sem projeto no Google Cloud. Conferido no painel e na API sem configuracao: mesa de Agenda mostra "nao configurada", `POST /api/google/conectar` responde 503 e a rota publica do link responde sem exigir sessao. O fluxo com o Google foi validado so com o Google simulado dos testes.
 
 ---
 

@@ -16,6 +16,7 @@ O que já funciona:
 - Conta compartilhada: o titular convida família, sócio ou equipe por código; cada pessoa usa o próprio WhatsApp, alimenta a mesma conta e vê só o que o perfil dela libera
 - Documentos: mande um PDF ou foto e diga "guarda esse"; o assessor lê, dá um nome, põe na pasta certa e devolve o arquivo quando você pede ("me manda o contrato do apartamento")
 - Avisos sem precisar pedir: contas a pagar na véspera do vencimento, categoria gastando acima do mês passado, lançamentos recorrentes ("toda segunda tem 89,90 da academia") e resumos da manhã e da noite
+- Google Agenda (opcional): "marca o dentista quinta às 15h" vai direto para o calendário, com convidados, link do Meet e aviso de conflito
 
 ## Requisito
 
@@ -117,6 +118,35 @@ Pelo WhatsApp: "o condomínio vence dia 8, 480 reais, todo mês" cadastra uma co
 Cada pessoa liga, desliga e escolhe o horário em **Operação > Avisos** ou pelo WhatsApp ("para de me avisar de categoria", "me manda o resumo da noite às 22h"). Os avisos são montados com os números do banco, sem IA, e cada um sai uma vez só. Se o servidor ficar parado, as recorrências lançam no máximo os últimos 7 dias.
 
 Sem `WHATSAPP_NOTICE_TEMPLATE`, avisos e lembretes só chegam se a pessoa falou com o assessor nas últimas 24 horas. O que a Meta recusar fica guardado e sai na próxima mensagem da pessoa, antes da resposta; depois de 7 dias é descartado.
+
+### Google Agenda
+
+Cada pessoa conecta a própria conta Google: pela mesa de **Agenda** (botão "Conectar Google Agenda") ou pedindo no WhatsApp ("conecta minha agenda do Google"), que manda um link de uso único válido por 15 minutos. Depois disso:
+
+- "marca o dentista quinta às 15h" cria o evento de 1 hora no calendário principal e o lembrete no WhatsApp 1 hora antes;
+- "reunião com ana@exemplo.com terça 10h com link" convida por e-mail e cria o link do Meet;
+- se o horário já estiver ocupado, o assessor avisa e pergunta se marca mesmo assim;
+- "a reunião de terça pode virar 11h?" move o evento (os convidados são avisados pelo Google) e o lembrete junto;
+- o resumo da manhã traz os compromissos do dia.
+
+Sem conta conectada, tudo funciona como antes: o compromisso vira lembrete no WhatsApp e o assessor oferece o link para conectar. Na conta compartilhada, a agenda é de cada pessoa: o Google do titular não é usado quando um membro pede.
+
+O assessor só pede a permissão `calendar.events` (ver e editar eventos), nada de contatos ou e-mail. O acesso fica cifrado no banco e "desconecta minha agenda do Google" (ou o botão Desconectar) revoga no Google e apaga.
+
+**Configurar (uma vez):**
+
+1. Em [console.cloud.google.com](https://console.cloud.google.com), crie um projeto e ative a **Google Calendar API**.
+2. Em **Tela de consentimento OAuth**: tipo externo, modo de teste, adicione como testadores os e-mails que vão conectar, e os escopos `openid`, `email` e `.../auth/calendar.events`.
+3. Em **Credenciais**, crie um ID do cliente OAuth do tipo **Aplicativo da Web** com o URI de redirecionamento `PAINEL_URL/api/google/retorno` (por exemplo `http://localhost:3001/api/google/retorno`; com túnel, cadastre também o endereço do túnel).
+4. No `.env`: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `PAINEL_URL` e `GOOGLE_TOKEN_KEY`, gerada com:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+Sem esses quatro valores, a mesa de Agenda mostra "Google Agenda não configurada neste servidor" e o resto segue igual.
+
+**Limites do Google:** com o app em modo de teste, só os testadores cadastrados conseguem conectar e o acesso vence em 7 dias (o assessor avisa e manda o link para reconectar). Para abrir a qualquer pessoa, o escopo `calendar.events` é sensível e o Google exige a verificação do app.
 
 No WhatsApp, o membro é atendido se o titular estiver em `ALLOWED_NUMBERS`. O número de teste da Meta, porém, só entrega para os 5 destinatários cadastrados no app: cadastre também o número de cada membro (seção 2.1, passo 5).
 
@@ -234,6 +264,7 @@ O agente usa o fallback do servidor da Anthropic (`fallbacks: "default"`): se um
 | `src/conta.ts` | Conta compartilhada: convites, membros, contexto de quem fala e a visão dos dados por perfil |
 | `src/permissoes.ts` | Perfis e o que cada um pode ver e fazer |
 | `src/documentos.ts` | Documentos: arquivo no disco, pastas, busca sem acento (FTS5), pendentes e quem vê cada um |
+| `src/google.ts` | Google Agenda: conexão com código e link de uso único, acesso cifrado, renovação, e eventos (listar, conflito, criar com Meet, mover, apagar) por REST |
 | `src/avisos.ts` | Contas a pagar, recorrências, categoria acima do normal, comparativo, preferências de aviso, registro contra repetição e fila de avisos não entregues |
 | `src/painel.ts` | Sobe a API e o painel compilado, sem WhatsApp |
 | `src/seed.ts` | Dados de demonstração em `data/demo.db` |
@@ -249,5 +280,6 @@ Em `docs/aprendizados-meu-assessor.md` está o que veio da entrevista do fundado
 - SQLite e fila em memória: um servidor só. Para produção, PostgreSQL e uma fila como BullMQ.
 - Número de teste da Meta: até 5 destinatários cadastrados.
 - O histórico enviado ao modelo são as últimas 20 mensagens de texto.
-- Sem Open Finance nem agenda do Google; estão nas fases seguintes do plano (`specs/001-paridade-meu-assessor`).
+- Sem Open Finance; está nas fases seguintes do plano (`specs/001-paridade-meu-assessor`).
+- Só o calendário principal do Google; Outlook, iCloud e agendas secundárias ficam de fora.
 - Arquivos no disco do servidor: para mais de um servidor, armazenamento de objetos (S3, R2).
