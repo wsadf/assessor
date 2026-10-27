@@ -16,7 +16,7 @@ interface ConviteContador { id: number; final: string; rotulo: string | null; es
 interface Contador { id: number; nome: string | null; rotulo: string | null; desde: string; ultimoAcesso: string | null }
 ```
 
-`mensagemWhatsapp`: `Use o codigo {codigo} em Criar conta (ou em Clientes, se ja tiver conta) no painel do Assessor para ver o dossie mensal de {titular}. Vale ate {data}.`
+`mensagemWhatsapp`: `Oi! Use o código {codigo} em Criar conta (ou em Clientes, se já tiver conta) no painel do Assessor para ver o dossiê mensal de {titular}. Vale até {data}.`
 
 ## Cadastro
 

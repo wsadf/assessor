@@ -210,13 +210,16 @@ const FRASES = [
       </label>
       <label class="aceite">
         <input v-model="temConvite" type="checkbox" />
-        <span>Tenho um código de convite para entrar na conta de alguém</span>
+        <span>Tenho um código de convite (de quem me chamou para a conta, ou de um cliente, se sou contador)</span>
       </label>
       <label v-if="temConvite" class="campo">
         <span class="rotulo-campo">Código de convite <em>quem te convidou mandou</em></span>
-        <input v-model="convite" class="input codigo" placeholder="CONV-XXXXXX" autocapitalize="characters" autocomplete="off" />
+        <input v-model="convite" class="input codigo" placeholder="CONV-XXXXXX ou CONT-XXXXXX" autocapitalize="characters" autocomplete="off" />
       </label>
-      <div v-if="conviteInfo" class="aviso info">
+      <div v-if="conviteInfo?.perfil === 'contador'" class="aviso info">
+        Conta de contador: você vai ver, só para leitura, o dossiê mensal de <b>{{ conviteInfo.titular ?? "quem te convidou" }}</b>. Sem plano nem pagamento.
+      </div>
+      <div v-else-if="conviteInfo" class="aviso info">
         Você vai entrar na conta de <b>{{ conviteInfo.titular ?? "quem te convidou" }}</b> com o perfil
         <b>{{ PERFIS[conviteInfo.perfil].nome.toLowerCase() }}</b>: {{ PERFIS[conviteInfo.perfil].detalhe }}. Sem plano nem pagamento.
         <template v-if="conviteInfo.temDadosProprios">

@@ -38,6 +38,7 @@ for (const p of [phone, BIA.phone]) {
   db.prepare(`DELETE FROM booking_pages WHERE phone = ?`).run(p);
 }
 for (const table of ["contact_messages", "contact_sends", "contacts"]) db.prepare(`DELETE FROM ${table} WHERE conta = ?`).run(phone);
+for (const table of ["accountant_access", "accountant_invites"]) db.prepare(`DELETE FROM ${table} WHERE account_phone = ?`).run(phone);
 repo.ensureUser(phone, "Demonstração");
 
 // Conta de teste para entrar no painel de demonstracao; credenciais ficticias, so deste banco.

@@ -586,10 +586,10 @@ baixa os arquivos e nao consegue editar nada nem conversar como membro da conta 
 
 **Painel web**
 
-- [ ] T181 [P] [US7] Em `web/src/api.ts`, tipos `ConviteContador`, `Contador`, `Lancamento`, `DocContador` e `Me.clientes`, e `baixarArquivo(caminho, nome)` que baixa com o token como blob (o pacote e os arquivos do contador) (depende de T177 a T179)
-- [ ] T182 [US7] Em `web/src/views/operacao/AcessosView.vue`, secao "Contador" para o titular: gerar codigo com rotulo opcional e mostrar o codigo e o texto com copiar; convites pendentes com cancelar; contadores com rotulo, desde, ultimo acesso e "Revogar" com confirmacao; balao explicando o que o contador ve e o que nao ve (depende de T181)
-- [ ] T183 [US7] Em `web/src/views/auth/CriarContaView.vue`, convite `CONT-` dispensa a escolha de plano e mostra "Conta de contador: voce vai ver o dossie de quem te convidou" (depende de T181)
-- [ ] T184 [US7] Criar `web/src/views/ContadorView.vue` e a rota `/contador` em `web/src/router.ts`: lista de clientes e campo para usar um codigo; cliente escolhido com seletor de mes, totais, lancamentos, documentos (abrir um a um por `baixarArquivo`) e "Baixar o mes"; `403` volta para a lista com "Seu acesso a este cliente foi encerrado."; sem botao de editar ou excluir; em `web/src/App.vue`, "Clientes" no menu para quem tem `clientes` e entrada direto em `/contador` para quem nao tem plano proprio nem conta compartilhada (depende de T181)
+- [X] T181 [P] [US7] Em `web/src/api.ts`, tipos `ConviteContador`, `Contador`, `Lancamento`, `DocContador` e `Me.clientes`, e `baixarArquivo(caminho, nome)` que baixa com o token como blob (o pacote e os arquivos do contador) (depende de T177 a T179)
+- [X] T182 [US7] Em `web/src/views/operacao/AcessosView.vue`, secao "Contador" para o titular: gerar codigo com rotulo opcional e mostrar o codigo e o texto com copiar; convites pendentes com cancelar; contadores com rotulo, desde, ultimo acesso e "Revogar" com confirmacao; balao explicando o que o contador ve e o que nao ve (depende de T181)
+- [X] T183 [US7] Em `web/src/views/auth/CriarContaView.vue`, convite `CONT-` dispensa a escolha de plano e mostra "Conta de contador: voce vai ver o dossie de quem te convidou" (depende de T181)
+- [X] T184 [US7] Criar `web/src/views/ContadorView.vue` e a rota `/contador` em `web/src/router.ts`: lista de clientes e campo para usar um codigo; cliente escolhido com seletor de mes, totais, lancamentos, documentos (abrir um a um por `baixarArquivo`) e "Baixar o mes"; `403` volta para a lista com "Seu acesso a este cliente foi encerrado."; sem botao de editar ou excluir; em `web/src/App.vue`, "Clientes" no menu para quem tem `clientes` e entrada direto em `/contador` para quem nao tem plano proprio nem conta compartilhada (depende de T181)
 
 **Checkpoint**: US7 completa; T171 a T174 verdes; roteiro de [quickstart.md](quickstart.md#us7-area-do-contador) passando.
 
@@ -597,8 +597,8 @@ baixa os arquivos e nao consegue editar nada nem conversar como membro da conta 
 
 ## Phase 28: Polish (US7)
 
-- [ ] T185 [P] Em `README.md`, secao Area do contador: como convidar (painel e WhatsApp), como o contador entra, o que ve e o que nao ve, o pacote do mes, revogar e o que ficou de fora; tabela "Como esta organizado" com `src/contador.ts` e `src/zip.ts`
-- [ ] T186 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
+- [X] T185 [P] Em `README.md`, secao Area do contador: como convidar (painel e WhatsApp), como o contador entra, o que ve e o que nao ve, o pacote do mes, revogar e o que ficou de fora; tabela "Como esta organizado" com `src/contador.ts` e `src/zip.ts`
+- [X] T186 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
 - [ ] T187 Executar o roteiro de [quickstart.md](quickstart.md#us7-area-do-contador) no painel demo (ZIP aberto no Explorer) e pelo WhatsApp, com `AI_PROVIDER=gemini` e com `AI_PROVIDER=claude` quando houver `ANTHROPIC_API_KEY`
 ---
 

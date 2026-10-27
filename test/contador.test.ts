@@ -103,7 +103,7 @@ test("fundacao: zip, convite CONT- e vinculo", () => {
   assert.equal(status(() => k.gerarConviteContador(db, ctxDe(repo, bia))), 403);
   const c1 = k.gerarConviteContador(db, ctx, "Escritorio Silva");
   assert.match(c1.codigo, /^CONT-[2-9A-HJKMNP-Z]{6}$/);
-  assert.match(c1.mensagemWhatsapp, new RegExp(`Use o codigo ${c1.codigo} .+ dossie mensal de Wesley`));
+  assert.match(c1.mensagemWhatsapp, new RegExp(`Use o código ${c1.codigo} .+ dossiê mensal de Wesley`));
   k.gerarConviteContador(db, ctx);
   k.gerarConviteContador(db, ctx);
   assert.equal(status(() => k.gerarConviteContador(db, ctx)), 409);
@@ -290,7 +290,7 @@ test("ferramentas: convidar, listar e revogar contador", async () => {
 
   const convite = await ferramenta("convidar_contador", { rotulo: "Escritorio Silva" });
   assert.match(convite, /Convite de contador criado: CONT-\w{6}/);
-  assert.match(convite, /Texto para o usuario encaminhar: "Use o codigo CONT-/);
+  assert.match(convite, /Texto para o usuario encaminhar: "Oi! Use o código CONT-/);
   assert.match(await ferramenta("convidar_contador", { rotulo: null }, ctxDe(repo, bia)), /^Sem permissao/);
 
   contador(db, carla, "Carla Contadora");

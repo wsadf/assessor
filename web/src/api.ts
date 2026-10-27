@@ -77,12 +77,84 @@ export interface Me {
   hoje: string;
   whatsapp: string | null;
   conta: { titular: string | null; perfil: Perfil; capacidades: Capacidade[]; compartilhada: boolean };
+  /** Contas em que a pessoa e contadora (US7). */
+  clientes: { conta: string; nome: string | null }[];
 }
 
 export interface ConviteValidado {
   titular: string | null;
-  perfil: PerfilMembro;
+  perfil: PerfilMembro | "contador";
   temDadosProprios: boolean;
+}
+
+export interface ConviteContador {
+  id: number;
+  final: string;
+  rotulo: string | null;
+  estado: "pendente" | "aceito" | "cancelado" | "expirado";
+  validoAte: string;
+}
+
+export interface ContadorDaConta {
+  id: number;
+  nome: string | null;
+  rotulo: string | null;
+  desde: string;
+  ultimoAcesso: string | null;
+}
+
+export interface ConviteContadorCriado {
+  id: number;
+  codigo: string;
+  validoAte: string;
+  mensagemWhatsapp: string;
+}
+
+export interface Lancamento {
+  id: number;
+  data: string;
+  tipo: "despesa" | "receita";
+  valor: number;
+  categoria: string;
+  descricao: string;
+  contraparte: string | null;
+  pagamento: string | null;
+  parcela: string | null;
+  lancadoPor: string | null;
+}
+
+export interface DocContador {
+  id: number;
+  titulo: string;
+  pasta: string;
+  data: string;
+  tipo: string;
+  tamanho: number;
+  lancamentoId: number | null;
+}
+
+export interface DossieMes {
+  mes: string;
+  receitas: number;
+  despesas: number;
+  lancamentos: Lancamento[];
+  documentos: DocContador[];
+}
+
+/** A sessao vai no cabecalho: link direto chegaria sem login, entao baixa como blob e salva. */
+export async function baixarArquivo(caminho: string, nome: string) {
+  const t = sessao();
+  const res = await fetch(`/api${caminho}`, { headers: t ? { authorization: `Bearer ${t}` } : {} });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, (data as { erro?: string }).erro ?? `Erro ${res.status}`);
+  }
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nome;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 export interface Acessos {

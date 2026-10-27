@@ -377,6 +377,10 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
         const b = parse(z.object({ codigo: z.string().trim().min(1), telefone: telefoneSchema }), body(req), reply);
         if (!b) return;
         try {
+          if (/^\s*cont/i.test(b.codigo)) {
+            const v = validarConviteContador(repo.db, b.codigo, b.telefone);
+            return { titular: v.titular, perfil: "contador", temDadosProprios: false };
+          }
           const v = acessos.validarConvite(b.codigo, b.telefone);
           return { titular: v.titular, perfil: v.perfil, temDadosProprios: v.temDadosProprios };
         } catch (err) {
