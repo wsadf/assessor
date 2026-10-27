@@ -1,50 +1,117 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+# Assessor MVP Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Dados financeiros sao do usuario
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+- Todo dado de lancamento, lembrete, tarefa ou historico MUST ficar vinculado a um usuario
+  (telefone ou conta) e toda consulta MUST filtrar por esse usuario. Nenhuma rota, ferramenta
+  ou tela pode devolver dados de outra conta.
+- O webhook MUST validar a assinatura da Meta e ignorar numeros fora de `ALLOWED_NUMBERS`.
+- Senhas MUST usar hash com sal (scrypt); codigos de acesso MUST expirar e limitar tentativas.
+- Segredos ficam no `.env`, que nunca entra no Git. Dados reais (`data/assessor.db`) e dados de
+  demonstracao (`data/demo.db`) MUST ficar em bancos separados.
+- Dados de terceiros MUST NOT passar por planos de IA cujos termos permitem treinar com eles
+  (a cota gratuita do Gemini, por exemplo) fora de testes locais.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+Razao: o produto guarda a vida financeira das pessoas. Um vazamento entre contas encerra o produto.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### II. Dinheiro so leitura
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+- O assessor e o painel MUST NOT movimentar dinheiro: nada de Pix, transferencia, pagamento ou
+  investimento iniciado pelo sistema.
+- Integracoes bancarias futuras (Open Finance) MUST usar escopo de leitura.
+- Cobranca e permitida em dois casos, sempre por parceiro de pagamento regulado: a assinatura do
+  proprio produto e links de cobranca que o usuario gera para os clientes dele.
+- No link de cobranca, o valor MUST ir direto do pagador para a conta do usuario no parceiro. O
+  produto MUST NOT receber, reter, repassar ou antecipar esse dinheiro; so le a confirmacao.
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+Razao: movimentar dinheiro exige ser instituicao de pagamento. Fica fora do escopo do produto.
+Cobrar pelo parceiro, sem custodia, mantem o produto fora desse papel.
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+### III. Provedor de IA intercambiavel
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+- Toda capacidade do assessor MUST funcionar com Gemini e com Claude, escolhidos por
+  `AI_PROVIDER`, usando o mesmo prompt de sistema (`src/prompt.ts`) e as mesmas ferramentas
+  (`src/tools.ts`).
+- Codigo especifico de um provedor MUST ficar em `src/providers/`. A regra de negocio MUST NOT
+  depender de um provedor.
+- Quando um provedor nao suporta algo (audio no Claude sem chave de transcricao, por exemplo), o
+  assessor MUST responder de forma clara em vez de falhar em silencio.
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+Razao: preco, cota e qualidade dos modelos mudam rapido. Trocar de provedor tem de ser uma linha
+no `.env`.
+
+### IV. Custo por conta sob controle
+
+- Toda feature que chama o modelo MUST estimar o impacto no custo por conta. A meta de
+  referencia e manter a IA perto de R$ 3 por conta por mes, para caber num preco de entrada
+  de R$ 9,90.
+- O padrao MUST ser o modelo mais barato que resolve a tarefa, com reserva configuravel.
+- Prompt de sistema e definicoes de ferramentas MUST usar cache quando o provedor oferece.
+- O historico enviado ao modelo MUST ter limite (hoje, as ultimas 20 mensagens de texto).
+
+Razao: o produto e de assinatura barata e volume alto. Custo de IA sem teto inviabiliza o plano.
+
+### V. Uma fonte de verdade para chat e painel
+
+- WhatsApp, terminal (`npm run chat`) e painel web MUST ler e gravar pelo mesmo banco e pelas
+  mesmas funcoes de dominio. Uma regra (parcelas, categorias, contraparte) MUST NOT ser
+  reimplementada no painel.
+- Um lancamento MUST guardar categoria e contraparte no momento em que entra, para que as
+  consultas por pessoa, loja, item e valor funcionem depois.
+
+Razao: o usuario conversa num canal e confere no outro. Divergencia entre eles destroi a confianca.
+
+### VI. Simplicidade de MVP
+
+- Nova dependencia MUST ser justificada no plano da feature. Preferir a API REST ou o que a
+  plataforma ja oferece (graficos em SVG proprio, Gemini via REST sem SDK).
+- SQLite e fila em memoria sao aceitos enquanto o projeto roda num servidor so. A troca por
+  PostgreSQL ou fila externa MUST vir com uma feature que precise disso.
+- Abstracao so entra quando houver o segundo caso real de uso.
+
+Razao: o objetivo e validar o produto rapido, com pouco para manter.
+
+### VII. Honestidade sobre o que funciona
+
+- Funcionalidade nao ligada (emissao de nota, busca na internet, cobranca) MUST aparecer como
+  tal na tela, no README e na resposta do assessor. Nada de botao que finge funcionar.
+- O README MUST ser atualizado na mesma entrega que muda comportamento, configuracao ou limite.
+- O assessor MUST NOT inventar valores: se nao encontrou o dado, diz que nao encontrou.
+
+Razao: produto financeiro que parece funcionar e nao funciona gera decisao errada do usuario.
+
+## Restricoes Tecnicas
+
+- Node 22 ou mais novo, TypeScript em modo ESM. `npm run typecheck` MUST passar.
+- Back-end em Fastify com validacao de entrada em zod; banco em `better-sqlite3`.
+- Painel em Vue 3 + Vue Router + Vite, dentro de `web/`, servido compilado pelo `src/painel.ts`.
+- Horarios e datas MUST respeitar `TIMEZONE` (padrao `America/Sao_Paulo`).
+- Lembretes fora da janela de 24 horas do WhatsApp MUST usar modelo aprovado quando configurado.
+- Toda configuracao nova MUST entrar no `.env.example` com comentario curto.
+- Texto para o usuario e documentacao em portugues do Brasil, frases curtas, sem travessao.
+
+## Fluxo de Desenvolvimento
+
+- Feature nova segue o Spec Kit: `/speckit-specify`, `/speckit-plan`, `/speckit-tasks`,
+  `/speckit-implement`. O plano MUST conter uma verificacao contra esta constituicao.
+- Regra de dominio nova (ferramentas, calculo de parcelas, filtros de consulta, isolamento por
+  usuario) MUST ter teste em `test/` e `npm test` MUST passar antes do commit.
+- Mudanca visivel no painel MUST ser conferida com `npm run painel:demo`.
+- Commits em portugues no formato Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`).
+- Comentarios no codigo explicam so o porque; historico vai na mensagem do commit.
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+- Esta constituicao prevalece sobre outras praticas do projeto. Conflito com um plano ou tarefa
+  se resolve a favor dela, ou com uma emenda.
+- Emenda: alterar este arquivo via `/speckit-constitution`, registrar o motivo no commit e
+  atualizar a versao.
+- Versionamento semantico: MAJOR para remover ou redefinir principio; MINOR para principio ou
+  secao nova ou regra ampliada; PATCH para redacao e esclarecimento.
+- Todo plano (`/speckit-plan`) e toda revisao MUST verificar conformidade. Excecao a um principio
+  MUST ser justificada na secao de complexidade do plano.
+- Orientacao do dia a dia fica no `README.md` e em `docs/`.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 1.1.0 | **Ratified**: 2026-10-27 | **Last Amended**: 2026-10-27

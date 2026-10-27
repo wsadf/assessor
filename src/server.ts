@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import { runAgent, type UserInput } from "./agent.js";
 import { registerApi } from "./api.js";
 import { config } from "./config.js";
+import { resolverContexto } from "./conta.js";
 import type { Repo } from "./db.js";
 import { transcribe, transcriptionEnabled } from "./transcribe.js";
 import {
@@ -78,7 +79,9 @@ export function buildServer(repo: Repo) {
     }
 
     for (const msg of parseWebhook(json)) {
-      if (config.allowedNumbers.length && !config.allowedNumbers.includes(msg.from)) {
+      // Membro ativo entra pela autorizacao do titular, sem precisar estar na lista.
+      const autorizado = (phone: string) => config.allowedNumbers.includes(phone);
+      if (config.allowedNumbers.length && !autorizado(msg.from) && !autorizado(resolverContexto(repo.db, msg.from).conta)) {
         req.log.info({ from: msg.from }, "numero fora de ALLOWED_NUMBERS, ignorado");
         continue;
       }

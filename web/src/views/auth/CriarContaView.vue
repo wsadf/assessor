@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { api, salvarSessao, type SessaoAberta } from "../../api";
+import { api, PERFIS, salvarSessao, type ConviteValidado, type SessaoAberta } from "../../api";
 import AppIcon from "../../components/AppIcon.vue";
 import AuthLayout from "./AuthLayout.vue";
 import CampoSenha from "./CampoSenha.vue";
@@ -36,8 +36,15 @@ const PLANOS = [
 ] as const;
 
 const passo = ref(0);
+const route = useRoute();
 // A landing manda ?plano=mensal quando a pessoa clica no plano mensal.
-const planoInicial = useRoute().query.plano === "mensal" ? "mensal" : "anual";
+const planoInicial = route.query.plano === "mensal" ? "mensal" : "anual";
+
+// Quem entra por convite usa a conta (e o plano) de quem convidou: pula plano e pagamento.
+const temConvite = ref(typeof route.query.convite === "string");
+const convite = ref(typeof route.query.convite === "string" ? route.query.convite : "");
+const conviteInfo = ref<ConviteValidado | null>(null);
+watch([convite, temConvite], () => (conviteInfo.value = null));
 const form = reactive({ nome: "", ddi: "55", whatsapp: "", email: "", senha: "", aceite: true, plano: planoInicial as "mensal" | "anual" });
 const erro = ref<string | null>(null);
 const enviando = ref(false);
@@ -60,9 +67,23 @@ function validarPasso1(): string | null {
   return null;
 }
 
-function avancar() {
+async function avancar() {
   erro.value = passo.value === 0 ? validarPasso1() : null;
-  if (!erro.value) passo.value++;
+  if (erro.value) return;
+  if (passo.value === 0 && temConvite.value) {
+    if (!convite.value.trim()) return (erro.value = "Digite o código de convite ou desmarque a opção.");
+    if (conviteInfo.value) return criarConta();
+    enviando.value = true;
+    try {
+      conviteInfo.value = await api.post<ConviteValidado>("/auth/convite", { codigo: convite.value, telefone: telefoneCompleto.value });
+    } catch (e) {
+      erro.value = (e as Error).message;
+    } finally {
+      enviando.value = false;
+    }
+    return;
+  }
+  passo.value++;
 }
 
 const canal = ref<"whatsapp" | "terminal">("whatsapp");
@@ -86,7 +107,7 @@ async function criarConta() {
       telefone: telefoneCompleto.value,
       email: form.email,
       senha: form.senha,
-      plano: form.plano,
+      ...(temConvite.value ? { convite: convite.value } : { plano: form.plano }),
     });
     canal.value = r.canal;
     telefoneMascarado.value = r.telefoneMascarado;
@@ -119,6 +140,7 @@ async function ativar() {
   try {
     const s = await api.post<SessaoAberta>("/auth/ativar", { telefone: telefoneCompleto.value, codigo: codigo.value });
     salvarSessao(s.token);
+    if (s.aviso) alert(s.aviso);
     router.replace("/financas");
   } catch (e) {
     erro.value = (e as Error).message;
@@ -186,8 +208,26 @@ const FRASES = [
         <input v-model="form.aceite" type="checkbox" />
         <span>Ao continuar, você aceita os Termos de Uso e a Política de Privacidade.</span>
       </label>
+      <label class="aceite">
+        <input v-model="temConvite" type="checkbox" />
+        <span>Tenho um código de convite para entrar na conta de alguém</span>
+      </label>
+      <label v-if="temConvite" class="campo">
+        <span class="rotulo-campo">Código de convite <em>quem te convidou mandou</em></span>
+        <input v-model="convite" class="input codigo" placeholder="CONV-XXXXXX" autocapitalize="characters" autocomplete="off" />
+      </label>
+      <div v-if="conviteInfo" class="aviso info">
+        Você vai entrar na conta de <b>{{ conviteInfo.titular ?? "quem te convidou" }}</b> com o perfil
+        <b>{{ PERFIS[conviteInfo.perfil].nome.toLowerCase() }}</b>: {{ PERFIS[conviteInfo.perfil].detalhe }}. Sem plano nem pagamento.
+        <template v-if="conviteInfo.temDadosProprios">
+          O que você já registrou com este WhatsApp fica guardado à parte e volta se você sair da conta.
+        </template>
+      </div>
       <div v-if="erro" class="aviso erro" role="alert">{{ erro }}</div>
-      <button class="btn primary btn-largo" type="submit">Continuar <AppIcon name="seta" :size="16" /></button>
+      <button class="btn primary btn-largo" type="submit" :disabled="enviando">
+        <template v-if="conviteInfo">{{ enviando ? "Criando…" : "Criar conta e receber código" }}</template>
+        <template v-else>{{ enviando ? "Conferindo…" : "Continuar" }} <AppIcon name="seta" :size="16" /></template>
+      </button>
     </form>
 
     <!-- Passo 2: plano -->
@@ -279,6 +319,7 @@ const FRASES = [
 .progresso small { color: var(--text-3); font-size: 12px; padding-left: 6px; }
 .telefone { display: grid; grid-template-columns: 112px 1fr; gap: 8px; }
 .ddi { padding: 0 8px; }
+.codigo { text-transform: uppercase; letter-spacing: 0.08em; }
 .aceite { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--text-2); cursor: pointer; }
 .aceite input { margin-top: 2px; accent-color: var(--accent); width: 16px; height: 16px; }
 .plano {

@@ -8,7 +8,7 @@ type Send = (to: string, text: string) => Promise<void>;
 export async function runRemindersOnce(repo: Repo, send: Send, now = new Date()) {
   for (const r of repo.dueReminders(now)) {
     try {
-      await send(r.phone, `⏰ Lembrete: ${r.text}`);
+      await send(r.notify_phone ?? r.phone, `⏰ Lembrete: ${r.text}`);
     } catch (err) {
       console.error(`[lembrete #${r.id}] falha ao enviar`, err);
       continue;

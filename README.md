@@ -13,6 +13,7 @@ O que já funciona:
 - Resumo da manhã com os gastos de ontem, o total do mês e os lembretes do dia
 - Tarefas com prazo, prioridade e projeto ("cria a tarefa de revisar o contrato até quarta")
 - Painel web em Vue com seis mesas: Finanças, Fiscal, Agenda, Tarefas, Operação e Pesquisas
+- Conta compartilhada: o titular convida família, sócio ou equipe por código; cada pessoa usa o próprio WhatsApp, alimenta a mesma conta e vê só o que o perfil dela libera
 
 ## Requisito
 
@@ -63,13 +64,30 @@ No topo, o botão **Conversar no WhatsApp** abre a conversa com o assessor, já 
 
 Abra http://localhost:3001. A página inicial apresenta o produto, com equipe, planos e perguntas frequentes, e leva para **Entrar** ou **Criar conta**. As mesas pedem login.
 
-- **Demonstração**: depois de `npm run seed:demo`, entre com `demo@assessor.local` e senha `demo1234`.
+- **Demonstração**: depois de `npm run seed:demo`, entre com `demo@assessor.local` e senha `demo1234`. Para ver o painel como membro de perfil só gastos da mesma conta, entre com `bia@assessor.local` e a mesma senha.
 - **Conta nova**: em **Criar conta** são quatro passos: quem é você, plano, pagamento (7 dias grátis, a cobrança ainda não está ligada) e ativação. O número informado no cadastro é o mesmo que conversa com o assessor no WhatsApp, então o painel mostra os dados dele.
 - **Esqueceu a senha**: o código chega no WhatsApp da conta e a senha nova já entra.
 
 Os códigos de 6 números vão pelo WhatsApp quando `WHATSAPP_TOKEN` e `WHATSAPP_PHONE_NUMBER_ID` estão preenchidos. Sem eles, aparecem no terminal onde o painel está rodando, como `[codigo de acesso] +55 ••••• 1111 -> 123456`. Cada código vale 10 minutos e aceita 5 tentativas.
 
 `PAINEL_TOKEN` é opcional: serve como chave de serviço no cabeçalho `x-painel-token` e enxerga os dados de `PAINEL_TELEFONE`.
+
+### Conta compartilhada
+
+Em **Operação > Equipe e acesso** (ou pelo WhatsApp: "convida meu sócio só para ver os gastos"), o titular gera um código `CONV-XXXXXX`. Ele vale 7 dias, serve uma vez e pode ser cancelado. A pessoa convidada marca **Tenho um código de convite** em **Criar conta**, confirma o próprio WhatsApp e entra na conta, sem passar por plano e pagamento.
+
+| Perfil | Vê e faz |
+| --- | --- |
+| Titular | tudo, e gerencia quem tem acesso |
+| Acesso completo | gastos, receitas, agenda e tarefas |
+| Só gastos | registra e vê só despesas; sem receitas, saldo nem mesa Fiscal |
+| Agenda e tarefas | só lembretes e tarefas; nada de dinheiro |
+
+A permissão vale no WhatsApp e no painel: o assessor recusa o que o perfil não libera, sem citar valores. Cada pessoa tem a própria conversa; o lembrete vai para o WhatsApp de quem pediu; Transações mostra quem lançou. Remover alguém derruba a sessão dela no painel, e o que ela lançou continua na conta. Quem já usava o assessor sozinho e entra numa conta compartilhada tem os dados antigos guardados à parte, que voltam se sair.
+
+Ainda não dá para transferir a titularidade, excluir a conta nem entrar na conta por mensagem no WhatsApp.
+
+No WhatsApp, o membro é atendido se o titular estiver em `ALLOWED_NUMBERS`. O número de teste da Meta, porém, só entrega para os 5 destinatários cadastrados no app: cadastre também o número de cada membro (seção 2.1, passo 5).
 
 Para desenvolver com recarga automática, em dois terminais:
 
@@ -182,6 +200,8 @@ O agente usa o fallback do servidor da Anthropic (`fallbacks: "default"`): se um
 | `src/db.ts` | SQLite: usuários, histórico, transações, lembretes, tarefas, pesquisas |
 | `src/api.ts` | API do painel: cadastro e login em `/api/auth`, uma rota por mesa para quem tem sessão |
 | `src/auth.ts` | Contas, senhas (scrypt), códigos de 6 números e sessões |
+| `src/conta.ts` | Conta compartilhada: convites, membros, contexto de quem fala e a visão dos dados por perfil |
+| `src/permissoes.ts` | Perfis e o que cada um pode ver e fazer |
 | `src/painel.ts` | Sobe a API e o painel compilado, sem WhatsApp |
 | `src/seed.ts` | Dados de demonstração em `data/demo.db` |
 | `web/` | Painel em Vue 3 + Vue Router + Vite, gráficos em SVG próprios |
@@ -196,4 +216,4 @@ Em `docs/aprendizados-meu-assessor.md` está o que veio da entrevista do fundado
 - SQLite e fila em memória: um servidor só. Para produção, PostgreSQL e uma fila como BullMQ.
 - Número de teste da Meta: até 5 destinatários cadastrados.
 - O histórico enviado ao modelo são as últimas 20 mensagens de texto.
-- Sem Open Finance, agenda do Google, documentos nem conta compartilhada; estão nas fases seguintes do plano.
+- Sem Open Finance, agenda do Google nem documentos; estão nas fases seguintes do plano (`specs/001-paridade-meu-assessor`).

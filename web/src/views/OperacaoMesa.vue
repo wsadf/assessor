@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { api, type Operacao } from "../api";
+import { api, PERFIS, type Acessos, type Operacao } from "../api";
 import AssessorAvatar from "../components/AssessorAvatar.vue";
 import AssessorBalao from "../components/AssessorBalao.vue";
 import BlocoMesa from "../components/BlocoMesa.vue";
@@ -12,6 +12,8 @@ import { useCarregar } from "../estado";
 import { MESAS } from "../mesas";
 
 const { dados: o, carregando, erro, recarregar } = useCarregar(() => api.get<Operacao>("/operacao"));
+const { dados: acessos } = useCarregar(() => api.get<Acessos>("/conta/acessos"));
+const pessoas = computed(() => (acessos.value ? acessos.value.membros.length + 1 : 0));
 
 const inteiro = (v: number) => v.toLocaleString("pt-BR");
 const serie = computed(() => ({
@@ -58,6 +60,29 @@ const EM_PREPARACAO = new Set(["fiscal", "pesquisas"]);
         </template>
       </BlocoMesa>
 
+      <BlocoMesa v-if="acessos" titulo="Quem usa esta conta">
+        <ValorGrande :valor="pessoas" :moeda="false" :sufixo="pessoas === 1 ? 'pessoa' : 'pessoas'" />
+        <AssessorBalao mesa="operacao">
+          <template v-if="acessos.podeGerir">cada pessoa conversa pelo próprio WhatsApp e alimenta a mesma conta. Você decide o que cada uma vê.</template>
+          <template v-else>você está na conta de <b>{{ acessos.titular.nome ?? "titular" }}</b>. Só o titular muda os acessos.</template>
+        </AssessorBalao>
+        <RouterLink class="btn primary" to="/operacao/acessos">Equipe e acesso →</RouterLink>
+        <template #lado>
+          <div class="equipe">
+            <div class="membro">
+              <span class="iniciais">{{ (acessos.titular.nome ?? "T")[0] }}</span>
+              <div class="flex1"><strong>{{ acessos.titular.nome ?? "Titular" }}</strong></div>
+              <span class="chip ok">{{ PERFIS.titular.nome }}</span>
+            </div>
+            <div v-for="m in acessos.membros" :key="m.telefoneMascarado" class="membro">
+              <span class="iniciais">{{ (m.nome ?? "?")[0] }}</span>
+              <div class="flex1"><strong>{{ m.nome ?? "Sem nome" }}</strong></div>
+              <span class="chip">{{ PERFIS[m.perfil].nome }}</span>
+            </div>
+          </div>
+        </template>
+      </BlocoMesa>
+
       <BlocoMesa titulo="Sua equipe">
         <AssessorBalao mesa="operacao">
           eu coordeno as mesas. Quando um pedido mistura assuntos, divido entre a equipe e você recebe uma resposta só. A IA de hoje é o <b>{{ o.ia }}</b>.
@@ -89,4 +114,5 @@ const EM_PREPARACAO = new Set(["fiscal", "pesquisas"]);
 .membro:hover { background: var(--surface); }
 .flex1 { flex: 1; min-width: 0; }
 .faint { font-size: 13px; }
+.iniciais { width: 40px; height: 40px; flex: none; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--line-strong); display: grid; place-items: center; font-weight: 600; }
 </style>

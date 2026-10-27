@@ -1,5 +1,6 @@
 import { auth } from "./auth.js";
 import { config, DEMO_DB_PATH } from "./config.js";
+import { conta } from "./conta.js";
 import { openDb, repo as makeRepo } from "./db.js";
 import { fromLocal, localDate } from "./time.js";
 
@@ -8,19 +9,31 @@ const file = DEMO_DB_PATH;
 const db = openDb(file);
 const repo = makeRepo(db);
 const phone = config.panel.phone;
+// Pessoa de perfil so gastos na conta demo, para ver o painel como membro.
+const BIA = { phone: "5500000000001", email: "bia@assessor.local" };
 
-for (const table of ["transactions", "reminders", "tasks", "history", "research", "users"]) {
-  db.prepare(`DELETE FROM ${table} WHERE phone = ?`).run(phone);
+// auth() cria a tabela de sessoes; antes dele ela pode nao existir num banco novo.
+const contas = auth(db);
+for (const p of [phone, BIA.phone]) {
+  for (const table of ["transactions", "reminders", "tasks", "history", "research", "users", "sessions"]) {
+    db.prepare(`DELETE FROM ${table} WHERE phone = ?`).run(p);
+  }
 }
+db.prepare(`DELETE FROM account_members WHERE account_phone = ?`).run(phone);
+db.prepare(`DELETE FROM account_invites WHERE account_phone = ?`).run(phone);
 repo.ensureUser(phone, "Demonstração");
 
 // Conta de teste para entrar no painel de demonstracao; credenciais ficticias, so deste banco.
 const DEMO_EMAIL = "demo@assessor.local";
 const DEMO_SENHA = "demo1234";
-const contas = auth(db);
-db.prepare(`DELETE FROM sessions WHERE phone = ?`).run(phone);
 contas.cadastrar({ nome: "Demonstração", telefone: phone, email: DEMO_EMAIL, senha: DEMO_SENHA, plano: "anual" });
 contas.ativar(phone);
+
+const acessos = conta(db);
+contas.cadastrar({ nome: "Bia", telefone: BIA.phone, email: BIA.email, senha: DEMO_SENHA, plano: null });
+contas.ativar(BIA.phone);
+acessos.aceitarConvite(acessos.gerarConvite(phone, "so_gastos", "Bia").codigo, BIA.phone);
+acessos.gerarConvite(phone, "completo", "Sócio");
 
 // Gerador deterministico: a demonstracao sai igual a cada execucao.
 let seed = 42;
@@ -125,6 +138,18 @@ for (const [desc, cat, valor, parcelas, inicio, dia, loja, pay] of [
   total += criadas.length;
 }
 
+for (const [dias, valor, desc, cat, loja] of [
+  [0, 46.9, "Almoço", "Alimentação", "Cantina da Praça"],
+  [-2, 23.5, "Uber", "Transporte", "Uber"],
+  [-5, 189.4, "Compra no mercado", "Mercado", "Assaí"],
+] as const) {
+  repo.addTransaction({
+    phone, created_by: BIA.phone, kind: "despesa", amount_cents: Math.round(valor * 100), category: cat, description: desc,
+    payment_method: "pix", occurred_on: addDays(today, dias), counterpart: loja,
+  });
+  total++;
+}
+
 const at = (days: number, hhmm: string) => fromLocal(`${addDays(today, days)}T${hhmm}`);
 repo.addReminder(phone, "Dentista", at(1, "15:00"), null);
 repo.addReminder(phone, "Reunião semanal do time", at(2, "09:00"), "semanal");
@@ -160,3 +185,4 @@ for (const [role, text] of [
 
 console.log(`Demonstracao gravada em ${file}: ${total} lancamentos, 6 lembretes, ${tarefas.length} tarefas.`);
 console.log(`Para entrar no painel de demonstracao: ${DEMO_EMAIL} / ${DEMO_SENHA}`);
+console.log(`Como membro so gastos da mesma conta: ${BIA.email} / ${DEMO_SENHA}`);

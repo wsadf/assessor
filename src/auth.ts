@@ -95,7 +95,8 @@ export function auth(db: Db) {
     porEmail: (email: string) => conta("email", normalizarEmail(email)),
 
     /** Cria a conta ainda nao ativada. Telefone ja usado pelo WhatsApp ganha e-mail e senha sem perder os dados. */
-    cadastrar(d: { nome: string; telefone: string; email: string; senha: string; plano: Plano }) {
+    /** Sem plano quando a pessoa entra por convite: ela usa o plano do titular. */
+    cadastrar(d: { nome: string; telefone: string; email: string; senha: string; plano: Plano | null }) {
       const email = normalizarEmail(d.email);
       const dono = this.porEmail(email);
       if (dono && dono.phone !== d.telefone) throw new AuthError(409, "Esse e-mail já tem conta. Entre ou recupere a senha.");

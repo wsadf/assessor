@@ -10,7 +10,7 @@ import ListaBarras from "../../components/graficos/ListaBarras.vue";
 import MesPicker from "../../components/MesPicker.vue";
 import StatusCarga from "../../components/StatusCarga.vue";
 import { brl, mesCurto, mesNome, pagamentoNome } from "../../format";
-import { mesSelecionado, useCarregar } from "../../estado";
+import { mesSelecionado, pode, useCarregar } from "../../estado";
 import { PALETA } from "../../mesas";
 import CabecalhoSub from "./CabecalhoSub.vue";
 
@@ -65,6 +65,9 @@ function soltarSobre(alvo: CardId) {
   cards.value = lista;
 }
 const remover = (id: CardId) => (cards.value = cards.value.filter((c) => c !== id));
+// Quem so ve gastos nao recebe receitas da API; esses cards ficariam zerados.
+const COM_RECEITAS = new Set<CardId>(["resumo", "entradas", "receitas"]);
+const visiveis = computed(() => cards.value.filter((c) => pode("receitas") || !COM_RECEITAS.has(c)));
 
 const pedido = ref("");
 const resposta = ref<string | null>(null);
@@ -94,7 +97,7 @@ const cat = computed(() => (a.value?.porCategoria ?? []).map((c, i) => ({ nome: 
 const fluxo = computed(() => ({
   rotulos: (a.value?.fluxo ?? []).map((f) => mesCurto(f.mes)),
   series: [
-    { nome: "Receitas", cor: "#10b981", valores: (a.value?.fluxo ?? []).map((f) => f.receitas) },
+    ...(pode("receitas") ? [{ nome: "Receitas", cor: "#10b981", valores: (a.value?.fluxo ?? []).map((f) => f.receitas ?? 0) }] : []),
     { nome: "Despesas", cor: "#ee7aa8", valores: (a.value?.fluxo ?? []).map((f) => f.despesas) },
   ],
 }));
@@ -122,7 +125,7 @@ const pagamentos = computed(() =>
 
       <div class="dash">
         <article
-          v-for="id in cards"
+          v-for="id in visiveis"
           :key="id"
           class="card cartao"
           :class="{ largo: CATALOGO[id].largo, arrastando: arrastando === id }"
@@ -140,13 +143,13 @@ const pagamentos = computed(() =>
 
           <div class="corpo">
             <template v-if="id === 'resumo'">
-              <div class="grande num">{{ brl(a.resumo.receitas - a.resumo.despesas) }}</div>
-              <span class="chip" :class="a.resumo.receitas >= a.resumo.despesas ? 'ok' : 'danger'">
-                {{ a.resumo.receitas >= a.resumo.despesas ? "sobrou no mês" : "gastou mais do que recebeu" }}
+              <div class="grande num">{{ brl((a.resumo.receitas ?? 0) - a.resumo.despesas) }}</div>
+              <span class="chip" :class="(a.resumo.receitas ?? 0) >= a.resumo.despesas ? 'ok' : 'danger'">
+                {{ (a.resumo.receitas ?? 0) >= a.resumo.despesas ? "sobrou no mês" : "gastou mais do que recebeu" }}
               </span>
             </template>
             <template v-else-if="id === 'entradas'">
-              <div class="grande num pos">{{ brl(a.resumo.receitas) }}</div>
+              <div class="grande num pos">{{ brl(a.resumo.receitas ?? 0) }}</div>
               <span class="faint">{{ a.porReceita.reduce((s, r) => s + r.qtd, 0) }} entradas</span>
             </template>
             <template v-else-if="id === 'saidas'">
