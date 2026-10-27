@@ -6,6 +6,23 @@ import { conta, repoDoContexto, type Membro } from "./conta.js";
 import type { Kind, Recurrence, Repo, Task, Transaction } from "./db.js";
 import { documentos, nomePasta, PASTA_IDS, PASTAS, podeVerDocumento, type Documento } from "./documentos.js";
 import {
+  alterarRecorrencia,
+  cancelarConta,
+  compararMeses,
+  criarConta,
+  criarRecorrencia,
+  definirPreferencia,
+  descreverFrequencia,
+  listarContas,
+  listarRecorrencias,
+  pagarConta,
+  preferencias,
+  TIPO_IDS,
+  TIPOS_AVISO,
+  type ContaPagar,
+  type Recorrencia,
+} from "./avisos.js";
+import {
   contextoTitular,
   exigir,
   NOME_PERFIL,
@@ -93,6 +110,43 @@ const schemas = {
   mover_documento: z.object({ id: z.number().int(), pasta: z.enum(PASTA_IDS).nullish(), titulo: z.string().min(1).max(120).nullish() }),
   excluir_documento: z.object({ id: z.number().int(), confirmado: z.boolean() }),
   listar_pastas: z.object({}),
+  cadastrar_conta_pagar: z.object({
+    descricao: z.string().min(1).max(80),
+    vencimento: isoDate,
+    valor: z.number().positive().nullish(),
+    categoria: z.string().min(1).nullish(),
+    mensal: z.boolean(),
+  }),
+  listar_contas_pagar: z.object({ incluir_pagas: z.boolean().nullish() }),
+  pagar_conta: z.object({
+    id: z.number().int(),
+    valor: z.number().positive().nullish(),
+    data: nullableIsoDate,
+    forma_pagamento: z.string().nullish(),
+  }),
+  cancelar_conta_pagar: z.object({ id: z.number().int() }),
+  criar_recorrencia: z.object({
+    tipo: kind,
+    valor: z.number().positive(),
+    categoria: z.string().min(1),
+    descricao: z.string().min(1).max(80),
+    frequencia: z.enum(["diaria", "semanal", "mensal"]),
+    inicio: isoDate,
+    contraparte: z.string().min(1).nullish(),
+    forma_pagamento: z.string().nullish(),
+  }),
+  listar_recorrencias: z.object({}),
+  alterar_recorrencia: z.object({
+    id: z.number().int(),
+    acao: z.enum(["pausar", "retomar", "cancelar"]).nullish(),
+    valor: z.number().positive().nullish(),
+  }),
+  comparar_meses: z.object({ mes: z.string().regex(/^\d{4}-\d{2}$/, "use YYYY-MM").nullish() }),
+  configurar_avisos: z.object({
+    tipo: z.enum(TIPO_IDS),
+    ligado: z.boolean(),
+    hora: z.number().int().min(0).max(23).nullish(),
+  }),
 };
 
 /** O que o turno do agente oferece as ferramentas alem da entrada do modelo. */
@@ -120,6 +174,12 @@ const CAPACIDADE: Partial<Record<keyof typeof schemas, Capacidade>> = {
   mover_documento: "documentos",
   excluir_documento: "documentos",
   listar_pastas: "documentos",
+  // Recorrencias conferem o tipo dentro da ferramenta; configurar_avisos e pessoal e vale para todo perfil.
+  cadastrar_conta_pagar: "despesas",
+  listar_contas_pagar: "despesas",
+  pagar_conta: "despesas",
+  cancelar_conta_pagar: "despesas",
+  comparar_meses: "despesas",
 };
 
 const capDoTipo = (k: Kind): Capacidade => (k === "receita" ? "receitas" : "despesas");
@@ -282,7 +342,71 @@ export const toolDefinitions: Anthropic.Tool[] = [
     { id: { type: "integer" }, confirmado: { type: "boolean" } },
   ),
   tool("listar_pastas", "Mostra as pastas de documentos com a quantidade em cada uma e o espaco usado.", {}),
+  tool(
+    "cadastrar_conta_pagar",
+    "Cadastra uma conta a pagar com vencimento (condominio, fatura do cartao, IPVA). O assessor avisa na vespera.",
+    {
+      descricao: { ...str, description: "Nome curto da conta, ex.: Condominio, Fatura Nubank" },
+      vencimento: { ...str, description: `${dateDesc} do proximo vencimento` },
+      valor: nullable({ type: "number", description: "Valor em reais; null quando varia, como fatura de cartao" }),
+      categoria: nullable({ ...str, description: "Categoria da despesa ao pagar. null = Contas" }),
+      mensal: { type: "boolean", description: "true se vence todo mes no mesmo dia" },
+    },
+  ),
+  tool("listar_contas_pagar", "Lista as contas a pagar em aberto, das que vencem antes.", {
+    incluir_pagas: nullable({ type: "boolean" }),
+  }),
+  tool(
+    "pagar_conta",
+    "Registra o pagamento de uma conta a pagar cadastrada: lanca a despesa e, se for mensal, passa o vencimento para o mes seguinte. Use quando o usuario disser 'paguei' uma conta que esta na lista.",
+    {
+      id: { type: "integer" },
+      valor: nullable({ type: "number", description: "Valor pago em reais; null usa o cadastrado" }),
+      data: nullable({ ...str, description: `${dateDesc}. null = hoje` }),
+      forma_pagamento: nullable(str),
+    },
+  ),
+  tool("cancelar_conta_pagar", "Remove uma conta a pagar da lista e para os avisos dela.", { id: { type: "integer" } }),
+  tool(
+    "criar_recorrencia",
+    "Cria um gasto ou receita que se repete e e lancado sozinho, ex.: 'toda segunda tem 89,90 da academia', 'todo dia 5 recebo o salario'.",
+    {
+      tipo: { type: "string", enum: ["despesa", "receita"] },
+      valor: { type: "number", description: "Valor em reais de cada lancamento" },
+      categoria: { ...str, description: "Categoria curta, ex.: Saude, Salario" },
+      descricao: { ...str, description: "O que e, ex.: Academia" },
+      frequencia: { type: "string", enum: ["diaria", "semanal", "mensal"] },
+      inicio: { ...str, description: `${dateDesc} do primeiro lancamento; define o dia da semana ou do mes que se repete` },
+      contraparte: nullable(str),
+      forma_pagamento: nullable(str),
+    },
+  ),
+  tool("listar_recorrencias", "Lista os gastos e receitas recorrentes, com a proxima data.", {}),
+  tool("alterar_recorrencia", "Pausa, retoma ou cancela uma recorrencia, ou muda o valor. Envie null no que nao muda.", {
+    id: { type: "integer" },
+    acao: nullable({ type: "string", enum: ["pausar", "retomar", "cancelar"] }),
+    valor: nullable({ type: "number" }),
+  }),
+  tool(
+    "comparar_meses",
+    "Compara os gastos de um mes com o anterior: total e as categorias que mais mudaram. No mes atual, compara ate o mesmo dia.",
+    { mes: nullable({ ...str, description: "YYYY-MM. null = mes atual" }) },
+  ),
+  tool(
+    "configurar_avisos",
+    "Liga ou desliga um tipo de aviso automatico para quem fala, e muda o horario.",
+    {
+      tipo: { type: "string", enum: [...TIPO_IDS], description: TIPO_IDS.map((t) => `${t}: ${TIPOS_AVISO[t].descricao}`).join("; ") },
+      ligado: { type: "boolean" },
+      hora: nullable({ type: "integer", description: "Hora local de 0 a 23. null mantem a atual" }),
+    },
+  ),
 ];
+
+const describeConta = (c: ContaPagar) =>
+  `#${c.id} ${c.description}, vence ${c.due_on}, ${c.amount_cents ? brl(c.amount_cents) : "valor variavel"}, ${c.due_day ? "mensal" : "unica"}`;
+const describeRecorrencia = (r: Recorrencia) =>
+  `#${r.id} ${r.description}: ${r.kind} de ${brl(r.amount_cents)} em ${r.category}, ${descreverFrequencia(r)}${r.status === "pausada" ? " (pausada)" : `, proximo em ${r.next_on}`}`;
 
 const dataDoc = (d: Documento) => d.document_date ?? d.saved_at?.slice(0, 10) ?? d.created_at.slice(0, 10);
 const describeDoc = (d: Documento) => `#${d.id} ${d.title ?? d.original_name} (${nomePasta(d.folder)}, ${dataDoc(d)})`;
@@ -638,6 +762,75 @@ function run(repo: Repo, ctx: Contexto, toolName: ToolName, input: any, extras: 
       const pastas = docs.pastasComUso(phone).filter((p) => p.qtd);
       if (!pastas.length) return "Nenhum documento guardado ainda.";
       return `${pastas.map((p) => `${p.nome}: ${p.qtd}`).join("; ")}. Espaco usado: ${mb(docs.uso(phone))} de 1 GB.`;
+    }
+
+    case "cadastrar_conta_pagar": {
+      const c = criarConta(repo.db, ctx, input);
+      return `Conta a pagar cadastrada: ${describeConta(c)}. Aviso na vespera do vencimento.`;
+    }
+
+    case "listar_contas_pagar": {
+      const hoje = localDate();
+      const contas = listarContas(repo.db, phone, { hoje, incluirPagas: !!input.incluir_pagas });
+      if (!contas.length) return "Nenhuma conta a pagar cadastrada.";
+      return contas.map((c) => `${describeConta(c)}${c.status === "paga" ? " | PAGA" : c.vencida ? " | VENCIDA" : ""}`).join("\n");
+    }
+
+    case "pagar_conta": {
+      const r = pagarConta(repo, ctx, input.id, { valor: input.valor, data: input.data, pagamento: input.forma_pagamento });
+      const depois = r.conta.status === "paga" ? "Conta quitada." : `Proximo vencimento: ${r.conta.due_on}.`;
+      return `Pagamento registrado: ${describe(r.transacao)}. ${depois}`;
+    }
+
+    case "cancelar_conta_pagar": {
+      const c = cancelarConta(repo.db, ctx, input.id);
+      return `Conta a pagar #${c.id} ${c.description} removida. Nao aviso mais dela.`;
+    }
+
+    case "criar_recorrencia": {
+      const r = criarRecorrencia(repo.db, ctx, {
+        tipo: input.tipo,
+        valor: input.valor,
+        categoria: input.categoria,
+        descricao: input.descricao,
+        frequencia: input.frequencia,
+        inicio: input.inicio,
+        contraparte: input.contraparte,
+        pagamento: input.forma_pagamento,
+      });
+      return `Recorrencia criada: ${describeRecorrencia(r)}. Lanco sozinho em cada data.`;
+    }
+
+    case "listar_recorrencias": {
+      if (!pode(ctx, "despesas") && !pode(ctx, "receitas")) exigir(ctx, "despesas");
+      const lista = listarRecorrencias(repo.db, ctx);
+      return lista.length ? lista.map(describeRecorrencia).join("\n") : "Nenhuma recorrencia cadastrada.";
+    }
+
+    case "alterar_recorrencia": {
+      const r = alterarRecorrencia(repo.db, ctx, input.id, input.acao ?? null, localDate(), input.valor);
+      return r.status === "cancelada" ? `Recorrencia #${r.id} ${r.description} cancelada. Os lancamentos ja feitos continuam.` : `Atualizada: ${describeRecorrencia(r)}.`;
+    }
+
+    case "comparar_meses": {
+      const c = compararMeses(repo, phone, input.mes ?? null, localDate());
+      const diff = c.total - c.totalAnterior;
+      const pctTotal = c.totalAnterior ? ` (${diff >= 0 ? "+" : ""}${Math.round((diff / c.totalAnterior) * 100)}%)` : "";
+      const periodo = c.ateODia ? ` ate o dia ${c.ateODia}` : "";
+      return [
+        `Despesas de ${c.mes}${periodo}: ${brl(c.total)}. Mesmo periodo de ${c.mesAnterior}: ${brl(c.totalAnterior)}. Diferenca: ${diff >= 0 ? "+" : "-"}${brl(Math.abs(diff))}${pctTotal}.`,
+        c.variacoes.length
+          ? `Maiores variacoes: ${c.variacoes.map((v) => `${v.categoria} ${v.diferenca >= 0 ? "+" : "-"}${brl(Math.abs(v.diferenca))} (${brl(v.anterior)} para ${brl(v.atual)})`).join("; ")}.`
+          : "Sem gastos nos dois periodos.",
+      ].join("\n");
+    }
+
+    case "configurar_avisos": {
+      const atual = preferencias(repo.db, ctx).find((p) => p.tipo === input.tipo)!;
+      if (!atual.disponivel) return `O aviso de ${atual.nome.toLowerCase()} nao se aplica ao acesso de ${ctx.nome ?? "quem fala"} nesta conta.`;
+      definirPreferencia(repo.db, ctx.membro, input.tipo, { ligado: input.ligado, hora: input.hora });
+      const hora = input.hora ?? atual.hora;
+      return input.ligado ? `${atual.nome} ligado, as ${hora}h.` : `${atual.nome} desligado.`;
     }
   }
 }

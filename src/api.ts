@@ -6,8 +6,72 @@ import { fromLocal, localDate } from "./time.js";
 import { assistantNumber, sendNotice } from "./whatsapp.js";
 import { auth, AuthError } from "./auth.js";
 import { conta as servicoConta, repoDoContexto, resolverContexto } from "./conta.js";
-import { CAPACIDADES, contextoTitular, pode, PERFIS_CONVIDAVEIS, type Capacidade, type Contexto } from "./permissoes.js";
+import { CAPACIDADES, contextoTitular, pode, PERFIS_CONVIDAVEIS, SemPermissao, type Capacidade, type Contexto } from "./permissoes.js";
+import {
+  addDias,
+  alterarRecorrencia,
+  atualizarConta,
+  cancelarConta,
+  contasAVencer,
+  criarConta,
+  criarRecorrencia,
+  definirPreferencia,
+  descreverFrequencia,
+  listarContas,
+  listarRecorrencias,
+  pagarConta,
+  preferencias,
+  TIPO_IDS,
+  type ContaPagar,
+  type Recorrencia,
+  type TipoAviso,
+} from "./avisos.js";
 import { documentos as servicoDocumentos, nomeParaDownload, PASTA_IDS, podeVerDocumento, type Documento } from "./documentos.js";
+
+const contaPagarBody = z.object({
+  descricao: z.string().trim().min(1).max(80),
+  vencimento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  valor: z.number().positive().nullable().optional(),
+  categoria: z.string().trim().min(1).optional(),
+  mensal: z.boolean(),
+});
+
+const recorrenciaBody = z.object({
+  tipo: z.enum(["despesa", "receita"]),
+  valor: z.number().positive(),
+  categoria: z.string().trim().min(1),
+  descricao: z.string().trim().min(1).max(80),
+  frequencia: z.enum(["diaria", "semanal", "mensal"]),
+  inicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  contraparte: z.string().trim().min(1).nullable().optional(),
+  pagamento: z.string().trim().min(1).nullable().optional(),
+});
+
+const toConta = (c: ContaPagar) => ({
+  id: c.id,
+  descricao: c.description,
+  valor: c.amount_cents === null ? null : c.amount_cents / 100,
+  categoria: c.category,
+  vencimento: c.due_on,
+  mensal: c.due_day !== null,
+  situacao: c.status,
+  vencida: c.status === "aberta" && c.due_on < localDate(),
+  ultimaTransacaoId: c.paid_transaction_id,
+});
+
+const toRecorrencia = (r: Recorrencia) => ({
+  id: r.id,
+  tipo: r.kind,
+  valor: r.amount_cents / 100,
+  categoria: r.category,
+  descricao: r.description,
+  contraparte: r.counterpart,
+  pagamento: r.payment_method,
+  frequencia: r.frequency,
+  frequenciaTexto: descreverFrequencia(r),
+  proxima: r.next_on,
+  situacao: r.status,
+});
 
 const documentoBody = z.object({
   titulo: z.string().trim().min(1).max(120).optional(),
@@ -149,6 +213,15 @@ const CAPACIDADE_ROTA: Record<string, Capacidade[]> = {
   "GET /api/documentos": ["documentos"],
   "PATCH /api/documentos/:id": ["documentos"],
   "DELETE /api/documentos/:id": ["documentos"],
+  "GET /api/contas-pagar": ["despesas"],
+  "POST /api/contas-pagar": ["despesas"],
+  "PATCH /api/contas-pagar/:id": ["despesas"],
+  "POST /api/contas-pagar/:id/pagar": ["despesas"],
+  "DELETE /api/contas-pagar/:id": ["despesas"],
+  // O tipo da recorrencia (despesa ou receita) e conferido na propria rota.
+  "GET /api/recorrencias": FINANCAS,
+  "POST /api/recorrencias": FINANCAS,
+  "PATCH /api/recorrencias/:id": FINANCAS,
 };
 const SEM_ACESSO = { erro: "Seu acesso a esta conta não inclui isso." };
 
@@ -441,6 +514,87 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
         return { ok: true };
       });
 
+      api.get("/contas-pagar", async (req) => {
+        const { phone } = de(req);
+        const incluirPagas = (req.query as { incluirPagas?: string }).incluirPagas === "true";
+        return { contas: listarContas(repo.db, phone, { hoje: localDate(), incluirPagas }).map(toConta) };
+      });
+
+      api.post("/contas-pagar", async (req, reply) => {
+        const b = parse(contaPagarBody, body(req), reply);
+        if (!b) return;
+        return reply.code(201).send(toConta(criarConta(repo.db, de(req).ctx, b)));
+      });
+
+      api.patch("/contas-pagar/:id", async (req, reply) => {
+        const b = parse(contaPagarBody.partial(), body(req), reply);
+        if (!b) return;
+        try {
+          return toConta(atualizarConta(repo.db, de(req).ctx, Number((req.params as { id: string }).id), b));
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      api.post("/contas-pagar/:id/pagar", async (req, reply) => {
+        const b = parse(z.object({ valor: z.number().positive().optional(), data: dataSchema.optional(), pagamento: z.string().trim().min(1).optional() }), body(req) ?? {}, reply);
+        if (!b) return;
+        const { ctx, repo: r } = de(req);
+        try {
+          const pago = pagarConta(r, ctx, Number((req.params as { id: string }).id), b);
+          return { conta: toConta(pago.conta), transacao: toTx(pago.transacao) };
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      api.delete("/contas-pagar/:id", async (req, reply) => {
+        try {
+          cancelarConta(repo.db, de(req).ctx, Number((req.params as { id: string }).id));
+          return { ok: true };
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      api.get("/recorrencias", async (req) => ({ recorrencias: listarRecorrencias(repo.db, de(req).ctx).map(toRecorrencia) }));
+
+      api.post("/recorrencias", async (req, reply) => {
+        const b = parse(recorrenciaBody, body(req), reply);
+        if (!b) return;
+        const { ctx } = de(req);
+        if (!pode(ctx, b.tipo === "receita" ? "receitas" : "despesas")) return reply.code(403).send(SEM_ACESSO);
+        return reply.code(201).send(toRecorrencia(criarRecorrencia(repo.db, ctx, b)));
+      });
+
+      api.patch("/recorrencias/:id", async (req, reply) => {
+        const b = parse(z.object({ acao: z.enum(["pausar", "retomar", "cancelar"]).optional(), valor: z.number().positive().optional() }), body(req), reply);
+        if (!b) return;
+        try {
+          return toRecorrencia(alterarRecorrencia(repo.db, de(req).ctx, Number((req.params as { id: string }).id), b.acao ?? null, localDate(), b.valor));
+        } catch (err) {
+          if (err instanceof SemPermissao) return reply.code(403).send(SEM_ACESSO);
+          return responderErro(reply, err);
+        }
+      });
+
+      api.get("/avisos", async (req) => ({
+        avisos: preferencias(repo.db, de(req).ctx),
+        modeloAprovado: Boolean(config.whatsapp.noticeTemplate),
+      }));
+
+      api.put("/avisos/:tipo", async (req, reply) => {
+        const tipo = (req.params as { tipo: string }).tipo;
+        if (!TIPO_IDS.includes(tipo as TipoAviso)) return reply.code(400).send({ erro: "tipo de aviso invalido" });
+        const b = parse(z.object({ ligado: z.boolean(), hora: z.number().int().min(0).max(23).optional() }), body(req), reply);
+        if (!b) return;
+        const { ctx } = de(req);
+        const atual = preferencias(repo.db, ctx).find((p) => p.tipo === tipo)!;
+        if (!atual.disponivel) return reply.code(403).send(SEM_ACESSO);
+        definirPreferencia(repo.db, ctx.membro, tipo as TipoAviso, b);
+        return preferencias(repo.db, ctx).find((p) => p.tipo === tipo);
+      });
+
       api.post("/conta/convites", async (req, reply) => {
         const { ctx } = de(req);
         const b = parse(conviteBody, body(req), reply);
@@ -572,6 +726,7 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
             variacao: media ? desvio / media : 0,
           },
           comprometido,
+          contasProximas: contasAVencer(repo.db, phone, today, addDias(today, 7)).slice(0, 5).map(toConta),
           pulso: {
             lancamentos: txs.length,
             ticketMedio: despesasTx.length ? reais(despesas / despesasTx.length) : 0,
@@ -603,7 +758,13 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
         const comprovantes = arquivos.comprovantes(phone, txs.map((t) => t.id));
         return {
           mes,
-          transacoes: txs.map((t) => ({ ...toTx(t), criadoPor: criadoPor(t), comprovanteId: comprovantes.get(t.id) ?? null })),
+          transacoes: txs.map((t) => ({
+            ...toTx(t),
+            criadoPor: criadoPor(t),
+            comprovanteId: comprovantes.get(t.id) ?? null,
+            recorrente: t.recurring_id !== null,
+            contaPagarId: t.bill_id,
+          })),
           categorias: repo.categories(phone),
           contrapartes: repo.counterparts(phone),
         };
