@@ -235,6 +235,7 @@ Chave primaria `(phone, kind, key)`. Linhas com mais de 90 dias sao apagadas pel
 | text | TEXT NOT NULL | texto pronto do aviso ou lembrete |
 | created_at | TEXT NOT NULL | descartado depois de 7 dias |
 | delivered_at | TEXT | preenchido quando sai na proxima conversa |
+
 # US4: Google Agenda
 
 Decisoes em [research.md](research.md) R35 a R46.

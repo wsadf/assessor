@@ -335,6 +335,7 @@ R47 a R58 sao da US5 (pagina publica de agendamento). As demais historias acresc
 - Nove ferramentas novas no bloco com cache, cerca de 1.500 tokens a mais, pagos uma vez por
   cache. Avisos sem IA. O calculo de categoria roda uma vez por dia por pessoa com o aviso ligado,
   com duas consultas agregadas por mes; para mil contas, milissegundos.
+
 # US4: Google Agenda
 
 ## R35. Agenda de quem e
