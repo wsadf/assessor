@@ -28,6 +28,7 @@ export const SUBMENU_FINANCAS = [
   { nome: "Transações", rota: "/financas/transacoes", icone: "transacoes" },
   { nome: "Contas e recorrências", rota: "/financas/contas", icone: "repetir" },
   { nome: "Extratos", rota: "/financas/extratos", icone: "cartao" },
+  { nome: "Cobranças", rota: "/financas/cobrancas", icone: "seta" },
   { nome: "Categorias", rota: "/financas/categorias", icone: "categorias" },
   { nome: "Pessoas e lojas", rota: "/financas/contrapartes", icone: "pessoas" },
   { nome: "Formas de pagamento", rota: "/financas/pagamentos", icone: "cartao" },

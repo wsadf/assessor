@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { AuthError } from "./auth.js";
 import type { Db, Kind, Repo, Transaction } from "./db.js";
+import { cobrancaDoCredito, marcarPaga, textoPago } from "./cobrancas.js";
 import { lerOfx, type MovimentoOfx } from "./ofx.js";
 import { exigir, type Contexto } from "./permissoes.js";
 
@@ -168,6 +169,8 @@ export interface ResultadoImportacao {
   estornados: number;
   em: string;
   contaBancaria: ReturnType<typeof paraContaBancaria>;
+  /** Cobrancas que o extrato mostrou pagas (US9). */
+  avisos: string[];
 }
 
 export const paraContaBancaria = (c: ContaBancariaLinha) => ({
@@ -231,13 +234,14 @@ export function importarExtrato(repo: Repo, ctx: Contexto, dados: Buffer, nomeAr
     if (ofx.saldo) db.prepare(`UPDATE bank_accounts SET balance_cents = ?, balance_at = ? WHERE id = ?`).run(ofx.saldo.centavos, ofx.saldo.em, cb.id);
 
     const contagem = { criados: 0, unidos: 0, ignorados: 0, estornados: 0 };
+    const avisos: string[] = [];
     const jaVisto = db.prepare(`SELECT 1 FROM transactions WHERE phone = ? AND bank_account_id = ? AND external_id = ?`);
     for (const m of [...ofx.movimentos].sort((a, b) => a.data.localeCompare(b.data))) {
       if (jaVisto.get(conta, cb.id, m.fitid)) {
         contagem.ignorados++;
         continue;
       }
-      const efeito = aplicarMovimento(repo, ctx, cb, m);
+      const efeito = aplicarMovimento(repo, ctx, cb, m, avisos);
       contagem[efeito]++;
     }
 
@@ -255,14 +259,14 @@ export function importarExtrato(repo: Repo, ctx: Contexto, dados: Buffer, nomeAr
       nome: string;
     };
     const atual = db.prepare(`SELECT * FROM bank_accounts WHERE id = ?`).get(cb.id) as ContaBancariaLinha;
-    return { ...paraImportacao(linha), contaBancaria: paraContaBancaria(atual) };
+    return { ...paraImportacao(linha), contaBancaria: paraContaBancaria(atual), avisos };
   });
   return resultado();
 }
 
 type Efeito = "criados" | "unidos" | "ignorados" | "estornados";
 
-function aplicarMovimento(repo: Repo, ctx: Contexto, cb: ContaBancariaLinha, m: MovimentoOfx): Efeito {
+function aplicarMovimento(repo: Repo, ctx: Contexto, cb: ContaBancariaLinha, m: MovimentoOfx, avisos: string[]): Efeito {
   const db = repo.db;
   const texto = `${m.nome} ${m.memo}`.trim();
   const valor = Math.abs(m.centavos);
@@ -298,7 +302,8 @@ function aplicarMovimento(repo: Repo, ctx: Contexto, cb: ContaBancariaLinha, m: 
 
   const contraparte = limparContraparte(m.nome, m.memo);
   const estorno = cb.type === "cartao" && kind === "receita";
-  repo.addTransaction({
+  const cobranca = cb.type === "corrente" && kind === "receita" ? cobrancaDoCredito(db, ctx.conta, valor, m.data, texto, contraparte) : null;
+  const criada = repo.addTransaction({
     phone: ctx.conta,
     created_by: ctx.membro,
     kind,
@@ -312,6 +317,7 @@ function aplicarMovimento(repo: Repo, ctx: Contexto, cb: ContaBancariaLinha, m: 
     external_id: m.fitid,
     bank_account_id: cb.id,
   });
+  if (cobranca) avisos.push(textoPago(marcarPaga(repo, ctx, cobranca.id, { data: m.data, via: "extrato", transacaoId: criada.id })));
   return "criados";
 }
 

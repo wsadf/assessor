@@ -380,3 +380,36 @@ informar fechamento e vencimento.
 Mandar o `.ofx` e "importa esse extrato"; depois "minha fatura ja fechou?", "no credito, quanto ja
 foi esse mes?" e "faz um Pix de 50 para o Joao" (resposta: so leitura). Repetir com
 `AI_PROVIDER=gemini` e `AI_PROVIDER=claude`.
+
+# US9: cobranca por Pix
+
+Contratos em [contracts/api-cobrancas.md](contracts/api-cobrancas.md) e
+[contracts/ferramentas-cobrancas.md](contracts/ferramentas-cobrancas.md). Nota fiscal adiada (R100).
+
+## 1. Testes automaticos
+
+Os testes novos (arquivo `test/cobrancas.test.ts`) devem cobrir:
+
+- chave: CPF e CNPJ com digito invalido recusados; e-mail, telefone e aleatoria normalizados;
+  nome e cidade sem acento e cortados no limite;
+- codigo Pix: payload de um caso conhecido (valor, chave, nome, cidade, txid) com o CRC16 certo,
+  conferido contra um exemplo de referencia do padrao;
+- cobranca: sem chave cadastrada, recusa com o caminho para cadastrar; valor, descricao e
+  vencimento; `txid` e `slug` unicos; pagina publica sem dados da conta;
+- confirmacao: "o Joao pagou" lanca a receita e liga; extrato OFX com credito do mesmo valor e o
+  nome do pagador marca paga e nao duplica a receita; credito de outro valor nao marca; cobranca
+  cancelada nunca e marcada;
+- ferramentas e API, com so gastos recebendo `Sem permissao` e `403` e outra conta sem acesso;
+- pedido de nota fiscal e de antecipacao recebem a explicacao.
+
+## 2. Painel
+
+Com `npm run painel:demo`: Financas > Cobrancas, cadastrar a chave Pix, criar uma cobranca, abrir o
+link em janela anonima e ler o QR com o app do banco (conferir nome, valor e descricao, sem pagar),
+marcar como recebida e ver a receita em Transacoes.
+
+## 3. WhatsApp ou terminal
+
+"Cobra R$ 850 do Joao pela consultoria de agosto", "manda o link pro Joao" (previa da US6), "o Joao
+pagou", "emite a nota" e "antecipa esse valor" (explicacoes). Repetir com `AI_PROVIDER=gemini` e
+`AI_PROVIDER=claude`.

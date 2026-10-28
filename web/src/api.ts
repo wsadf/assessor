@@ -246,7 +246,46 @@ export interface Importacao {
 
 export interface ResultadoImportacao extends Importacao {
   contaBancaria: ContaBancaria;
+  /** Cobrancas que o extrato mostrou pagas. */
+  avisos: string[];
 }
+
+export type TipoChavePix = "cpf" | "cnpj" | "email" | "telefone" | "aleatoria";
+
+export interface ChavePix {
+  tipo: TipoChavePix;
+  chave: string;
+  nome: string;
+  cidade: string;
+}
+
+export interface Cobranca {
+  id: number;
+  pagador: string;
+  whatsapp: string | null;
+  descricao: string;
+  valor: number;
+  vencimento: string | null;
+  situacao: "aberta" | "paga" | "cancelada";
+  vencida: boolean;
+  link: string;
+  copiaECola: string;
+  pagaEm: string | null;
+  pagaPor: "usuario" | "extrato" | null;
+  transacaoId: number | null;
+}
+
+/** O que quem paga ve: aberta traz valor e codigo; paga ou cancelada, so a situacao. */
+export interface CobrancaPublica {
+  recebedor: string;
+  descricao: string;
+  situacao: "aberta" | "paga" | "cancelada";
+  valor?: number;
+  vencimento?: string | null;
+  copiaECola?: string;
+}
+
+export const pagar = (slug: string) => request<CobrancaPublica>("GET", `/pagar/${encodeURIComponent(slug)}`, undefined, true);
 
 export interface ContaPagar {
   id: number;

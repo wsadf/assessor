@@ -1,6 +1,8 @@
 <script setup lang="ts">
 /** `cliente`: pagina vista por quem nao e usuario, sem a assinatura e o rodape de venda. */
-defineProps<{ antes: string; destaque: string; depois?: string; cliente?: boolean }>();
+withDefaults(defineProps<{ antes: string; destaque: string; depois?: string; cliente?: boolean; rodape?: string }>(), {
+  rodape: "Seus dados só servem para este horário",
+});
 </script>
 
 <template>
@@ -23,7 +25,7 @@ defineProps<{ antes: string; destaque: string; depois?: string; cliente?: boolea
       </div>
 
       <footer v-if="cliente">
-        <span>Seus dados só servem para este horário</span>
+        <span>{{ rodape }}</span>
       </footer>
       <footer v-else>
         <span>Dados protegidos pela LGPD</span>

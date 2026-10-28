@@ -1,9 +1,9 @@
 ---
 
-description: "Tarefas da feature 001: US1 a US7 (concluidas) e US8 (extrato bancario, Open Finance adiado)"
+description: "Tarefas da feature 001: US1 a US8 (concluidas) e US9 (cobranca por Pix, nota fiscal adiada)"
 ---
 
-# Tasks: Paridade com o Meu Assessor (US1 a US8)
+# Tasks: Paridade com o Meu Assessor (US1 a US9)
 
 **Input**: Design documents from `/specs/001-paridade-meu-assessor/`
 
@@ -16,12 +16,12 @@ nova, e isolamento por usuario e o principio I.
 **Escopo**: fases 1 a 4 sao da US1 (T001 a T033, PR #1); fases 5 a 8 da US2 (T034 a T064, PR #2);
 fases 9 a 12 da US3 (T065 a T097, PR #3); fases 13 a 16 da US4 (T098 a T120, PR #4); fases 17 a 20
 da US5 (T121 a T144, PR #5); fases 21 a 24 da US6 (T145 a T166, PR #6); fases 25 a 28 da US7 (T167 a
-T187, PR #7); fases 29 a 32 da US8 (T188 em diante). A US9 entra aqui depois do proprio plano.
+T187, PR #7); fases 29 a 32 da US8 (T188 a T204, PR #8); fases 33 a 36 da US9 (T205 em diante).
 
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: pode rodar em paralelo (arquivos diferentes, sem dependencia de tarefa aberta)
-- **[Story]**: historia da spec (US1 a US8)
+- **[Story]**: historia da spec (US1 a US9)
 - Caminhos relativos a raiz do repositorio: back-end em `src/`, painel em `web/src/`, testes em
   `test/`
 
@@ -668,6 +668,71 @@ e ausencia de duplicatas com lancamentos manuais (spec, US8, sem o parceiro).
 - [ ] T204 Executar o roteiro de [quickstart.md](quickstart.md#us8-extrato-bancario) com um OFX real do internet banking e pelo WhatsApp, com `AI_PROVIDER=gemini` e com `AI_PROVIDER=claude` quando houver `ANTHROPIC_API_KEY`
 ---
 
+## Phase 33: Setup (US9)
+
+**Purpose**: dependencia do QR e testes. Decisoes em [research.md](research.md) R91 a R100; tabelas
+em [data-model.md](data-model.md#us9-cobranca-por-pix). Nota fiscal adiada (R100).
+
+- [X] T205 Instalar `qrcode` e `@types/qrcode` em `web/` (so o painel desenha o QR, R93) e criar `test/cobrancas.test.ts` com o cabecalho de `test/extratos.test.ts`; incluir no script `test` de `package.json` depois de `test/extratos.test.ts`
+
+---
+
+## Phase 34: Foundational (US9)
+
+**Purpose**: codigo Pix, chave e tabelas. Bloqueia a Phase 35.
+
+- [X] T206 [P] Criar `src/pix.ts` (R92, R93): `crc16(texto)` CRC16-CCITT (polinomio 0x1021, inicial 0xFFFF, valor de conferencia `29B1` para `123456789`); `normalizarChave(tipo, chave)` (CPF e CNPJ so digitos com digito verificador valido, e-mail minusculo, telefone `+55` mais 10 ou 11 digitos, aleatoria UUID minusculo; senao `Error` com o motivo); `textoPix(s, max)` sem acento, so `[A-Za-z0-9 ]` e cortado; `payloadPix({ chave, nome, cidade, valorCentavos?, descricao?, txid })` com os campos `00`, `26` (`00` `br.gov.bcb.pix`, `01` chave, `02` descricao ate 72), `52` `0000`, `53` `986`, `54` valor com ponto e duas casas, `58` `BR`, `59` nome ate 25, `60` cidade ate 15, `62` (`05` txid) e `63` CRC
+- [X] T207 Criar `src/cobrancas.ts` com `prepararTabelasCobrancas(db)` (chamada em `openDb` de `src/db.ts` depois de `prepararTabelasExtratos`), com `pix_keys` (`conta TEXT PK`, `key_type` em `cpf|cnpj|email|telefone|aleatoria`, `merchant_name` "1 a 25 caracteres", `merchant_city` "1 a 15 caracteres") e `charges` (`payer_name` "1 a 60 caracteres", `description` "1 a 72 caracteres", `amount_cents` "1 a 100.000.000", `txid TEXT NOT NULL UNIQUE` "25 caracteres", `slug TEXT NOT NULL UNIQUE` "10 caracteres", `pix_payload`, `status` em `aberta|paga|cancelada`, `paid_at`, `paid_via` em `usuario|extrato`, `transaction_id`) exatamente como em [data-model.md](data-model.md#us9-cobranca-por-pix)
+- [X] T208 Em `test/cobrancas.test.ts`, testar a fundacao: `crc16("123456789")` = `29B1`; o exemplo do manual do BR Code (chave aleatoria `123e4567-e12b-12d1-a456-426655440000`, `Fulano de Tal`, `BRASILIA`, txid `***`) gera exatamente o payload de referencia; payload com valor e descricao tem os tamanhos certos em cada campo; CPF e CNPJ invalidos recusados; nome e cidade com acento ficam sem acento e cortados (depende de T205, T206, T207)
+
+**Checkpoint**: codigo Pix e tabelas prontos; nada visivel ainda.
+
+---
+
+## Phase 35: User Story 9 - Cobranca por Pix (Priority: P9)
+
+**Goal**: o usuario cobra um cliente por Pix na propria chave, manda o link e ve o pagamento virar
+receita quando confirma ou quando o extrato mostra, sem o produto tocar no dinheiro.
+
+**Independent Test**: criar uma cobranca, abrir o link publico, ler o QR no app do banco e marcar
+como recebida, conferindo a receita na mesa Financas (spec, US9, sem a nota fiscal).
+
+### Tests for User Story 9
+
+> Escrever antes da implementacao correspondente e ver falhar.
+
+- [X] T209 [US9] Em `test/cobrancas.test.ts`, testar o dominio: `salvarChave` por tipo; `criarCobranca` sem chave recusa com o caminho; com chave, `txid` de 25 e `slug` de 10 unicos e `pix_payload` com valor, descricao e txid; `marcarPaga` lanca receita (contraparte = pagador, `pix`, categoria "Servicos" ou a que a conta usa para o pagador) e liga; paga ou cancelada de novo recusa (`409`); `cancelarCobranca` muda a situacao e avisa que o codigo continua pagavel; extrato OFX com credito do mesmo valor e o nome do pagador marca paga, liga a receita importada (sem receita duplicada) e avisa `💰`; credito de outro valor ou cobranca cancelada nao marca; vencida calculada pelo `due_on`
+- [X] T210 [US9] Em `test/cobrancas.test.ts`, testar API e ferramentas: `GET/PUT /api/cobrancas/chave`, `POST /api/cobrancas`, `/recebida` e `DELETE`; `GET /api/pagar/:slug` aberta (com copia-e-cola), paga (sem copia-e-cola) e inexistente (`404`), sem telefone nem e-mail da conta; `criar_cobranca`, `consultar_cobrancas`, `marcar_cobranca_paga`, `cancelar_cobranca` (pede confirmacao); so gastos recebe `Sem permissao` e `403`; outra conta nao ve nem marca
+
+### Implementation for User Story 9
+
+**Dominio**
+
+- [X] T211 [US9] Em `src/cobrancas.ts` (R92, R94, R97, R98): `chaveDe(db, conta)`, `salvarChave(db, ctx, { tipo, chave, nome, cidade })` (exige `receitas`; usa `normalizarChave` e `textoPix`); `criarCobranca(db, ctx, { pagador, whatsapp?, descricao, valor, vencimento? }, agora)` (exige `receitas`; sem chave `AuthError(409, "Cadastre a chave Pix em Financas > Cobrancas antes de cobrar.")`; `txid` com `crypto.randomInt` em `[A-Za-z0-9]`; `slug` como o da US5; guarda `pix_payload`); `listarCobrancas(db, ctx, filtro)` com `vencida`; `marcarPaga(repo, ctx, id, data?, via = "usuario")` que lanca a receita e liga numa transacao; `cancelarCobranca(db, ctx, id)`; `cobrancaPublica(db, slug)` e `linkDaCobranca(slug)` = `<PAINEL_URL>/pagar/<slug>` (depende de T207, T208)
+- [X] T212 [US9] Em `src/extratos.ts`, antes de criar uma receita na conta corrente, procurar cobranca `aberta` da conta com o mesmo valor, criada ate a data do credito, cujo `txid` apareca no texto ou cujo pagador tenha um nome com a primeira palavra e mais uma iguais (sem acento) ao da contraparte; achando uma so, criar a receita e chamar a confirmacao da cobranca com `via = "extrato"` ligando a essa receita, e guardar o aviso `💰 {pagador} pagou {valor} (cobranca #{id}).` para o resultado da importacao, que o painel mostra e a ferramenta repassa (depende de T211)
+
+**API e assessor**
+
+- [X] T213 [US9] Em `src/api.ts`, rotas privadas de [contracts/api-cobrancas.md](contracts/api-cobrancas.md) com `["receitas"]` em `CAPACIDADE_ROTA` e zod (`pagador` 1 a 60, `descricao` 1 a 72, `valor` positivo ate 1.000.000, `vencimento` `AAAA-MM-DD`, chave por tipo) e o plugin publico `/api/pagar` com `GET /:slug` (depende de T211)
+- [X] T214 [US9] Em `src/tools.ts`, as 4 ferramentas de [contracts/ferramentas-cobrancas.md](contracts/ferramentas-cobrancas.md) com capacidade `receitas`; em `src/prompt.ts`, as regras do contrato (cobrar, mandar o link pela `mensagem_para_contato`, "o Joao pagou", nota fiscal adiada, antecipacao recusada) (depende de T211)
+
+**Painel web**
+
+- [X] T215 [P] [US9] Em `web/src/api.ts`, tipos `ChavePix`, `Cobranca`, `CobrancaPublica` e a chamada publica `pagar(slug)` sem token (depende de T213)
+- [X] T216 [US9] Criar `web/src/views/financas/CobrancasView.vue` e a rota `/financas/cobrancas` em `web/src/router.ts`, com "Cobrancas" em `SUBMENU_FINANCAS` de `web/src/mesas.ts`: aviso de que a nota fiscal ainda nao esta disponivel; chave Pix (tipo, chave, nome, cidade) com editar; "Nova cobranca" (pagador, WhatsApp opcional, descricao, valor, vencimento) mostrando link e copia-e-cola com copiar; lista com filtro por situacao, chip de vencida, "Recebi" e "Cancelar" (com o aviso de que o codigo ja enviado continua pagavel) (depende de T215)
+- [X] T217 [US9] Criar `web/src/views/PagarPublico.vue` e a rota publica `/pagar/:slug` (`meta: { publica: true }`) no layout do `AuthLayout` com `cliente`: recebedor, descricao, valor, vencimento, QR desenhado com `qrcode` a partir do copia-e-cola, botao de copiar e o aviso "O pagamento vai direto para {recebedor} pelo Pix. Este site nao recebe dinheiro."; paga ou cancelada mostra so a situacao; `404` diz que a cobranca nao existe (depende de T215)
+
+**Checkpoint**: US9 completa sem nota fiscal; T208 a T210 verdes; roteiro de [quickstart.md](quickstart.md#us9-cobranca-por-pix) passando.
+
+---
+
+## Phase 36: Polish (US9)
+
+- [X] T218 [P] Em `README.md`, secao Cobranca por Pix: cadastrar a chave, cobrar pelo WhatsApp e pelo painel, a pagina de pagamento, mandar ao cliente, confirmar (voce ou o extrato), o Pix estatico continuar pagavel depois de cancelar, a nota fiscal adiada (com as opcoes e precos citados) e a constituicao 1.2.0; tabela "Como esta organizado" com `src/pix.ts` e `src/cobrancas.ts`
+- [X] T219 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
+- [ ] T220 Executar o roteiro de [quickstart.md](quickstart.md#us9-cobranca-por-pix) lendo o QR com o app do banco (sem pagar) e pelo WhatsApp, com `AI_PROVIDER=gemini` e com `AI_PROVIDER=claude` quando houver `ANTHROPIC_API_KEY`
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -704,6 +769,10 @@ e ausencia de duplicatas com lancamentos manuais (spec, US8, sem o parceiro).
 - **Foundational US8 (Phase 30)**: depende da Phase 29; bloqueia a US8
 - **US8 (Phase 31)**: depende da Phase 30
 - **Polish US8 (Phase 32)**: depende da US8
+- **Setup US9 (Phase 33)**: depende da US8 na `main` (a confirmacao usa a importacao de extrato)
+- **Foundational US9 (Phase 34)**: depende da Phase 33; bloqueia a US9
+- **US9 (Phase 35)**: depende da Phase 34
+- **Polish US9 (Phase 36)**: depende da US9
 
 ### Dentro da US1
 
@@ -784,6 +853,14 @@ T017 (webhook) depende so de T006
 - Painel: T197 > T199 > T200 e T201.
 - Testes: T192 antes de T194 e T195; T193 antes de T196 a T198.
 
+### Dentro da US9
+
+- Fundacao: T205 > T206 e T207 > T208.
+- Dominio: T208 > T211 > T212.
+- API e assessor: T211 > T213 e T214.
+- Painel: T213 > T215 > T216 e T217.
+- Testes: T209 antes de T211 e T212; T210 antes de T213 e T214.
+
 ### Parallel Opportunities
 
 - T002 e T003 em paralelo (arquivos diferentes).
@@ -813,6 +890,9 @@ T017 (webhook) depende so de T006
 - US8: T189 (`src/ofx.ts`) em paralelo com T190; T200 e T201 em arquivos diferentes, em paralelo; T202
   em paralelo com a Phase 31.
 - T191 a T193 tocam o mesmo arquivo (`test/extratos.test.ts`): sequenciais.
+- US9: T206 (`src/pix.ts`) em paralelo com T207; T216 e T217 em arquivos diferentes, mas os dois
+  mexem em `router.ts`: sequenciais; T218 em paralelo com a Phase 35.
+- T208 a T210 tocam o mesmo arquivo (`test/cobrancas.test.ts`): sequenciais.
 
 ---
 
@@ -904,6 +984,17 @@ Task: "Tela Extratos em web/src/views/financas/ExtratosView.vue"
 Task: "Chip extrato em web/src/views/financas/TransacoesView.vue"
 ```
 
+## Parallel Example: User Story 9
+
+```bash
+# Fundacao, arquivos diferentes:
+Task: "Codigo Pix em src/pix.ts"
+Task: "Tabelas em src/cobrancas.ts"
+
+# Durante a Phase 35:
+Task: "Secao Cobranca por Pix no README.md"
+```
+
 ---
 
 ## Implementation Strategy
@@ -990,6 +1081,15 @@ Task: "Chip extrato em web/src/views/financas/TransacoesView.vue"
 5. **Parar e validar** com a [secao US8 do quickstart](quickstart.md#us8-extrato-bancario).
 6. Commits por bloco, na branch `001-us8-open-finance`.
 
+### US9
+
+1. Phases 33 e 34: codigo Pix conferido contra o exemplo do padrao e tabelas.
+2. Dominio (T211, T212): cobranca, confirmacao pelo usuario e pelo extrato.
+3. API e assessor (T213, T214): ja entrega cobrar pelo WhatsApp com o link publico.
+4. Painel (T215 a T217).
+5. **Parar e validar** com a [secao US9 do quickstart](quickstart.md#us9-cobranca-por-pix).
+6. Commits por bloco, na branch `001-us9-cobranca`.
+
 ---
 
 ## Notes
@@ -1012,3 +1112,5 @@ Task: "Chip extrato em web/src/views/financas/TransacoesView.vue"
   comentarios ou pedidos do contador, varios meses num pacote.
 - Fora da US8: conexao automatica pelo Open Finance (FR-032), aviso de consentimento (FR-034),
   importar CSV, investimentos e previsao de caixa.
+- Fora da US9: nota fiscal de servico, cobranca por parceiro com boleto ou cartao, Pix dinamico,
+  cobranca recorrente, multa e juros, lembrete de vencimento ao pagador.

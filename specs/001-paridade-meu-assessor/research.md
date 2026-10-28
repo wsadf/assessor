@@ -3,7 +3,8 @@
 Decisoes por historia. R1 a R10 sao da US1 (conta compartilhada), R11 a R22 da US2 (documentos)
 R23 a R34 da US3 (avisos proativos), R35 a R46 da US4 (Google Agenda), R47 a R58 da US5 (pagina publica
 de agendamento) e R59 a R70 da US6 (mensagens a outras pessoas) e R71 a R80 da US7 (area do contador),
-todas implementadas; R81 a R90 sao da US8 (extrato bancario, com o Open Finance adiado). A US9 acrescenta a sua secao
+R81 a R90 da US8 (extrato bancario, com o Open Finance adiado), todas implementadas; R91 a R100
+sao da US9 (cobranca por Pix, com a nota fiscal adiada). A US9 acrescenta a sua secao
 aqui.
 
 # US1: Conta compartilhada
@@ -855,3 +856,97 @@ aqui.
 - Leitura, categorizacao e uniao sem IA. O numero completo da conta nao e guardado; o arquivo OFX
   nao fica no servidor depois da importacao. Cada importacao fica registrada (quem, quando, periodo
   e quantos lancamentos criados, unidos, ignorados e estornados).
+
+# US9: Cobranca por Pix (nota fiscal adiada)
+
+## R91. Caminho escolhido
+
+- **Decision**: cobranca por Pix estatico com a chave Pix do proprio usuario, sem parceiro, como
+  permite a constituicao 1.2.0 (principio II). A nota fiscal de servico fica adiada. Decisao do
+  dono do produto em 2026-10-27.
+- **O que muda na historia**: FR-036 deixa de ser "por parceiro" e passa a ser Pix na chave do
+  usuario, com o dinheiro indo do banco do pagador direto ao banco do usuario; FR-037 vale com a
+  confirmacao feita pelo usuario ou pelo extrato (R97); FR-038 e FR-039 e o cenario 3 ficam
+  adiados; no cenario 4, o assessor explica que a emissao ainda nao existe; o cenario 5 vale como
+  esta.
+- **Rationale**: custo zero e nenhuma custodia. Parceiros de cobranca cobram por transacao e os de
+  nota fiscal comecam perto de R$ 190 por mes (NFE.io, preco da propria empresa); sem base de
+  usuarios, nao compensa.
+- **Alternatives considered**: Asaas com a conta do proprio usuario (cobranca e nota no mesmo
+  parceiro, confirmacao automatica; fica como caminho para quando a nota entrar); NFE.io e Focus
+  NFe so para a nota.
+
+## R92. Chave Pix do usuario
+
+- **Decision**: o titular (ou quem tem `receitas`) cadastra no painel, em Financas > Cobrancas, a
+  chave Pix (CPF, CNPJ, e-mail, telefone ou aleatoria), o nome do recebedor e a cidade, como o
+  banco exige no codigo. Validacao por tipo: CPF e CNPJ com digito verificador, e-mail, telefone
+  com +55 e chave aleatoria no formato UUID. Nome ate 25 e cidade ate 15 caracteres, sem acento
+  (limite do padrao).
+- **Rationale**: o codigo Pix precisa desses tres campos; o banco do pagador mostra o nome, e o
+  usuario confere antes de pagar.
+
+## R93. Codigo Pix (BR Code)
+
+- **Decision**: `src/pix.ts` monta o payload EMV do Banco Central: `00` "01", `26` com GUI
+  `br.gov.bcb.pix`, a chave e a descricao, `52` "0000", `53` "986", `54` valor, `58` "BR", `59`
+  nome, `60` cidade, `62` com o `txid` da cobranca e `63` com CRC16-CCITT (polinomio 0x1021,
+  inicial 0xFFFF). Sem dependencia. O QR e desenhado no navegador com a biblioteca `qrcode`
+  (dependencia nova so no painel: desenhar QR do zero nao compensa).
+- **Rationale**: padrao publico do Banco Central; qualquer app de banco le.
+
+## R94. Cobranca
+
+- **Decision**: tabela `charges` por conta: pagador (nome e, opcional, WhatsApp), descricao,
+  valor, vencimento, `txid` unico de 25 caracteres alfanumericos, `slug` publico aleatorio de 10
+  caracteres e situacao `aberta`, `paga` ou `cancelada` (vencida e calculada). O pedido "cobra R$
+  850 do Joao pela consultoria de agosto" vira a ferramenta `criar_cobranca`, que devolve o link e
+  o copia-e-cola.
+- **Rationale**: cenario 1.
+
+## R95. Pagina de pagamento
+
+- **Decision**: `<PAINEL_URL>/pagar/<slug>`, rota publica do painel: nome do recebedor,
+  descricao, valor, vencimento, QR, copia-e-cola com botao de copiar e o aviso "O pagamento vai
+  direto para {nome} pelo Pix. Este site nao recebe dinheiro". Nada da conta alem disso. Cobranca
+  paga ou cancelada mostra so a situacao.
+- **Rationale**: principio I e honestidade com quem paga.
+
+## R96. Mandar ao pagador
+
+- **Decision**: com o WhatsApp do pagador e o pedido do usuario, o assessor usa a
+  `mensagem_para_contato` da US6 (previa, confirmacao, PARAR e limites) com o link. Sem isso, o
+  usuario encaminha o link.
+- **Rationale**: reaproveita as regras de mensagem a terceiros em vez de criar outro envio.
+
+## R97. Confirmacao do pagamento
+
+- **Decision**: nunca presumida (principio II). Dois caminhos:
+  - o usuario diz "o Joao pagou" (`marcar_cobranca_paga`) ou clica em "Recebi" no painel: lanca a
+    receita (categoria "Servicos" ou a que a conta usa para o pagador, contraparte = pagador,
+    forma `pix`) e liga a cobranca a ela;
+  - na importacao do extrato (US8), um credito na conta corrente com o mesmo valor de uma cobranca
+    aberta, com o `txid` na descricao ou o nome do pagador parecido com o do credito, marca a
+    cobranca como paga e liga a receita importada, sem criar outra. O usuario recebe
+    `💰 {pagador} pagou {valor} (cobranca #{id}).`
+- **Rationale**: cenario 2 e FR-037 sem parceiro.
+
+## R98. Cancelar e vencer
+
+- **Decision**: cancelar com confirmacao: a pagina passa a dizer "cobranca cancelada", mas o codigo
+  Pix ja copiado continua pagavel (o Pix estatico nao expira). Isso aparece no aviso do painel e da
+  ferramenta. Vencida e so uma etiqueta; o codigo continua valido.
+- **Rationale**: principio VII: Pix estatico nao da para invalidar.
+
+## R99. Antecipacao e transferencia
+
+- **Decision**: o prompt manda explicar que o assessor nao antecipa, nao transfere e nao mexe no
+  dinheiro recebido: isso e feito no app do banco.
+- **Rationale**: cenario 5 e principio II.
+
+## R100. Nota fiscal e custo
+
+- **Decision**: pedido de nota recebe "A emissao de nota fiscal ainda nao esta disponivel. Por
+  enquanto, emita no site da prefeitura ou com o seu contador." A tela de Cobrancas diz o mesmo.
+  Nenhuma chamada ao modelo alem das ferramentas; nenhum custo por cobranca.
+- **Rationale**: principio VII e FR-039.

@@ -111,6 +111,7 @@ const quando = (iso: string) => new Date(iso).toLocaleString("pt-BR", { day: "2-
         <b>{{ resultado.contaBancaria.nome }}</b><template v-if="resultado.de && resultado.ate"> · {{ dataCurta(resultado.de) }} a {{ dataCurta(resultado.ate) }}</template><br />
         {{ resultado.criados }} lançamentos novos, {{ resultado.unidos }} unidos ao que você já tinha registrado, {{ resultado.ignorados }} ignorados
         (já importados, pagamento de fatura ou investimento)<template v-if="resultado.estornados">, {{ resultado.estornados }} compras estornadas</template>.
+        <div v-for="a in resultado.avisos" :key="a">{{ a }}</div>
       </div>
 
       <StatusCarga :carregando="carregando && !dados" :erro="erro" @tentar="recarregar" />

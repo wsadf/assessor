@@ -55,6 +55,16 @@ import {
 } from "./agendamento.js";
 import { GoogleExpirado, GoogleIndisponivel, GoogleNaoConectado, GoogleNaoConfigurado } from "./google.js";
 import { cancelarEnvio, listarEnvios, ultimasMensagens } from "./contatos.js";
+import {
+  cancelarCobranca,
+  chaveDe,
+  cobrancaPublica,
+  criarCobranca,
+  listarCobrancas,
+  marcarPaga as marcarCobrancaPaga,
+  paraCobranca,
+  salvarChave,
+} from "./cobrancas.js";
 import { atualizarConta as atualizarContaBancaria, contasBancarias, desligarConta, importacoes, importarExtrato, paraContaBancaria } from "./extratos.js";
 import {
   aceitarConviteContador,
@@ -283,6 +293,11 @@ const CAPACIDADE_ROTA: Record<string, Capacidade[]> = {
   "POST /api/conta/contador/convites": ["acessos"],
   "DELETE /api/conta/contador/convites/:id": ["acessos"],
   "DELETE /api/conta/contador/:id": ["acessos"],
+  "GET /api/cobrancas": ["receitas"],
+  "PUT /api/cobrancas/chave": ["receitas"],
+  "POST /api/cobrancas": ["receitas"],
+  "POST /api/cobrancas/:id/recebida": ["receitas"],
+  "DELETE /api/cobrancas/:id": ["receitas"],
   // O extrato traz despesas e receitas; a rota confere receitas tambem.
   "GET /api/extratos": ["despesas"],
   "POST /api/extratos": ["despesas"],
@@ -531,6 +546,17 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       });
     },
     { prefix: "/api/google" },
+  );
+
+  // Pagina de pagamento: quem paga nao tem conta. So sai recebedor, descricao, valor e o codigo Pix.
+  app.register(
+    async (pub) => {
+      pub.get("/:slug", async (req, reply) => {
+        const c = cobrancaPublica(repo.db, (req.params as { slug: string }).slug);
+        return c ?? reply.code(404).send({ erro: "Cobrança não encontrada." });
+      });
+    },
+    { prefix: "/api/pagar" },
   );
 
   // Pagina publica de agendamento: o cliente nao tem conta. So sai o nome exibido e horarios livres.
@@ -1270,6 +1296,75 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
           return responderErro(reply, err);
         }
       };
+
+      api.get("/cobrancas", async (req, reply) => {
+        const { ctx } = de(req);
+        const situacao = parse(z.enum(["aberta", "paga", "cancelada"]).optional(), (req.query as { situacao?: string }).situacao || undefined, reply);
+        if (reply.sent) return;
+        const chave = chaveDe(repo.db, ctx.conta);
+        return {
+          chave: chave ? { tipo: chave.key_type, chave: chave.key, nome: chave.merchant_name, cidade: chave.merchant_city } : null,
+          cobrancas: listarCobrancas(repo.db, ctx, { situacao }).map(paraCobranca),
+        };
+      });
+
+      api.put("/cobrancas/chave", async (req, reply) => {
+        const b = parse(
+          z.object({
+            tipo: z.enum(["cpf", "cnpj", "email", "telefone", "aleatoria"]),
+            chave: z.string().trim().min(1).max(80),
+            nome: z.string().trim().min(1).max(60),
+            cidade: z.string().trim().min(1).max(40),
+          }),
+          body(req),
+          reply,
+        );
+        if (!b) return;
+        try {
+          const c = salvarChave(repo.db, de(req).ctx, b);
+          return { tipo: c.key_type, chave: c.key, nome: c.merchant_name, cidade: c.merchant_city };
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      api.post("/cobrancas", async (req, reply) => {
+        const b = parse(
+          z.object({
+            pagador: z.string().trim().min(1).max(60),
+            whatsapp: z.string().trim().min(1).max(20).nullable().optional(),
+            descricao: z.string().trim().min(1).max(72),
+            valor: z.number().positive().max(1_000_000),
+            vencimento: dataSchema.nullable().optional(),
+          }),
+          body(req),
+          reply,
+        );
+        if (!b) return;
+        try {
+          return reply.code(201).send(paraCobranca(criarCobranca(repo.db, de(req).ctx, b)));
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      api.post("/cobrancas/:id/recebida", async (req, reply) => {
+        const b = parse(z.object({ data: dataSchema.nullable().optional() }), body(req) ?? {}, reply);
+        if (!b) return;
+        try {
+          return paraCobranca(marcarCobrancaPaga(repo, de(req).ctx, Number((req.params as { id: string }).id), { data: b.data }));
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      api.delete("/cobrancas/:id", async (req, reply) => {
+        try {
+          return paraCobranca(cancelarCobranca(repo.db, de(req).ctx, Number((req.params as { id: string }).id)));
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
 
       api.get("/extratos", async (req, reply) =>
         comPermissao(reply, () => {

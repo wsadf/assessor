@@ -208,6 +208,21 @@ A conexão automática com o banco pelo Open Finance **ainda não existe**: depe
 
 Fora desta versão: conexão automática pelo Open Finance e o aviso de consentimento, importar CSV, investimentos e previsão de caixa.
 
+### Cobrança por Pix
+
+O assessor cobra os seus clientes por Pix na **sua própria chave**. O dinheiro vai do banco de quem paga direto para o seu banco: o produto só monta o código e nunca recebe, guarda nem repassa nada (constituição 1.2.0, princípio II).
+
+- **Chave Pix:** cadastre uma vez em Finanças > **Cobranças** (CPF, CNPJ, e-mail, celular ou chave aleatória), com o nome e a cidade como aparecem no banco. CPF e CNPJ são conferidos pelo dígito.
+- **Cobrar:** pelo WhatsApp ("cobra R$ 850 do João pela consultoria de agosto") ou em Nova cobrança. Você recebe o link de pagamento e o Pix copia-e-cola. Pedindo, o assessor manda o link ao cliente pelas regras de mensagem a outras pessoas (prévia, confirmação e PARAR).
+- **Página de pagamento:** `PAINEL_URL/pagar/<código>` mostra quem recebe, o valor, o QR e o copia-e-cola. Nada mais da sua conta.
+- **Confirmar:** o pagamento nunca é presumido. Diga "o João pagou" ou clique em **Recebi**, e a receita entra em Finanças. Ou importe o extrato: um crédito do mesmo valor com o nome do cliente marca a cobrança como paga e liga a receita, sem duplicar.
+- **Cancelar:** a página passa a dizer que a cobrança foi cancelada, mas o código Pix estático **não expira**: se alguém pagar com um código já enviado, o dinheiro cai e a devolução é pelo banco.
+- **Quem pode:** quem vê receitas. Sem custo por cobrança.
+
+**Nota fiscal de serviço: ainda não disponível.** Emitir nota exige integração com a prefeitura por um emissor (a NFE.io, por exemplo, começa em R$ 190 por mês, preço da própria empresa) ou um parceiro de cobrança que também emita (como o Asaas, com a conta do próprio usuário). Por enquanto, emita no site da prefeitura ou com o seu contador.
+
+Fora desta versão: nota fiscal, boleto e cartão, Pix dinâmico, cobrança recorrente, multa e juros, lembrete de vencimento ao cliente.
+
 Para desenvolver com recarga automática, em dois terminais:
 
 ```bash
@@ -328,6 +343,8 @@ O agente usa o fallback do servidor da Anthropic (`fallbacks: "default"`): se um
 | `src/contador.ts` | Área do contador: convite `CONT-`, acesso de leitura conferido a cada pedido, dossiê do mês e pacote |
 | `src/zip.ts` | Escritor de ZIP com `node:zlib`, sem biblioteca |
 | `src/ofx.ts` | Leitor de extrato OFX 1.x e 2.x, sem biblioteca |
+| `src/pix.ts` | Código Pix estático no padrão BR Code do Banco Central e validação da chave |
+| `src/cobrancas.ts` | Cobranças por Pix: chave, link público, confirmação pelo usuário ou pelo extrato e cancelamento |
 | `src/extratos.ts` | Contas bancárias, importação com categoria, contraparte e união com lançamentos manuais, estorno e fatura do cartão |
 | `src/avisos.ts` | Contas a pagar, recorrências, categoria acima do normal, comparativo, preferências de aviso, registro contra repetição e fila de avisos não entregues |
 | `src/painel.ts` | Sobe a API e o painel compilado, sem WhatsApp |
