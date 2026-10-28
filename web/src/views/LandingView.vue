@@ -422,7 +422,9 @@ h2 { font-size: clamp(30px, 4vw, 48px); line-height: 1.1; letter-spacing: -0.035
 .pedidos { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 10px; }
 .pedidos li { padding: 12px 18px; border-radius: 16px 16px 6px 16px; font-size: 15px; }
 
-.planos { display: grid; grid-template-columns: repeat(2, minmax(0, 380px)); gap: 18px; }
+#planos { text-align: center; }
+#planos .sub { margin-inline: auto; }
+.planos { display: grid; grid-template-columns: repeat(2, minmax(0, 380px)); gap: 18px; justify-content: center; text-align: left; }
 .plano { padding: 30px; display: grid; gap: 10px; align-content: start; }
 .plano.destaque { border-color: rgba(227, 165, 124, 0.5); box-shadow: 0 0 0 1px rgba(227, 165, 124, 0.25), 0 30px 80px -40px rgba(201, 120, 74, 0.6); }
 .plano-topo { display: flex; align-items: center; justify-content: space-between; }

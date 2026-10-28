@@ -58,28 +58,28 @@ onBeforeUnmount(() => document.removeEventListener("click", fora));
 
 <style scoped>
 .wa { position: relative; flex: none; }
-/* Cores da marca WhatsApp: verde #25D366, escurecendo no hover e no clique. */
 .btn-wa {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   height: 40px;
-  padding: 0 18px 0 14px;
-  border-radius: 999px;
+  padding: 0 16px 0 12px;
+  border-radius: 12px;
   border: 0;
-  background: #25d366;
-  color: #fff;
-  font-weight: 600;
+  background: var(--botao);
+  color: var(--botao-texto);
+  font-weight: 500;
   font-size: 14px;
-  letter-spacing: 0.01em;
   white-space: nowrap;
   cursor: pointer;
   text-decoration: none;
-  transition: background 0.15s, transform 0.1s;
+  transition: opacity 0.15s, transform 0.1s;
 }
-.btn-wa:hover { background: #1ebe5d; }
-.btn-wa:active { background: #128c7e; transform: translateY(1px); }
-.btn-wa:focus-visible { outline: 2px solid #25d366; outline-offset: 3px; }
+/* O logo fica no verde da marca WhatsApp (#25D366). */
+.btn-wa svg { color: #25d366; }
+.btn-wa:hover { opacity: 0.9; }
+.btn-wa:active { transform: translateY(1px); }
+.btn-wa:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .ajuda {
   position: absolute;
   right: 0;

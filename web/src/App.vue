@@ -4,7 +4,6 @@ import { useRoute, useRouter } from "vue-router";
 import { api, limparSessao } from "./api";
 import AppIcon from "./components/AppIcon.vue";
 import AppLogo from "./components/AppLogo.vue";
-import AssessorAvatar from "./components/AssessorAvatar.vue";
 import BotaoWhatsapp from "./components/BotaoWhatsapp.vue";
 import { carregarEu, eu as me, pode } from "./estado";
 import { MESAS, SUBMENU_FINANCAS, mesaLiberada, mesaPorId } from "./mesas";
@@ -17,6 +16,7 @@ const menuAberto = ref(false);
 const tema = ref(document.documentElement.dataset.theme === "light" ? "light" : "dark");
 const mesas = computed(() => MESAS.filter((m) => mesaLiberada(m, pode)));
 const emClientes = computed(() => route.path === "/contador");
+const pagina = computed(() => (emClientes.value ? "Clientes" : SUBMENU_FINANCAS.find((s) => s.rota === route.path)?.nome));
 
 watch(() => route.fullPath, () => (menuAberto.value = false));
 // Carrega a conta ao entrar na area logada (inclusive logo depois do login).
@@ -59,7 +59,7 @@ onMounted(async () => {
 
 <template>
   <RouterView v-if="publica" />
-  <div v-else class="shell" :style="{ '--mesa': mesaAtual.cor }">
+  <div v-else class="shell">
     <aside class="lateral" :class="{ aberto: menuAberto }">
       <div class="marca">
         <RouterLink to="/" aria-label="assessor, início"><AppLogo /></RouterLink>
@@ -106,22 +106,14 @@ onMounted(async () => {
     <div class="principal">
       <header class="topo">
         <button class="icon-btn so-mobile" aria-label="Abrir menu" @click="menuAberto = true"><AppIcon name="menu" /></button>
-        <nav class="abas">
-          <RouterLink
-            v-for="m in mesas"
-            :key="m.id"
-            :to="m.rota"
-            class="aba"
-            :class="{ ativa: mesaAtual.id === m.id && !emClientes }"
-            :style="{ '--c': m.cor }"
-          >
-            <AssessorAvatar :mesa="m.id" :size="28" />
-            <span>
-              <span class="aba-nome">{{ m.nome }}</span>
-              <span class="aba-por">por {{ m.assessor }}</span>
-            </span>
-          </RouterLink>
-        </nav>
+        <div class="trilha">
+          <span>{{ emClientes ? "Contador" : mesaAtual.nome }}</span>
+          <template v-if="pagina">
+            <span class="barra">/</span>
+            <b>{{ pagina }}</b>
+          </template>
+        </div>
+        <span class="spacer" />
         <button class="icon-btn" :aria-label="tema === 'dark' ? 'Usar tema claro' : 'Usar tema escuro'" @click="alternarTema">
           <AppIcon :name="tema === 'dark' ? 'lua' : 'sol'" />
         </button>
@@ -138,111 +130,91 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.shell { display: flex; min-height: 100%; }
+.shell { display: flex; gap: 16px; min-height: 100%; padding: 16px; }
 
+/* Barra lateral flutuante, em vidro, como o menu da landing. */
 .lateral {
-  width: 248px;
+  width: 244px;
   flex: none;
-  border-right: 1px solid var(--line);
+  border: 1px solid var(--line);
+  border-radius: 22px;
   background: var(--glass);
   backdrop-filter: blur(18px);
   display: flex;
   flex-direction: column;
   position: sticky;
-  top: 0;
-  height: 100vh;
-  padding: 20px 14px;
+  top: 16px;
+  height: calc(100vh - 32px);
+  padding: 20px 12px 14px;
 }
-.marca { padding: 4px 8px 18px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+.marca { padding: 2px 10px 20px; }
 nav { flex: 1; overflow: auto; }
-.secao { padding: 8px 10px; }
+.secao { padding: 8px 12px; color: var(--text-3); }
 .item-mesa {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 9px 10px;
-  border-radius: 10px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  border: 1px solid transparent;
   color: var(--text-2);
   font-weight: 500;
 }
-.item-mesa:hover { background: var(--glass-2); color: var(--text); }
-.item-mesa.ativo { color: var(--text); background: var(--glass-2); }
-.sub { display: grid; gap: 2px; padding: 2px 0 8px 18px; }
+.item-mesa:hover { background: var(--glass); color: var(--text); }
+.item-mesa.ativo { color: var(--text); background: var(--glass-2); border-color: var(--line); }
+.sub { display: grid; gap: 2px; padding: 4px 0 8px 22px; margin-left: 14px; border-left: 1px dashed var(--line-strong); }
 .item-sub {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 7px 10px;
   border-radius: 10px;
-  color: var(--text-2);
+  color: var(--text-3);
   font-size: 14px;
 }
-.item-sub:hover { color: var(--text); background: var(--glass); }
-.item-sub.ativo { color: var(--text); background: var(--glass-2); }
-.item-sub.ativo :deep(svg) { color: var(--mesa); }
-.rodape { border-top: 1px solid var(--line); padding-top: 14px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.item-sub:hover { color: var(--text); }
+.item-sub.ativo { color: var(--text); background: var(--glass); }
+.item-sub.ativo :deep(svg) { color: var(--accent); }
+.rodape { border-top: 1px solid var(--line); padding: 14px 4px 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .usuario { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .quem { min-width: 0; }
 .sair { width: 34px; height: 34px; flex: none; color: var(--text-2); }
 .sair:hover { color: var(--danger); border-color: var(--danger); }
-.iniciais { width: 34px; height: 34px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--line-strong); display: grid; place-items: center; font-weight: 600; }
-.nome { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.iniciais { width: 34px; height: 34px; border-radius: 11px; background: linear-gradient(135deg, #f0c09c, #c9784a); color: #0b0b0f; display: grid; place-items: center; font-weight: 600; }
+.nome { font-weight: 500; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tel { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .principal { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .topo {
   position: sticky;
-  top: 0;
+  top: 16px;
   z-index: 5;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 28px;
-  background: color-mix(in srgb, var(--bg) 60%, transparent);
-  backdrop-filter: blur(18px);
-  border-bottom: 1px solid var(--line);
-}
-.topo::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--mesa), transparent);
-  opacity: 0.6;
-}
-.abas { flex: 1; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
-.aba {
-  display: flex;
-  align-items: center;
   gap: 10px;
-  padding: 6px 12px 6px 6px;
-  border-radius: 999px;
-  white-space: nowrap;
-  opacity: 0.62;
-  transition: opacity 0.15s, background 0.15s;
+  height: 64px;
+  padding: 0 12px 0 22px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  backdrop-filter: blur(18px);
 }
-.aba:hover { opacity: 1; background: var(--glass); }
-.aba.ativa { opacity: 1; background: var(--glass-2); }
-.aba > span:last-child { display: grid; line-height: 1.15; }
-.aba-nome { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
-.aba.ativa .aba-nome { color: var(--c); }
-.aba-por { font-size: 12px; color: var(--text-3); }
+.trilha { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--text-2); min-width: 0; white-space: nowrap; }
+.trilha b { color: var(--text); font-weight: 500; }
+.barra { color: var(--text-3); }
 
-.conteudo { padding: 32px 28px 64px; max-width: 1240px; width: 100%; margin: 0 auto; }
+.conteudo { padding: 40px 12px 64px; max-width: 1200px; width: 100%; margin: 0 auto; }
 
 .so-mobile { display: none; }
 .veu { display: none; }
 
-
 @media (max-width: 900px) {
-  .lateral { position: fixed; left: 0; top: 0; z-index: 40; background: var(--surface); transform: translateX(-100%); transition: transform 0.2s; }
+  .shell { padding: 10px; }
+  .lateral { position: fixed; left: 10px; top: 10px; z-index: 40; height: calc(100vh - 20px); background: var(--surface); transform: translateX(calc(-100% - 20px)); transition: transform 0.2s; }
   .lateral.aberto { transform: none; }
   .veu { display: block; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 30; }
   .so-mobile { display: grid; }
-  .topo { padding: 10px 16px; }
-  .conteudo { padding: 24px 16px 48px; }
-  .aba-por { display: none; }
+  .topo { top: 10px; height: 58px; padding: 0 10px; border-radius: 18px; }
+  .conteudo { padding: 28px 6px 48px; }
 }
 </style>

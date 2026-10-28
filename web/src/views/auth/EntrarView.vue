@@ -40,7 +40,7 @@ async function entrar() {
 </script>
 
 <template>
-  <AuthLayout antes="Seu dia organizado" destaque="antes de você pedir.">
+  <AuthLayout antes="Bem-vindo de volta." destaque="Sua equipe já está trabalhando.">
     <template #lado>
       <ul class="beneficios">
         <li v-for="b in BENEFICIOS" :key="b.titulo">
@@ -51,8 +51,8 @@ async function entrar() {
     </template>
 
     <div>
-      <h2 class="auth-titulo">Bem-vindo de volta.</h2>
-      <p class="auth-frase">“Está tudo no lugar, <b>é só entrar</b>.”</p>
+      <h2 class="auth-titulo">Entrar</h2>
+      <p class="sub">Use o e-mail e a senha da sua conta.</p>
     </div>
 
     <form class="auth-form" novalidate @submit.prevent="entrar">
@@ -84,11 +84,12 @@ async function entrar() {
 </template>
 
 <style scoped>
-.beneficios { list-style: none; margin: 0; padding: 0; display: grid; gap: 18px; }
+.sub { margin: 6px 0 0; color: var(--text-2); font-size: 15px; }
+.beneficios { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; }
 .beneficios li { display: flex; gap: 12px; align-items: flex-start; }
 .beneficios div { display: grid; gap: 2px; }
-.beneficios strong { font-size: 15px; }
-.beneficios span:not(.check) { font-size: 13px; color: #a4a4ae; }
-.check { width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: var(--botao-texto); display: grid; place-items: center; flex: none; margin-top: 1px; }
+.beneficios strong { font-size: 14.5px; font-weight: 500; }
+.beneficios span:not(.check) { font-size: 13px; color: var(--text-2); }
+.check { width: 22px; height: 22px; border-radius: 8px; border: 1px solid var(--line-strong); color: var(--accent); display: grid; place-items: center; flex: none; margin-top: 1px; }
 .link-aviso { color: inherit; text-decoration: underline; font-weight: 600; }
 </style>

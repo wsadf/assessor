@@ -22,9 +22,10 @@ const partes = computed(() => {
 
 <style scoped>
 .valor { display: flex; align-items: baseline; gap: 4px; line-height: 1; }
-.rs { font-size: 26px; color: var(--text-2); font-weight: 500; }
-.inteiro { font-size: 64px; font-weight: 700; letter-spacing: -0.03em; }
-.centavos { font-size: 26px; color: var(--text-2); }
+.valor { font-family: var(--fonte-titulo); }
+.rs { font-size: 22px; color: var(--text-3); font-weight: 400; }
+.inteiro { font-size: 56px; font-weight: 400; letter-spacing: -0.045em; }
+.centavos { font-size: 22px; color: var(--text-3); }
 .sufixo { font-size: 24px; color: var(--text-2); margin-left: 8px; }
 @media (max-width: 600px) {
   .inteiro { font-size: 46px; }
