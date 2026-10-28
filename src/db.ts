@@ -9,6 +9,7 @@ import { prepararTabelasGoogle } from "./google.js";
 import { prepararTabelasAgendamento } from "./agendamento.js";
 import { prepararTabelasContatos } from "./contatos.js";
 import { prepararTabelasContador } from "./contador.js";
+import { prepararTabelasExtratos } from "./extratos.js";
 
 export type Kind = "despesa" | "receita";
 export type Recurrence = "diario" | "semanal" | "mensal" | null;
@@ -34,10 +35,27 @@ export interface Transaction {
   recurring_id: number | null;
   /** Conta a pagar quitada por esta despesa. */
   bill_id: number | null;
+  /** `extrato` quando veio de um OFX; nulo = registrado pela pessoa. */
+  source: string | null;
+  /** FITID do banco; liga o lancamento a movimentacao e impede importar duas vezes. */
+  external_id: string | null;
+  bank_account_id: number | null;
+  /** Compra estornada no banco: some de listas e totais, como as excluidas. */
+  reversed_at: string | null;
 }
 
-type Opcionais = "counterpart" | "installment_group" | "installment_number" | "installment_total" | "created_by" | "recurring_id" | "bill_id";
-export type NewTransaction = Omit<Transaction, "id" | "created_at" | Opcionais> & Partial<Pick<Transaction, Opcionais>>;
+type Opcionais =
+  | "counterpart"
+  | "installment_group"
+  | "installment_number"
+  | "installment_total"
+  | "created_by"
+  | "recurring_id"
+  | "bill_id"
+  | "source"
+  | "external_id"
+  | "bank_account_id";
+export type NewTransaction = Omit<Transaction, "id" | "created_at" | "reversed_at" | Opcionais> & Partial<Pick<Transaction, Opcionais>>;
 
 export interface Reminder {
   id: number;
@@ -162,11 +180,19 @@ export function openDb(file = config.dbPath) {
     ["transactions", "recurring_id", "INTEGER"],
     ["transactions", "bill_id", "INTEGER"],
     ["reminders", "google_event_id", "TEXT"],
+    ["transactions", "source", "TEXT"],
+    ["transactions", "external_id", "TEXT"],
+    ["transactions", "bank_account_id", "INTEGER"],
+    ["transactions", "reversed_at", "TEXT"],
   ]) {
     const cols = (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
     if (!cols.includes(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
   }
   db.exec(`CREATE INDEX IF NOT EXISTS idx_tx_counterpart ON transactions (phone, counterpart)`);
+  // O mesmo extrato importado de novo nao cria lancamento: a movimentacao ja tem dono.
+  db.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_tx_extrato ON transactions (phone, bank_account_id, external_id) WHERE external_id IS NOT NULL`,
+  );
   // Garante uma transacao por data de cada recorrencia, mesmo com dois ticks do agendador.
   db.exec(
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_tx_recorrencia ON transactions (recurring_id, occurred_on) WHERE recurring_id IS NOT NULL`,
@@ -178,6 +204,7 @@ export function openDb(file = config.dbPath) {
   prepararTabelasAgendamento(db);
   prepararTabelasContatos(db);
   prepararTabelasContador(db);
+  prepararTabelasExtratos(db);
   return db;
 }
 
@@ -215,9 +242,11 @@ export function repo(db: Db) {
       const info = db
         .prepare(
           `INSERT INTO transactions (phone, kind, amount_cents, category, description, payment_method, occurred_on,
-             counterpart, installment_group, installment_number, installment_total, created_by, recurring_id, bill_id)
+             counterpart, installment_group, installment_number, installment_total, created_by, recurring_id, bill_id,
+             source, external_id, bank_account_id)
            VALUES (@phone, @kind, @amount_cents, @category, @description, @payment_method, @occurred_on,
-             @counterpart, @installment_group, @installment_number, @installment_total, @created_by, @recurring_id, @bill_id)`,
+             @counterpart, @installment_group, @installment_number, @installment_total, @created_by, @recurring_id, @bill_id,
+             @source, @external_id, @bank_account_id)`,
         )
         .run({
           counterpart: null,
@@ -227,6 +256,9 @@ export function repo(db: Db) {
           created_by: null,
           recurring_id: null,
           bill_id: null,
+          source: null,
+          external_id: null,
+          bank_account_id: null,
           ...t,
         });
       return this.getTransaction(t.phone, Number(info.lastInsertRowid))!;
@@ -249,7 +281,7 @@ export function repo(db: Db) {
 
     getTransaction(phone: string, id: number): Transaction | undefined {
       return db
-        .prepare(`SELECT * FROM transactions WHERE phone = ? AND id = ? AND deleted_at IS NULL`)
+        .prepare(`SELECT * FROM transactions WHERE phone = ? AND id = ? AND deleted_at IS NULL AND reversed_at IS NULL`)
         .get(phone, id) as Transaction | undefined;
     },
 
@@ -281,7 +313,7 @@ export function repo(db: Db) {
       return db
         .prepare(
           `SELECT * FROM transactions
-           WHERE phone = @phone AND deleted_at IS NULL AND occurred_on BETWEEN @from AND @to
+           WHERE phone = @phone AND deleted_at IS NULL AND reversed_at IS NULL AND occurred_on BETWEEN @from AND @to
              AND (@kind IS NULL OR kind = @kind)
              AND (@category IS NULL OR lower(category) = lower(@category))
              AND (@counterpart IS NULL OR lower(counterpart) LIKE '%' || lower(@counterpart) || '%')
@@ -305,7 +337,7 @@ export function repo(db: Db) {
         db
           .prepare(
             `SELECT DISTINCT counterpart FROM transactions
-             WHERE phone = ? AND deleted_at IS NULL AND counterpart IS NOT NULL ORDER BY counterpart`,
+             WHERE phone = ? AND deleted_at IS NULL AND reversed_at IS NULL AND counterpart IS NOT NULL ORDER BY counterpart`,
           )
           .all(phone) as { counterpart: string }[]
       ).map((r) => r.counterpart);
@@ -316,7 +348,7 @@ export function repo(db: Db) {
       const row = db
         .prepare(
           `SELECT COALESCE(SUM(CASE WHEN kind = 'receita' THEN amount_cents ELSE -amount_cents END), 0) AS total
-           FROM transactions WHERE phone = ? AND deleted_at IS NULL AND occurred_on < ?`,
+           FROM transactions WHERE phone = ? AND deleted_at IS NULL AND reversed_at IS NULL AND occurred_on < ?`,
         )
         .get(phone, date) as { total: number };
       return row.total;
@@ -327,7 +359,7 @@ export function repo(db: Db) {
         db
           .prepare(
             `SELECT DISTINCT substr(occurred_on, 1, 7) AS month FROM transactions
-             WHERE phone = ? AND deleted_at IS NULL ORDER BY month DESC`,
+             WHERE phone = ? AND deleted_at IS NULL AND reversed_at IS NULL ORDER BY month DESC`,
           )
           .all(phone) as { month: string }[]
       ).map((r) => r.month);
@@ -336,7 +368,7 @@ export function repo(db: Db) {
     categoryKinds(phone: string): { category: string; kind: Kind }[] {
       return db
         .prepare(
-          `SELECT category, kind FROM transactions WHERE phone = ? AND deleted_at IS NULL
+          `SELECT category, kind FROM transactions WHERE phone = ? AND deleted_at IS NULL AND reversed_at IS NULL
            GROUP BY category, kind ORDER BY category`,
         )
         .all(phone) as { category: string; kind: Kind }[];
@@ -345,7 +377,7 @@ export function repo(db: Db) {
     categories(phone: string): string[] {
       return (
         db
-          .prepare(`SELECT DISTINCT category FROM transactions WHERE phone = ? AND deleted_at IS NULL ORDER BY category`)
+          .prepare(`SELECT DISTINCT category FROM transactions WHERE phone = ? AND deleted_at IS NULL AND reversed_at IS NULL ORDER BY category`)
           .all(phone) as { category: string }[]
       ).map((r) => r.category);
     },

@@ -2,8 +2,9 @@
 
 Decisoes por historia. R1 a R10 sao da US1 (conta compartilhada), R11 a R22 da US2 (documentos)
 R23 a R34 da US3 (avisos proativos), R35 a R46 da US4 (Google Agenda), R47 a R58 da US5 (pagina publica
-de agendamento) e R59 a R70 da US6 (mensagens a outras pessoas), todas implementadas; R71 a R80 sao
-da US7 (area do contador). As demais historias acrescentam secoes aqui.
+de agendamento) e R59 a R70 da US6 (mensagens a outras pessoas) e R71 a R80 da US7 (area do contador),
+todas implementadas; R81 a R90 sao da US8 (extrato bancario, com o Open Finance adiado). A US9 acrescenta a sua secao
+aqui.
 
 # US1: Conta compartilhada
 
@@ -747,3 +748,110 @@ da US7 (area do contador). As demais historias acrescentam secoes aqui.
 
 - Sem IA na area do contador. Arquivos lidos do disco so na hora do download. Revogar nao apaga
   nada da conta, so o vinculo.
+
+# US8: Extrato bancario (Open Finance adiado)
+
+## R81. Sem parceiro por enquanto
+
+- **Decision**: nao contratar agregador de Open Finance nesta entrega. A US8 entrega a importacao
+  de extrato OFX com tudo o que a historia pede de regra (categoria, contraparte, sem duplicar,
+  estorno, fatura do cartao, so leitura). Ficam para quando houver contrato: FR-032 (conexao por
+  parceiro autorizado), FR-034 (aviso de consentimento) e os cenarios 1 e 4. A tela e o README dizem
+  que a conexao automatica com bancos ainda nao existe.
+- **Rationale**: os precos citados publicamente para agregadores comecam perto de R$ 2.500 por mes
+  fixos (Pluggy), sem confirmacao oficial. Sem base de usuarios, isso estoura a meta do principio
+  IV. Decisao do dono do produto em 2026-10-27.
+- **Depois**: o parceiro entra como outra origem de movimentacoes; a importacao (R85 a R87) e a
+  mesma. Opcoes avaliadas: Pluggy (~R$ 2.500/mes), Belvo (~R$ 6.000/mes), Tecnospeed (R$ 1.500 de
+  adesao e R$ 540/mes), todos a cotar.
+
+## R82. Formato OFX
+
+- **Decision**: leitor proprio em `src/ofx.ts`, sem dependencia: aceita OFX 1.x (SGML, tags sem
+  fechamento) e 2.x (XML), le o cabecalho de codificacao (`CHARSET:1252` vira latin1, o resto UTF-8),
+  extrai a instituicao (`ORG`, `BANKID`), a conta (`BANKACCTFROM` com `ACCTID`, ou `CCACCTFROM` para
+  cartao), o periodo (`DTSTART`, `DTEND`), o saldo (`LEDGERBAL`) e cada `STMTTRN` (`TRNTYPE`,
+  `DTPOSTED`, `TRNAMT`, `FITID`, `NAME`, `MEMO`, `PAYEE`). Arquivo ate 5 MB; sem nenhum `STMTTRN`
+  valido, recusa com o motivo.
+- **Rationale**: quase todo banco brasileiro exporta extrato e fatura em OFX; o formato e simples o
+  bastante para nao justificar biblioteca (principio VI). CSV fica de fora: cada banco tem um layout.
+
+## R83. Como o extrato chega
+
+- **Decision**: pelo painel, Financas > Extratos > "Importar extrato" (envio do arquivo); pelo
+  WhatsApp, mandando o `.ofx` e pedindo "importa esse extrato", com a ferramenta `importar_extrato`
+  lendo o arquivo pendente do turno (US2). Exige `despesas` e `receitas` (o extrato traz os dois);
+  so gastos recebe "Sem permissao". O arquivo nao e guardado: depois da importacao, o pendente do
+  WhatsApp e apagado.
+- **Rationale**: os dois canais da constituicao (principio V), reaproveitando o caminho de arquivos
+  da US2.
+
+## R84. Conta de origem
+
+- **Decision**: `bank_accounts` por conta do produto, identificada por SHA-256 de `BANKID` +
+  `ACCTID` (so os 4 ultimos digitos ficam legiveis). Tipo `corrente` ou `cartao` pelo bloco do OFX.
+  Nome sugerido pelo banco e editavel. Guarda o saldo do ultimo extrato e, no cartao, os dias de
+  fechamento e vencimento informados pelo usuario.
+- **Rationale**: o mesmo arquivo importado de novo cai na mesma conta; o numero completo da conta
+  nao precisa ficar no banco de dados (principio I).
+
+## R85. Movimentacao vira lancamento
+
+- **Decision**:
+  - Corrente: valor negativo = despesa, positivo = receita. Cartao: negativo = compra (despesa);
+    positivo = pagamento da fatura (ignorado) ou estorno (R87).
+  - Ignorados e contados no resultado: pagamento de fatura na corrente (contaria duas vezes com as
+    compras do cartao) e aplicacao ou resgate de investimento (dinheiro do proprio usuario mudando
+    de lugar).
+  - Contraparte: `NAME` ou `PAYEE`, limpo de prefixos do banco ("PIX ENVIADO", "COMPRA CARTAO",
+    "PAG*", datas e codigos), em capitalizacao normal.
+  - Categoria: primeiro a que o usuario mais usa para a mesma contraparte; senao, regras por
+    palavra (iFood > Alimentacao, Uber e 99 > Transporte, posto > Combustivel, farmacia e drogaria >
+    Saude, mercado e atacado > Mercado, Netflix e Spotify > Assinaturas, tarifa > Tarifas bancarias,
+    juros e IOF > Juros e encargos, salario > Salario); senao "Outros".
+  - Forma de pagamento: `credito` no cartao; `pix`, `debito` ou `boleto` pelo tipo e pela descricao
+    na corrente.
+  - Lancamento importado tem `source = 'extrato'`, `external_id` (o `FITID`) e `bank_account_id`;
+    `created_by` e quem importou. Corrigir categoria e contraparte funciona como em qualquer
+    lancamento.
+- **Rationale**: FR-033 e principio V (categoria e contraparte na entrada), sem IA (principio IV).
+
+## R86. Sem duplicar
+
+- **Decision**: `(phone, bank_account_id, external_id)` unico: o mesmo arquivo, ou um periodo que
+  se sobrepoe, nao cria nada de novo. Antes de criar, procura lancamento manual da conta sem
+  `external_id`, do mesmo tipo, mesmo valor e data a ate 2 dias; achando, liga (o manual ganha
+  `external_id` e `bank_account_id` e mantem categoria e descricao do usuario), escolhendo o de data
+  mais proxima quando ha mais de um.
+- **Rationale**: cenario 2 e SC-009. Banco sem `FITID` estavel e raro; quando faltar, o id vira
+  data + valor + descricao.
+
+## R87. Estorno
+
+- **Decision**: credito no cartao que nao e pagamento procura a compra do mesmo cartao com o mesmo
+  valor nos 90 dias anteriores; achando, a compra fica estornada (`reversed_at`, sai de todos os
+  totais) e o credito nao vira lancamento. Sem compra correspondente, o credito entra como receita
+  "Estornos".
+- **Rationale**: edge case da spec ("movimentacao estornada sai dos totais").
+
+## R88. Fatura do cartao
+
+- **Decision**: o usuario informa, no cartao importado, o dia de fechamento e o de vencimento. A
+  fatura atual sao as compras importadas (nao estornadas) entre o ultimo fechamento e o proximo;
+  "ja fechou?" compara hoje com o dia de fechamento. Ferramenta `fatura_do_cartao` responde valor,
+  fechamento, vencimento, se fechou e as compras do mes no credito. Sem os dias informados, responde
+  as compras do mes e explica como configurar.
+- **Rationale**: cenario 3 sem parceiro: o OFX da fatura traz as compras, mas nao traz datas de
+  fechamento de forma padronizada.
+
+## R89. So leitura
+
+- **Decision**: extrato e so leitura por natureza; nenhuma ferramenta movimenta dinheiro, e o
+  prompt manda responder que o assessor nao faz Pix, transferencia, pagamento ou investimento.
+- **Rationale**: FR-035, cenario 5 e principio II.
+
+## R90. Custo e privacidade
+
+- Leitura, categorizacao e uniao sem IA. O numero completo da conta nao e guardado; o arquivo OFX
+  nao fica no servidor depois da importacao. Cada importacao fica registrada (quem, quando, periodo
+  e quantos lancamentos criados, unidos, ignorados e estornados).

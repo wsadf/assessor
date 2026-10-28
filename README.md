@@ -193,6 +193,21 @@ O titular dá ao contador acesso só de leitura ao dossiê de cada mês.
 
 Fora desta versão: liberar outras pastas ao contador, exportar para sistema contábil (OFX, SPED), comentários ou pedidos do contador pelo painel e vários meses num pacote só.
 
+### Extrato bancário
+
+A conexão automática com o banco pelo Open Finance **ainda não existe**: depende de contrato com um agregador autorizado, e os preços citados publicamente começam perto de R$ 2.500 por mês fixos (Pluggy), sem confirmação oficial. Enquanto isso, o extrato entra por arquivo.
+
+- **Como importar:** baixe o extrato da conta ou a fatura do cartão em **OFX** no app ou no site do banco (quase todo banco tem "Exportar extrato") e importe em Finanças > **Extratos**, ou mande o arquivo no WhatsApp e diga "importa esse extrato". O arquivo não fica guardado.
+- **O que vira lançamento:** cada movimentação, com contraparte limpa ("PIX ENVIADO JOAO 15/10" vira "Joao"), forma de pagamento e categoria. A categoria vem primeiro da que você já usou para a mesma pessoa ou loja, depois de regras (iFood, Uber, posto, farmácia, mercado, assinaturas, tarifas, juros, salário), e segue o jeito que a sua conta já escreve.
+- **O que é ignorado:** pagamento de fatura na conta corrente (as compras já vêm do cartão) e aplicação ou resgate de investimento. O resultado de cada importação mostra quantos.
+- **Sem duplicar:** o mesmo arquivo importado de novo não cria nada. Um gasto que você já registrou pelo WhatsApp, com o mesmo valor e data a até 2 dias, é unido à movimentação e mantém a sua categoria e descrição.
+- **Estorno:** um crédito no cartão com o valor de uma compra dos 90 dias anteriores estorna a compra, que sai de todos os totais.
+- **Fatura do cartão:** informe o dia de fechamento e de vencimento do cartão em Extratos. Aí o assessor responde "minha fatura já fechou?" e "no crédito, quanto já foi esse mês?".
+- **Só leitura:** o assessor não faz Pix, transferência, pagamento nem investimento.
+- **Quem pode:** quem vê despesas e receitas (o membro "só gastos" não importa). Da conta bancária ficam só os 4 últimos dígitos.
+
+Fora desta versão: conexão automática pelo Open Finance e o aviso de consentimento, importar CSV, investimentos e previsão de caixa.
+
 Para desenvolver com recarga automática, em dois terminais:
 
 ```bash
@@ -312,6 +327,8 @@ O agente usa o fallback do servidor da Anthropic (`fallbacks: "default"`): se um
 | `src/contatos.ts` | Mensagens para outras pessoas: contatos, prévia, envio com limites e PARAR, situação pela Meta e repasse das respostas sem IA |
 | `src/contador.ts` | Área do contador: convite `CONT-`, acesso de leitura conferido a cada pedido, dossiê do mês e pacote |
 | `src/zip.ts` | Escritor de ZIP com `node:zlib`, sem biblioteca |
+| `src/ofx.ts` | Leitor de extrato OFX 1.x e 2.x, sem biblioteca |
+| `src/extratos.ts` | Contas bancárias, importação com categoria, contraparte e união com lançamentos manuais, estorno e fatura do cartão |
 | `src/avisos.ts` | Contas a pagar, recorrências, categoria acima do normal, comparativo, preferências de aviso, registro contra repetição e fila de avisos não entregues |
 | `src/painel.ts` | Sobe a API e o painel compilado, sem WhatsApp |
 | `src/seed.ts` | Dados de demonstração em `data/demo.db` |
@@ -327,6 +344,6 @@ Em `docs/aprendizados-meu-assessor.md` está o que veio da entrevista do fundado
 - SQLite e fila em memória: um servidor só. Para produção, PostgreSQL e uma fila como BullMQ.
 - Número de teste da Meta: até 5 destinatários cadastrados.
 - O histórico enviado ao modelo são as últimas 20 mensagens de texto.
-- Sem Open Finance; está nas fases seguintes do plano (`specs/001-paridade-meu-assessor`).
+- Sem Open Finance: o extrato entra por arquivo OFX até haver contrato com um agregador (seção Extrato bancário).
 - Só o calendário principal do Google; Outlook, iCloud e agendas secundárias ficam de fora.
 - Arquivos no disco do servidor: para mais de um servidor, armazenamento de objetos (S3, R2).

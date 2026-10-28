@@ -1,9 +1,9 @@
 ---
 
-description: "Tarefas da feature 001: US1 a US6 (concluidas) e US7 (area do contador)"
+description: "Tarefas da feature 001: US1 a US7 (concluidas) e US8 (extrato bancario, Open Finance adiado)"
 ---
 
-# Tasks: Paridade com o Meu Assessor (US1 a US7)
+# Tasks: Paridade com o Meu Assessor (US1 a US8)
 
 **Input**: Design documents from `/specs/001-paridade-meu-assessor/`
 
@@ -15,13 +15,13 @@ nova, e isolamento por usuario e o principio I.
 
 **Escopo**: fases 1 a 4 sao da US1 (T001 a T033, PR #1); fases 5 a 8 da US2 (T034 a T064, PR #2);
 fases 9 a 12 da US3 (T065 a T097, PR #3); fases 13 a 16 da US4 (T098 a T120, PR #4); fases 17 a 20
-da US5 (T121 a T144, PR #5); fases 21 a 24 da US6 (T145 a T166, PR #6); fases 25 a 28 da US7 (T167 em
-diante). As historias 8 e 9 entram aqui depois dos proprios planos.
+da US5 (T121 a T144, PR #5); fases 21 a 24 da US6 (T145 a T166, PR #6); fases 25 a 28 da US7 (T167 a
+T187, PR #7); fases 29 a 32 da US8 (T188 em diante). A US9 entra aqui depois do proprio plano.
 
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: pode rodar em paralelo (arquivos diferentes, sem dependencia de tarefa aberta)
-- **[Story]**: historia da spec (US1 a US7)
+- **[Story]**: historia da spec (US1 a US8)
 - Caminhos relativos a raiz do repositorio: back-end em `src/`, painel em `web/src/`, testes em
   `test/`
 
@@ -602,6 +602,72 @@ baixa os arquivos e nao consegue editar nada nem conversar como membro da conta 
 - [ ] T187 Executar o roteiro de [quickstart.md](quickstart.md#us7-area-do-contador) no painel demo (ZIP aberto no Explorer) e pelo WhatsApp, com `AI_PROVIDER=gemini` e com `AI_PROVIDER=claude` quando houver `ANTHROPIC_API_KEY`
 ---
 
+## Phase 29: Setup (US8)
+
+**Purpose**: arquivos de exemplo e testes. Decisoes em [research.md](research.md) R81 a R90;
+tabelas em [data-model.md](data-model.md#us8-extrato-bancario). Open Finance com parceiro adiado (R81).
+
+- [X] T188 Criar `test/ofx/corrente-1x.ofx` (OFX 1.x SGML, `CHARSET:1252`, `BANKACCTFROM` com `BANKID 0260` e `ACCTID 12345-6`, `LEDGERBAL`, movimentacoes: compra iFood, Pix enviado para "JOAO DA SILVA", Pix recebido, salario, tarifa, pagamento de fatura, aplicacao, uma com acento em latin1) e `test/ofx/cartao-2x.ofx` (OFX 2.x XML, `CCACCTFROM` com `ACCTID ************4321`, compras Uber, posto, Netflix, um estorno do mesmo valor de uma compra e um pagamento), e `test/extratos.test.ts` com o cabecalho de `test/contador.test.ts`; incluir no script `test` de `package.json` depois de `test/contador.test.ts`
+
+---
+
+## Phase 30: Foundational (US8)
+
+**Purpose**: leitor de OFX, tabelas e estornadas fora dos totais. Bloqueia a Phase 31.
+
+- [X] T189 [P] Criar `src/ofx.ts` com `lerOfx(dados: Buffer)` (R82): detecta a codificacao pelo cabecalho (`CHARSET:1252` ou `ENCODING:USASCII` com 1252 = latin1, resto UTF-8); aceita tags sem fechamento (1.x) e XML (2.x); devolve `{ banco: { org, bankId } , conta: { tipo: "corrente" | "cartao", acctId }, periodo: { de, ate }, saldo: { centavos, em } | null, movimentos: { fitid, data, centavos, tipo, nome, memo }[] }` com datas `AAAA-MM-DD` (de `AAAAMMDD[HHMMSS][.XXX][-3:BRT]`) e valores em centavos (aceita `-12.34` e `-12,34`); lanca `Error("Arquivo nao parece um extrato OFX.")` sem `STMTTRN` valido
+- [X] T190 Em `src/extratos.ts`, `prepararTabelasExtratos(db)` (chamada em `openDb` de `src/db.ts` depois de `prepararTabelasContador`) com `bank_accounts` (`UNIQUE (conta, account_key)`, `type` em `corrente|cartao`, `name` "1 a 60 caracteres", `close_day` e `due_day` "1 a 31") e `bank_imports` exatamente como em [data-model.md](data-model.md#us8-extrato-bancario); em `src/db.ts`, colunas `source`, `external_id`, `bank_account_id` e `reversed_at` em `transactions`, o indice unico `(phone, bank_account_id, external_id) WHERE external_id IS NOT NULL`, e `reversed_at IS NULL` em toda consulta que ja filtra `deleted_at IS NULL` (lista, soma, saldo, meses, categorias, contrapartes, `activityByMonth` e o dossie do contador em `src/contador.ts`)
+- [X] T191 Em `test/extratos.test.ts`, testar a fundacao: `lerOfx` nos dois arquivos (conta, tipo, periodo, saldo, quantidade, acento de latin1 correto, centavos e datas); arquivo de texto qualquer recusado; lancamento com `reversed_at` some de `listTransactions`, `balanceBefore` e `monthsWithData` (depende de T188, T189, T190)
+
+**Checkpoint**: leitor e tabelas prontos; nada importa ainda.
+
+---
+
+## Phase 31: User Story 8 - Extrato bancario (Priority: P8)
+
+**Goal**: o extrato ou a fatura em OFX vira lancamentos categorizados, com contraparte, sem duplicar
+o que ja foi registrado, com estorno e com a fatura do cartao respondida pelo assessor.
+
+**Independent Test**: importar um extrato e uma fatura de exemplo, conferir categorias, contraparte
+e ausencia de duplicatas com lancamentos manuais (spec, US8, sem o parceiro).
+
+### Tests for User Story 8
+
+> Escrever antes da implementacao correspondente e ver falhar.
+
+- [X] T192 [US8] Em `test/extratos.test.ts`, testar a importacao: conta criada com 4 ultimos digitos e sem o numero completo; despesa e receita; contraparte limpa ("Pix enviado JOAO DA SILVA" vira "Joao Da Silva"); categoria pela contraparte ja usada pelo usuario antes das regras e pelas regras (iFood, Uber, posto, Netflix, tarifa, salario); forma de pagamento `pix`, `credito`; pagamento de fatura e aplicacao ignorados e contados; mesmo arquivo de novo: zero criados; manual com mesmo valor e data a 2 dias ligado (mantem categoria e descricao), valor diferente cria; estorno no cartao marca a compra e ela sai do total; registro em `bank_imports`; 1.000 movimentacoes em menos de 5 s
+- [X] T193 [US8] Em `test/extratos.test.ts`, testar fatura e canais: `faturaDoCartao` com fechamento 5 e vencimento 12 (antes e depois do dia 5); sem dias configurados; `POST /api/extratos` com base64 (`201`, `400` para nao OFX), `GET`, `PATCH` (dias so no cartao) e `DELETE` (lancamentos ficam); `importar_extrato` com o `.ofx` pendente do turno, que e apagado depois; `contas_bancarias` e `fatura_do_cartao`; so gastos recebe `Sem permissao` e `403`; outra conta nao ve contas nem importacoes; `consultar_transacoes` mostra `[extrato]`
+
+### Implementation for User Story 8
+
+**Dominio**
+
+- [X] T194 [US8] Em `src/extratos.ts`, `importarExtrato(repo, ctx, dados: Buffer, nomeArquivo, agora)` (R83 a R87): exige `despesas` e `receitas`; `lerOfx`; conta por `account_key` = SHA-256 de `bankId + acctId` (cria com nome sugerido `{banco} {final}`, `number_hint` = 4 ultimos digitos, atualiza saldo); para cada movimento, numa transacao: pula `FITID` ja importado; ignora e conta pagamento de fatura (`/pagamento.*fatura|pagto.*fatura|pgto.*cart/i` na corrente; no cartao, credito com `/pagamento|pgto|pagto/i`) e investimento (`/aplica|resgate|invest/i`); credito no cartao que nao e pagamento: procura compra do mesmo cartao com o mesmo valor nos 90 dias anteriores e marca `reversed_at` (senao receita "Estornos"); senao procura manual equivalente (R86) e liga, ou cria o lancamento com `source = 'extrato'`; grava `bank_imports` e devolve o resultado do contrato (depende de T190, T191)
+- [X] T195 [US8] Em `src/extratos.ts`, `limparContraparte(nome, memo)` (tira `PIX ENVIADO|PIX RECEBIDO|PIX TRANSF|TED|DOC|COMPRA CARTAO|COMPRA NO DEBITO|PAG\*|PAGAMENTO|DEB AUTOMATICO`, datas `dd/mm`, codigos numericos e UF no fim, e normaliza maiusculas), `categoriaPara(db, conta, contraparte, texto, tipo)` (categoria mais usada pela conta para a mesma contraparte; senao as regras de R85; senao "Outros" ou "Recebimentos" para receita) e `formaDePagamento(tipoConta, trnType, texto)` (depende de T194)
+- [X] T196 [US8] Em `src/extratos.ts`, contas e fatura (R84, R88): `contasBancarias(db, ctx)`, `atualizarConta(db, ctx, id, { nome?, fechamento?, vencimento? })` (dias so em cartao), `desligarConta(db, ctx, id)` (zera `bank_account_id` dos lancamentos e apaga a conta e as importacoes dela), `importacoes(db, ctx, limite)` e `faturaDoCartao(db, ctx, cartao?, hoje)` com `{ cartao, fechamento, vencimento, fechou, total, compras }` e as compras do mes no credito quando faltam os dias (depende de T194)
+
+**API e assessor**
+
+- [X] T197 [US8] Em `src/api.ts`, rotas de [contracts/api-extratos.md](contracts/api-extratos.md) com `["despesas"]` em `CAPACIDADE_ROTA` e a conferencia de `receitas` dentro da rota; `POST /api/extratos` com `bodyLimit` de 8 MB, base64 ate 5 MB e `400` com a mensagem do leitor; `origem` em `toTx` de `/api/transacoes` (depende de T196)
+- [X] T198 [US8] Em `src/tools.ts`, `importar_extrato`, `contas_bancarias` e `fatura_do_cartao` conforme [contracts/ferramentas-extratos.md](contracts/ferramentas-extratos.md) (o arquivo vem de `anexoPendente`; so `.ofx` ou `application/x-ofx`, `text/plain` com cabecalho OFX; apagado com `documentos(db).excluir` depois); `[extrato]` em `describe` quando `source = 'extrato'`; em `src/prompt.ts`, as regras do contrato (depende de T196)
+
+**Painel web**
+
+- [X] T199 [P] [US8] Em `web/src/api.ts`, tipos `ContaBancaria`, `Importacao`, `ResultadoImportacao` e `origem` em `Transacao` (depende de T197)
+- [X] T200 [US8] Criar `web/src/views/financas/ExtratosView.vue` e a rota `/financas/extratos` em `web/src/router.ts`, com "Extratos" em `SUBMENU_FINANCAS` de `web/src/mesas.ts`: aviso de que a conexao automatica pelo Open Finance ainda nao existe e como exportar o OFX no app do banco; botao "Importar extrato" (arquivo `.ofx`, lido como base64); resultado (criados, unidos, ignorados, estornados); contas e cartoes com saldo e ultima importacao, renomear, fechamento e vencimento no cartao e "Desligar" com confirmacao; historico de importacoes (depende de T199)
+- [X] T201 [US8] Em `web/src/views/financas/TransacoesView.vue`, chip "extrato" nas transacoes com `origem = 'extrato'` (depende de T199)
+
+**Checkpoint**: US8 completa sem parceiro; T191 a T193 verdes; roteiro de [quickstart.md](quickstart.md#us8-extrato-bancario) passando.
+
+---
+
+## Phase 32: Polish (US8)
+
+- [X] T202 [P] Em `README.md`, secao Extrato bancario: como exportar OFX, importar pelo painel e pelo WhatsApp, o que vira lancamento, o que e ignorado, sem duplicar, estorno, fatura do cartao, so leitura, e que a conexao automatica pelo Open Finance esta adiada ate haver contrato (com os precos citados como referencia); tabela "Como esta organizado" com `src/ofx.ts` e `src/extratos.ts`
+- [X] T203 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
+- [ ] T204 Executar o roteiro de [quickstart.md](quickstart.md#us8-extrato-bancario) com um OFX real do internet banking e pelo WhatsApp, com `AI_PROVIDER=gemini` e com `AI_PROVIDER=claude` quando houver `ANTHROPIC_API_KEY`
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -634,6 +700,10 @@ baixa os arquivos e nao consegue editar nada nem conversar como membro da conta 
 - **Foundational US7 (Phase 26)**: depende da Phase 25; bloqueia a US7
 - **US7 (Phase 27)**: depende da Phase 26
 - **Polish US7 (Phase 28)**: depende da US7
+- **Setup US8 (Phase 29)**: sem dependencia alem da `main`
+- **Foundational US8 (Phase 30)**: depende da Phase 29; bloqueia a US8
+- **US8 (Phase 31)**: depende da Phase 30
+- **Polish US8 (Phase 32)**: depende da US8
 
 ### Dentro da US1
 
@@ -706,6 +776,14 @@ T017 (webhook) depende so de T006
 - Painel: T177 a T179 > T181 > T182, T183 e T184.
 - Testes: T172 antes de T175 e T176; T173 antes de T177 a T179; T174 antes de T180.
 
+### Dentro da US8
+
+- Fundacao: T188 > T189 e T190 > T191.
+- Dominio: T191 > T194 > T195 > T196.
+- API e assessor: T196 > T197 e T198.
+- Painel: T197 > T199 > T200 e T201.
+- Testes: T192 antes de T194 e T195; T193 antes de T196 a T198.
+
 ### Parallel Opportunities
 
 - T002 e T003 em paralelo (arquivos diferentes).
@@ -732,6 +810,9 @@ T017 (webhook) depende so de T006
   mas T184 toca `App.vue` e `router.ts`: T182 e T183 em paralelo, T184 depois; T185 em paralelo com
   a Phase 27.
 - T171 a T174 tocam o mesmo arquivo (`test/contador.test.ts`): sequenciais.
+- US8: T189 (`src/ofx.ts`) em paralelo com T190; T200 e T201 em arquivos diferentes, em paralelo; T202
+  em paralelo com a Phase 31.
+- T191 a T193 tocam o mesmo arquivo (`test/extratos.test.ts`): sequenciais.
 
 ---
 
@@ -811,6 +892,18 @@ Task: "Secao Contador em web/src/views/operacao/AcessosView.vue"
 Task: "Convite CONT- em web/src/views/auth/CriarContaView.vue"
 ```
 
+## Parallel Example: User Story 8
+
+```bash
+# Fundacao, arquivos diferentes:
+Task: "Leitor de OFX em src/ofx.ts"
+Task: "Tabelas em src/extratos.ts e colunas em src/db.ts"
+
+# Painel, depois de T199:
+Task: "Tela Extratos em web/src/views/financas/ExtratosView.vue"
+Task: "Chip extrato em web/src/views/financas/TransacoesView.vue"
+```
+
 ---
 
 ## Implementation Strategy
@@ -888,6 +981,15 @@ Task: "Convite CONT- em web/src/views/auth/CriarContaView.vue"
 5. **Parar e validar** com a [secao US7 do quickstart](quickstart.md#us7-area-do-contador).
 6. Commits por bloco, na branch `001-us7-contador`.
 
+### US8
+
+1. Phases 29 e 30: leitor de OFX e tabelas testados.
+2. Importacao, contraparte, categoria e fatura (T194 a T196).
+3. API e assessor (T197, T198): ja entrega importar pelo WhatsApp e pelo painel por API.
+4. Painel (T199 a T201).
+5. **Parar e validar** com a [secao US8 do quickstart](quickstart.md#us8-extrato-bancario).
+6. Commits por bloco, na branch `001-us8-open-finance`.
+
 ---
 
 ## Notes
@@ -908,3 +1010,5 @@ Task: "Convite CONT- em web/src/views/auth/CriarContaView.vue"
   SMS, agenda do celular e Google Contatos.
 - Fora da US7: liberar outras pastas ao contador, exportar para sistema contabil (OFX, SPED),
   comentarios ou pedidos do contador, varios meses num pacote.
+- Fora da US8: conexao automatica pelo Open Finance (FR-032), aviso de consentimento (FR-034),
+  importar CSV, investimentos e previsao de caixa.

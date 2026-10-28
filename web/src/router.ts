@@ -12,6 +12,7 @@ export const router = createRouter({
     { path: "/financas", component: () => import("./views/financas/FinancasPainel.vue"), meta: { mesa: "financas" } },
     { path: "/financas/transacoes", component: () => import("./views/financas/TransacoesView.vue"), meta: { mesa: "financas" } },
     { path: "/financas/contas", component: () => import("./views/financas/ContasView.vue"), meta: { mesa: "financas" } },
+    { path: "/financas/extratos", component: () => import("./views/financas/ExtratosView.vue"), meta: { mesa: "financas" } },
     { path: "/financas/categorias", component: () => import("./views/financas/CategoriasView.vue"), meta: { mesa: "financas" } },
     { path: "/financas/contrapartes", component: () => import("./views/financas/ContrapartesView.vue"), meta: { mesa: "financas" } },
     { path: "/financas/pagamentos", component: () => import("./views/financas/PagamentosView.vue"), meta: { mesa: "financas" } },

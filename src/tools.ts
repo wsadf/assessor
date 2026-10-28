@@ -14,6 +14,7 @@ import { AuthError } from "./auth.js";
 import { config } from "./config.js";
 import { cancelarEnvio, envioDaConta, listarEnvios, pedirEnvio, ultimasMensagens } from "./contatos.js";
 import { contadoresDe, gerarConviteContador, revogarContador, type ContadorDaConta } from "./contador.js";
+import { contasBancarias, faturaDoCartao, importarExtrato } from "./extratos.js";
 import { conta, repoDoContexto, type Membro } from "./conta.js";
 import type { Kind, Recurrence, Repo, Task, Transaction } from "./db.js";
 import { documentos, nomePasta, PASTA_IDS, PASTAS, podeVerDocumento, type Documento } from "./documentos.js";
@@ -206,6 +207,9 @@ const schemas = {
   }),
   consultar_mensagens_contato: z.object({ contato: z.string().min(1).max(60).nullish() }),
   convidar_contador: z.object({ rotulo: z.string().min(1).max(40).nullish() }),
+  importar_extrato: z.object({}),
+  contas_bancarias: z.object({}),
+  fatura_do_cartao: z.object({ cartao: z.string().min(1).max(60).nullish() }),
   cancelar_mensagem_contato: z.object({ id: z.number().int(), confirmado: z.boolean() }),
 };
 
@@ -251,6 +255,10 @@ const CAPACIDADE: Partial<Record<keyof typeof schemas, Capacidade>> = {
   remarcar_agendamento: "agenda",
   cancelar_agendamento: "agenda",
   convidar_contador: "acessos",
+  // importar_extrato confere receitas tambem: o extrato traz as duas.
+  importar_extrato: "despesas",
+  contas_bancarias: "despesas",
+  fatura_do_cartao: "despesas",
   mensagem_para_contato: "agenda",
   consultar_mensagens_contato: "agenda",
   cancelar_mensagem_contato: "agenda",
@@ -540,6 +548,17 @@ export const toolDefinitions: Anthropic.Tool[] = [
     { id: { type: "integer" }, confirmado: { type: "boolean" } },
   ),
   tool(
+    "importar_extrato",
+    "Importa o extrato ou a fatura do cartao em OFX que o usuario mandou nesta conversa: cada movimentacao vira lancamento, sem duplicar o que ja foi registrado.",
+    {},
+  ),
+  tool("contas_bancarias", "Lista as contas e cartoes com extrato importado, o saldo do ultimo extrato e, nos cartoes, fechamento e vencimento.", {}),
+  tool(
+    "fatura_do_cartao",
+    "Responde sobre a fatura do cartao importado: valor em aberto, se a ultima ja fechou, fechamento, vencimento e compras do mes no credito.",
+    { cartao: nullable({ ...str, description: "Nome ou final do cartao; null para todos" }) },
+  ),
+  tool(
     "convidar_contador",
     "Gera um codigo para o contador ver, so para leitura, os lancamentos e os documentos fiscais de cada mes no painel. So o titular pode.",
     { rotulo: nullable({ ...str, description: "Quem e o contador, ex.: Escritorio Silva" }) },
@@ -650,7 +669,8 @@ function describe(t: Transaction) {
   const pay = t.payment_method ? `, ${t.payment_method}` : "";
   const quem = t.counterpart ? ` | ${t.kind === "receita" ? "de" : "para"} ${t.counterpart}` : "";
   const parcela = t.installment_total ? ` | parcela ${t.installment_number}/${t.installment_total}` : "";
-  return `#${t.id} ${t.occurred_on} ${t.kind} ${brl(t.amount_cents)} | ${t.category} | ${t.description}${quem}${pay}${parcela}`;
+  const origem = t.source === "extrato" ? " [extrato]" : "";
+  return `#${t.id} ${t.occurred_on} ${t.kind} ${brl(t.amount_cents)} | ${t.category} | ${t.description}${quem}${pay}${parcela}${origem}`;
 }
 
 const somaPor = (rows: Transaction[], chave: (t: Transaction) => string | null) => {
@@ -870,6 +890,60 @@ function run(repo: Repo, ctx: Contexto, toolName: ToolName, input: any, extras: 
           `Contador: ${c.nome ?? "sem nome"}${c.rotulo ? ` (${c.rotulo})` : ""}, desde ${c.desde.slice(0, 10)}, ultimo acesso ${c.ultimoAcesso ? formatLocal(new Date(c.ultimoAcesso)) : "nunca"}`,
       );
       return [`Titular: ${ctx.titular ?? "sem nome"}. ${listarMembros(membros)}`, ...contadores].join("\n");
+    }
+
+    case "importar_extrato": {
+      exigir(ctx, "receitas");
+      const anexo = anexoPendente(repo, ctx, extras);
+      const docs = documentos(repo.db);
+      const dados = anexo ? docs.ler(anexo) : null;
+      if (!anexo || !dados || !/<OFX>/i.test(dados.subarray(0, 4000).toString("latin1"))) {
+        return "Nenhum extrato OFX recebido. Peca ao usuario para exportar o extrato ou a fatura em OFX no app ou site do banco e mandar o arquivo aqui.";
+      }
+      try {
+        const r = importarExtrato(repo, ctx, dados, anexo.original_name);
+        docs.excluir(anexo.id);
+        const periodo = r.de && r.ate ? ` de ${r.de} a ${r.ate}` : "";
+        return [
+          `Extrato importado: ${r.contaBancaria.nome}${periodo}.`,
+          `${r.criados} lancamentos novos, ${r.unidos} unidos a lancamentos ja registrados, ${r.ignorados} ignorados (ja importados, pagamento de fatura ou investimento)${r.estornados ? `, ${r.estornados} compras estornadas` : ""}.`,
+          r.contaBancaria.tipo === "cartao" && !r.contaBancaria.fechamento
+            ? "Para responder sobre a fatura, o usuario pode informar o dia de fechamento e de vencimento em Financas > Extratos."
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n");
+      } catch (err) {
+        if (err instanceof Error && err.message.startsWith("Arquivo nao parece")) return "Esse arquivo nao parece um extrato OFX. Peca o arquivo OFX exportado do banco.";
+        throw err;
+      }
+    }
+
+    case "contas_bancarias": {
+      const contas = contasBancarias(repo.db, ctx);
+      if (!contas.length) return "Nenhum extrato importado ainda. Da para mandar o OFX do banco aqui ou em Financas > Extratos no painel.";
+      return contas
+        .map(
+          (c) =>
+            `${c.name} (${c.type})${c.balance_cents !== null ? `: saldo ${brl(c.balance_cents)} em ${c.balance_at}` : ""}${c.type === "cartao" ? `, fechamento ${c.close_day ?? "?"}, vencimento ${c.due_day ?? "?"}` : ""}, ultima importacao ${c.last_import_at ? formatLocal(new Date(c.last_import_at)) : "-"}`,
+        )
+        .join("\n");
+    }
+
+    case "fatura_do_cartao": {
+      const faturas = faturaDoCartao(repo.db, ctx, input.cartao, localDate());
+      if (!faturas.length) return "Nenhum cartao com fatura importada. Peca o OFX da fatura do cartao.";
+      return faturas
+        .map((f) =>
+          f.configurado
+            ? [
+                `${f.cartao}: fatura em aberto ${brl(Math.round(f.aberta.total * 100))} (${f.aberta.quantidade} compras), fecha em ${f.aberta.fechamento} e vence em ${f.aberta.vencimento}.`,
+                `Ultima fatura fechou em ${f.ultimaFechada.fechamento}: ${brl(Math.round(f.ultimaFechada.total * 100))}, ${f.ultimaFechada.aPagar ? `vence em ${f.ultimaFechada.vencimento}` : `venceu em ${f.ultimaFechada.vencimento}`}.`,
+                `No credito este mes: ${brl(Math.round(f.comprasNoMes * 100))}.`,
+              ].join(" ")
+            : `${f.cartao}: no credito este mes ${brl(Math.round(f.comprasNoMes * 100))} em ${f.quantidade} compras. Para saber fechamento e vencimento, o usuario informa os dias em Financas > Extratos.`,
+        )
+        .join("\n");
     }
 
     case "convidar_contador": {

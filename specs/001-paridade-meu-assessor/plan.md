@@ -1,79 +1,70 @@
-# Implementation Plan: Paridade com o Meu Assessor (US1 a US7)
+# Implementation Plan: Paridade com o Meu Assessor (US1 a US8)
 
-**Branch**: `001-us7-contador` | **Date**: 2026-10-27 | **Spec**: [spec.md](spec.md)
+**Branch**: `001-us8-open-finance` | **Date**: 2026-10-27 | **Spec**: [spec.md](spec.md)
 
 **Input**: Feature specification from `/specs/001-paridade-meu-assessor/spec.md`
 
 **Note**: o plano cresce por historia. US1 (conta compartilhada, PR #1), US2 (documentos, PR #2),
-US3 (avisos proativos, PR #3), US4 (Google Agenda, PR #4), US5 (pagina de agendamento, PR #5) e US6
-(mensagens a outras pessoas, PR #6) estao implementadas e na `main`. Esta revisao planeja a US7
-(area do contador). As historias 8 e 9 entram depois.
+US3 (avisos proativos, PR #3), US4 (Google Agenda, PR #4), US5 (pagina de agendamento, PR #5), US6
+(mensagens a outras pessoas, PR #6) e US7 (area do contador, PR #7) estao implementadas e na
+`main`. Esta revisao planeja a US8 sem parceiro de Open Finance (decisao de 2026-10-27, R81): o
+extrato OFX entra agora e a conexao automatica fica para quando houver contrato. A US9 entra
+depois.
 
 ## Summary
 
-**US1, entregue**: conta compartilhada por convite, com perfis e permissao aplicada nas
-ferramentas, nas rotas e numa visao do repo por perfil. Decisoes R1 a R10.
+**US1 a US7, entregues**: conta compartilhada (R1 a R10), documentos (R11 a R22), avisos
+proativos (R23 a R34), Google Agenda (R35 a R46), pagina de agendamento (R47 a R58), mensagens a
+outras pessoas (R59 a R70) e area do contador (R71 a R80).
 
-**US2, entregue**: guarda e busca de documentos pelo WhatsApp e pelo painel. Decisoes R11 a R22.
-
-**US3, entregue**: contas a pagar, recorrencias, aviso de categoria, resumos por pessoa e fila de
-avisos que a Meta recusa. Decisoes R23 a R34.
-
-**US4, entregue**: conexao com o Google Agenda por pessoa e compromissos pela conversa, com
-convidados, Meet, conflito e lembrete ligado. Decisoes R35 a R46.
-
-**US5, entregue**: pagina publica de agendamento com horarios livres do Google, reserva sem
-sobreposicao, confirmacao na vespera, respostas do cliente sem IA e remarcacao. Decisoes R47 a R58.
-
-**US6, entregue**: recados pelo WhatsApp em nome do usuario, com previa, identificacao e PARAR por
-codigo, limites, situacao da Meta e respostas repassadas sem IA. Decisoes R59 a R70.
-
-**US7, este plano**: o titular gera um codigo `CONT-` (painel ou WhatsApp). O contador cria conta
-no painel com o codigo, ou usa o codigo ja logado, e passa a ver, so para leitura, o dossie mensal
-da conta: lancamentos e documentos fiscais (notas, comprovantes, boletos e qualquer comprovante de
-lancamento). Baixa o mes num ZIP com a planilha CSV e os arquivos. O vinculo e uma tabela propria,
-fora de `account_members`: o contador nao vira membro, nao conversa pelo WhatsApp da conta, pode ter
-varios clientes, e cada pedido confere o vinculo, entao revogar vale na hora. Detalhes em
-[research.md](research.md) R71 a R80.
+**US8, este plano**: o usuario manda o extrato ou a fatura em OFX, pelo painel ou pelo WhatsApp.
+Um leitor proprio (OFX 1.x e 2.x, sem dependencia) identifica a conta ou o cartao e cada
+movimentacao, que vira lancamento com categoria (pela historia da contraparte ou por regras),
+contraparte limpa e forma de pagamento. O mesmo arquivo nao duplica; um gasto ja registrado pelo
+WhatsApp com mesmo valor e data a ate 2 dias e unido; pagamento de fatura e investimento sao
+ignorados; credito no cartao estorna a compra correspondente. Com fechamento e vencimento
+informados no cartao, o assessor responde sobre a fatura. Nada movimenta dinheiro. Adiados: conexao
+por parceiro (FR-032), aviso de consentimento (FR-034) e os cenarios 1 e 4. Detalhes em
+[research.md](research.md) R81 a R90.
 
 ## Technical Context
 
 **Language/Version**: TypeScript 7 em ESM, Node 22
 
-**Primary Dependencies**: Fastify 5, zod 4, better-sqlite3 13, `node:zlib` (deflate e `crc32`) para
-o ZIP; painel em Vue 3 + Vue Router. Nenhuma dependencia nova.
+**Primary Dependencies**: Fastify 5, zod 4, better-sqlite3 13; painel em Vue 3 + Vue Router.
+Nenhuma dependencia nova.
 
-**Storage**: SQLite: `accountant_invites`, `accountant_access`, coluna
-`users.pending_accountant_invite_id`; arquivos dos documentos no disco (US2)
+**Storage**: SQLite: `bank_accounts`, `bank_imports`; colunas `source`, `external_id`,
+`bank_account_id` e `reversed_at` em `transactions`
 
-**Testing**: `node --test` via `npm test`, com `test/contador.test.ts`; `npm run typecheck`;
-`vue-tsc` no painel
+**Testing**: `node --test` via `npm test`, com `test/extratos.test.ts` e arquivos de exemplo em
+`test/ofx/`; `npm run typecheck`; `vue-tsc` no painel
 
 **Target Platform**: servidor Node unico
 
 **Project Type**: web service com painel web (back-end em `src/`, front-end em `web/`)
 
-**Performance Goals**: SC-008: dossie de um mes com ate 300 lancamentos baixado em menos de 30 s
+**Performance Goals**: extrato de 1.000 movimentacoes importado em menos de 5 s
 
-**Constraints**: so leitura para o contador (FR-029); revogacao imediata (FR-031); dossie so com
-documentos fiscais (R75); pacote ate 200 MB (R76)
+**Constraints**: sem duplicar (FR-033, SC-009 abaixo de 2%); so leitura (FR-035); arquivo nao fica
+no servidor; numero completo da conta nao e guardado (R84, R90)
 
-**Scale/Scope**: 4 rotas do titular, 6 do contador, 1 ferramenta nova e 2 alteradas, tela nova
-`/contador`, secao Contador em Acessos, `src/zip.ts`
+**Scale/Scope**: 4 rotas, 3 ferramentas, `src/ofx.ts` e `src/extratos.ts`, tela Financas >
+Extratos, selo "extrato" nas transacoes, estornadas fora dos totais
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-| Principio | Avaliacao (US7) | Status |
+| Principio | Avaliacao (US8) | Status |
 | --- | --- | --- |
-| I. Dados financeiros sao do usuario | So o titular concede; vinculo conferido a cada pedido, por conta; rotas do contador so de leitura e separadas; dossie sem documentos pessoais (R75); WhatsApp do contador nao entra na conta | Passa |
-| II. Dinheiro so leitura | Nada movimenta dinheiro | Passa |
-| III. Provedor de IA intercambiavel | Ferramenta comum aos dois provedores; area do contador sem IA | Passa |
-| IV. Custo por conta sob controle | Sem chamada ao modelo na area do contador (R80) | Passa |
-| V. Uma fonte de verdade | Dossie le as mesmas tabelas de lancamentos e documentos; convite e revogacao pelo painel e pelo WhatsApp | Passa |
-| VI. Simplicidade de MVP | ZIP com `node:zlib`, sem biblioteca (R76); reaproveita cadastro, ativacao e limite de tentativas da US1 | Passa |
-| VII. Honestidade | Arquivos que nao couberem no pacote aparecem no `LEIA-ME.txt`; acesso encerrado diz isso | Passa |
+| I. Dados financeiros sao do usuario | Contas e lancamentos por conta; so a chave da conta bancaria (hash) e 4 digitos; arquivo descartado; perfil so gastos nao importa nem ve receitas | Passa |
+| II. Dinheiro so leitura | Extrato e leitura; nenhuma ferramenta movimenta dinheiro (R89) | Passa |
+| III. Provedor de IA intercambiavel | Ferramentas comuns aos dois provedores | Passa |
+| IV. Custo por conta sob controle | Sem IA na importacao; sem parceiro pago (R81) | Passa |
+| V. Uma fonte de verdade | Movimentacoes viram lancamentos comuns, com categoria e contraparte na entrada; importacao pelo painel e pelo WhatsApp com a mesma funcao | Passa |
+| VI. Simplicidade de MVP | Leitor de OFX proprio, sem biblioteca; reaproveita o arquivo pendente da US2 | Passa |
+| VII. Honestidade | Tela e README dizem que a conexao automatica nao existe ainda; resultado da importacao mostra o que foi ignorado e por que | Passa |
 
 Reavaliado apos a Fase 1: sem violacoes. Complexity Tracking vazio.
 
@@ -84,62 +75,59 @@ Reavaliado apos a Fase 1: sem violacoes. Complexity Tracking vazio.
 ```text
 specs/001-paridade-meu-assessor/
 ├── spec.md
-├── plan.md              # US1 a US6 entregues, US7 planejada
-├── research.md          # R1 a R70 (US1 a US6), R71 a R80 (US7)
-├── data-model.md        # secoes US1 a US7
-├── quickstart.md        # secoes US1 a US7
-├── contracts/
-│   ├── api-conta.md, ferramentas-agente.md              # US1
-│   ├── api-documentos.md, ferramentas-documentos.md     # US2
-│   ├── api-avisos.md, ferramentas-avisos.md             # US3
-│   ├── api-google.md, ferramentas-agenda.md             # US4
-│   ├── api-agendamento.md, ferramentas-agendamento.md   # US5
-│   ├── api-contatos.md, ferramentas-contatos.md         # US6
-│   └── api-contador.md, ferramentas-contador.md         # US7
+├── plan.md              # US1 a US7 entregues, US8 planejada
+├── research.md          # R1 a R80 (US1 a US7), R81 a R90 (US8)
+├── data-model.md        # secoes US1 a US8
+├── quickstart.md        # secoes US1 a US8
+├── contracts/           # US1 a US7, mais api-extratos.md e ferramentas-extratos.md (US8)
 ├── checklists/
 │   └── requirements.md
-└── tasks.md             # US1 a US6 concluidas; US7 entra via /speckit-tasks
+└── tasks.md             # US1 a US7 concluidas; US8 entra via /speckit-tasks
 ```
 
-### Source Code (repository root), US7
+### Source Code (repository root), US8
 
 ```text
 src/
-├── contador.ts      # novo: tabelas, convite CONT-, vinculo, revogacao, meses, dossie, montagem do pacote
-├── zip.ts           # novo: escritor de ZIP com node:zlib
-├── api.ts           # rotas do titular em /api/conta/contador, rotas do contador em /api/contador, cadastro com CONT-, clientes em /api/me
-├── tools.ts         # convidar_contador; listar_acessos e remover_acesso com contador
-└── prompt.ts        # regra do convite do contador
+├── ofx.ts           # novo: leitor de OFX 1.x e 2.x
+├── extratos.ts      # novo: tabelas, contas bancarias, importacao, categoria, contraparte, uniao, estorno, fatura
+├── db.ts            # colunas novas em transactions; estornadas fora de todas as consultas
+├── tools.ts         # importar_extrato, contas_bancarias, fatura_do_cartao; [extrato] em consultar_transacoes
+├── prompt.ts        # regras de OFX, fatura e so leitura
+└── api.ts           # rotas /api/extratos; origem nas transacoes
 
 web/src/
-├── views/ContadorView.vue          # novo: clientes, codigo, mes, lancamentos, documentos, baixar
-├── views/operacao/AcessosView.vue  # secao Contador
-├── views/auth/CriarContaView.vue   # convite CONT- sem plano
-├── router.ts, App.vue              # rota /contador e entrada no menu
-└── api.ts                          # tipos
+├── views/financas/ExtratosView.vue    # novo: importar, resultado, contas e cartoes, fechamento e vencimento, historico
+├── views/financas/TransacoesView.vue  # selo extrato
+├── mesas.ts, router.ts                # Extratos no submenu de Financas
+└── api.ts                             # tipos
 
 test/
-└── contador.test.ts
+├── ofx/corrente-1x.ofx, ofx/cartao-2x.ofx
+└── extratos.test.ts
 ```
 
-**Structure Decision**: modulo novo `src/contador.ts`, separado de `src/conta.ts`, porque o vinculo
-do contador nao e um membro. O ZIP fica em `src/zip.ts`, que nao conhece o dominio.
+**Structure Decision**: `src/ofx.ts` so le o formato; `src/extratos.ts` tem a regra e recebe
+movimentacoes ja lidas. Um parceiro de Open Finance, quando vier, entrega movimentacoes no mesmo
+formato para `src/extratos.ts`.
 
-## Ordem sugerida (US7)
+## Ordem sugerida (US8)
 
-1. Tabelas, convite e vinculo, com testes.
-2. Dossie do mes e `src/zip.ts`.
-3. Rotas do titular e do contador, cadastro com `CONT-` e `/api/me`.
-4. Ferramentas e prompt.
-5. Painel: Acessos (titular) e Clientes (contador).
-6. README e quickstart.
+1. Leitor de OFX com os arquivos de exemplo.
+2. Tabelas, colunas e filtro de estornadas.
+3. Importacao: contraparte, categoria, forma de pagamento, ignorados, uniao, estorno.
+4. Fatura do cartao.
+5. Rotas, ferramentas e prompt.
+6. Painel: Extratos e selo nas transacoes.
+7. README e quickstart.
 
-## Fora desta entrega (US7)
+## Fora desta entrega (US8)
 
-- Contador escolher pastas ou o titular liberar outras pastas.
-- Exportar em formato de sistema contabil (OFX, SPED) ou integrar com escritorios.
-- Contador comentar ou pedir documento pelo painel.
-- Varios meses num pacote so.
+- Conexao automatica pelo Open Finance (FR-032), aviso de consentimento (FR-034) e os cenarios 1
+  e 4: dependem de contrato com parceiro (R81).
+- Importar CSV.
+- Investimentos, emprestimos e previsao de caixa.
+- Qualquer movimentacao de dinheiro (proibida pela constituicao).
 
 ## Complexity Tracking
 

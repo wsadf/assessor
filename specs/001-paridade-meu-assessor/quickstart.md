@@ -342,3 +342,41 @@ Com `npm run painel:demo`:
 "Gera um convite para o meu contador" devolve o codigo e o texto para encaminhar; "quem tem acesso a
 minha conta?" lista o contador; "tira o acesso do contador" pede confirmacao e revoga. Repetir com
 `AI_PROVIDER=gemini` e `AI_PROVIDER=claude`.
+
+# US8: extrato bancario
+
+Contratos em [contracts/api-extratos.md](contracts/api-extratos.md) e
+[contracts/ferramentas-extratos.md](contracts/ferramentas-extratos.md). A conexao automatica pelo
+Open Finance esta adiada (R81).
+
+## 1. Testes automaticos
+
+Os testes novos (arquivo `test/extratos.test.ts`), com arquivos OFX de exemplo em
+`test/ofx/` (corrente em SGML 1.x com `CHARSET:1252`, cartao em XML 2.x), devem cobrir:
+
+- leitura: os dois formatos, acentos nos dois charsets, conta e cartao, periodo, saldo e cada
+  movimentacao; arquivo sem movimentacao recusado;
+- importacao: despesa, receita, contraparte limpa, categoria pela historia da contraparte e pelas
+  regras, forma de pagamento; pagamento de fatura e aplicacao ignorados e contados;
+- sem duplicar: o mesmo arquivo duas vezes nao cria nada; manual com mesmo valor e data a 2 dias e
+  ligado e mantem categoria e descricao; valor diferente cria;
+- estorno: credito no cartao estorna a compra correspondente e ela sai do total do mes;
+- fatura: com fechamento e vencimento informados, `fatura_do_cartao` responde valor, datas e se
+  fechou; sem eles, explica como configurar;
+- canais: `POST /api/extratos` e `importar_extrato` com o arquivo pendente do WhatsApp (que e apagado
+  depois); perfil so gastos recebe `Sem permissao` e `403`; outra conta nao ve as contas nem os
+  lancamentos;
+- so leitura: pedido de Pix ao assessor recebe a explicacao.
+
+## 2. Painel
+
+Com `npm run painel:demo`: Financas > Extratos > Importar extrato com o OFX baixado do internet
+banking (ou os de `test/ofx/`). Conferir o resultado (criados, unidos, ignorados), o selo "extrato"
+em Transacoes, a categoria e a contraparte. Importar o mesmo arquivo de novo: nada novo. No cartao,
+informar fechamento e vencimento.
+
+## 3. WhatsApp ou terminal
+
+Mandar o `.ofx` e "importa esse extrato"; depois "minha fatura ja fechou?", "no credito, quanto ja
+foi esse mes?" e "faz um Pix de 50 para o Joao" (resposta: so leitura). Repetir com
+`AI_PROVIDER=gemini` e `AI_PROVIDER=claude`.
