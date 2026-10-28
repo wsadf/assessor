@@ -1,70 +1,66 @@
-# Implementation Plan: Paridade com o Meu Assessor (US1 a US8)
+# Implementation Plan: Paridade com o Meu Assessor (US1 a US9)
 
-**Branch**: `001-us8-open-finance` | **Date**: 2026-10-27 | **Spec**: [spec.md](spec.md)
+**Branch**: `001-us9-cobranca` | **Date**: 2026-10-27 | **Spec**: [spec.md](spec.md)
 
 **Input**: Feature specification from `/specs/001-paridade-meu-assessor/spec.md`
 
-**Note**: o plano cresce por historia. US1 (conta compartilhada, PR #1), US2 (documentos, PR #2),
-US3 (avisos proativos, PR #3), US4 (Google Agenda, PR #4), US5 (pagina de agendamento, PR #5), US6
-(mensagens a outras pessoas, PR #6) e US7 (area do contador, PR #7) estao implementadas e na
-`main`. Esta revisao planeja a US8 sem parceiro de Open Finance (decisao de 2026-10-27, R81): o
-extrato OFX entra agora e a conexao automatica fica para quando houver contrato. A US9 entra
-depois.
+**Note**: o plano cresce por historia. US1 a US8 estao implementadas e na `main` (PRs #1 a #8; a
+US8 entrou como extrato OFX, com o Open Finance adiado). Esta revisao planeja a ultima, a US9, com
+cobranca por Pix na chave do proprio usuario e a nota fiscal adiada (decisao de 2026-10-27, R91),
+amparada pela emenda 1.2.0 da constituicao.
 
 ## Summary
 
-**US1 a US7, entregues**: conta compartilhada (R1 a R10), documentos (R11 a R22), avisos
+**US1 a US8, entregues**: conta compartilhada (R1 a R10), documentos (R11 a R22), avisos
 proativos (R23 a R34), Google Agenda (R35 a R46), pagina de agendamento (R47 a R58), mensagens a
-outras pessoas (R59 a R70) e area do contador (R71 a R80).
+outras pessoas (R59 a R70), area do contador (R71 a R80) e extrato bancario (R81 a R90).
 
-**US8, este plano**: o usuario manda o extrato ou a fatura em OFX, pelo painel ou pelo WhatsApp.
-Um leitor proprio (OFX 1.x e 2.x, sem dependencia) identifica a conta ou o cartao e cada
-movimentacao, que vira lancamento com categoria (pela historia da contraparte ou por regras),
-contraparte limpa e forma de pagamento. O mesmo arquivo nao duplica; um gasto ja registrado pelo
-WhatsApp com mesmo valor e data a ate 2 dias e unido; pagamento de fatura e investimento sao
-ignorados; credito no cartao estorna a compra correspondente. Com fechamento e vencimento
-informados no cartao, o assessor responde sobre a fatura. Nada movimenta dinheiro. Adiados: conexao
-por parceiro (FR-032), aviso de consentimento (FR-034) e os cenarios 1 e 4. Detalhes em
-[research.md](research.md) R81 a R90.
+**US9, este plano**: o usuario cadastra a chave Pix no painel e pede "cobra R$ 850 do Joao pela
+consultoria de agosto". O assessor cria a cobranca com um codigo Pix estatico (BR Code montado
+pelo proprio servidor, sem parceiro) e devolve o link de uma pagina publica com QR e copia-e-cola;
+se o usuario pedir, manda o link ao Joao pelas regras da US6. O dinheiro vai do banco do pagador
+direto ao banco do usuario. O pagamento e confirmado pelo usuario ("o Joao pagou") ou pelo extrato
+importado (credito com o mesmo valor e o nome do pagador), e vira receita sem duplicar. Pedido de
+nota fiscal e de antecipacao recebe a explicacao. Detalhes em [research.md](research.md) R91 a R100.
 
 ## Technical Context
 
 **Language/Version**: TypeScript 7 em ESM, Node 22
 
-**Primary Dependencies**: Fastify 5, zod 4, better-sqlite3 13; painel em Vue 3 + Vue Router.
-Nenhuma dependencia nova.
+**Primary Dependencies**: Fastify 5, zod 4, better-sqlite3 13; painel em Vue 3 + Vue Router, com a
+dependencia nova `qrcode` so no painel, para desenhar o QR (R93)
 
-**Storage**: SQLite: `bank_accounts`, `bank_imports`; colunas `source`, `external_id`,
-`bank_account_id` e `reversed_at` em `transactions`
+**Storage**: SQLite: `pix_keys`, `charges`
 
-**Testing**: `node --test` via `npm test`, com `test/extratos.test.ts` e arquivos de exemplo em
-`test/ofx/`; `npm run typecheck`; `vue-tsc` no painel
+**Testing**: `node --test` via `npm test`, com `test/cobrancas.test.ts`; `npm run typecheck`;
+`vue-tsc` no painel
 
 **Target Platform**: servidor Node unico
 
 **Project Type**: web service com painel web (back-end em `src/`, front-end em `web/`)
 
-**Performance Goals**: extrato de 1.000 movimentacoes importado em menos de 5 s
+**Performance Goals**: cobranca criada e link devolvido no mesmo turno da conversa
 
-**Constraints**: sem duplicar (FR-033, SC-009 abaixo de 2%); so leitura (FR-035); arquivo nao fica
-no servidor; numero completo da conta nao e guardado (R84, R90)
+**Constraints**: o produto nao inicia, intermedia nem guarda pagamento (principio II, 1.2.0);
+confirmacao nunca presumida (R97); pagina publica sem dados da conta (R95); Pix estatico nao expira
+e isso e dito ao cancelar (R98)
 
-**Scale/Scope**: 4 rotas, 3 ferramentas, `src/ofx.ts` e `src/extratos.ts`, tela Financas >
-Extratos, selo "extrato" nas transacoes, estornadas fora dos totais
+**Scale/Scope**: 5 rotas privadas e 1 publica, 4 ferramentas, `src/pix.ts` e `src/cobrancas.ts`,
+telas Financas > Cobrancas e `/pagar/:slug`, ligacao com a importacao de extrato
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-| Principio | Avaliacao (US8) | Status |
+| Principio | Avaliacao (US9) | Status |
 | --- | --- | --- |
-| I. Dados financeiros sao do usuario | Contas e lancamentos por conta; so a chave da conta bancaria (hash) e 4 digitos; arquivo descartado; perfil so gastos nao importa nem ve receitas | Passa |
-| II. Dinheiro so leitura | Extrato e leitura; nenhuma ferramenta movimenta dinheiro (R89) | Passa |
+| I. Dados financeiros sao do usuario | Cobrancas por conta; pagina publica so com recebedor, descricao, valor e codigo; `slug` aleatorio | Passa |
+| II. Dinheiro so leitura (1.2.0) | Pix estatico na chave do usuario: o produto so monta o codigo e nao inicia nem guarda transacao; confirmacao pelo usuario ou pelo extrato; antecipacao e transferencia recusadas | Passa |
 | III. Provedor de IA intercambiavel | Ferramentas comuns aos dois provedores | Passa |
-| IV. Custo por conta sob controle | Sem IA na importacao; sem parceiro pago (R81) | Passa |
-| V. Uma fonte de verdade | Movimentacoes viram lancamentos comuns, com categoria e contraparte na entrada; importacao pelo painel e pelo WhatsApp com a mesma funcao | Passa |
-| VI. Simplicidade de MVP | Leitor de OFX proprio, sem biblioteca; reaproveita o arquivo pendente da US2 | Passa |
-| VII. Honestidade | Tela e README dizem que a conexao automatica nao existe ainda; resultado da importacao mostra o que foi ignorado e por que | Passa |
+| IV. Custo por conta sob controle | Sem parceiro e sem custo por cobranca; sem IA alem das ferramentas | Passa |
+| V. Uma fonte de verdade | Pagamento confirmado vira receita comum, com contraparte; extrato e cobranca ligados sem duplicar | Passa |
+| VI. Simplicidade de MVP | BR Code montado sem biblioteca; `qrcode` so para desenhar o QR no painel; envio ao pagador pela US6 | Passa |
+| VII. Honestidade | Nota fiscal adiada dita na tela e na conversa; aviso de que o Pix estatico continua pagavel depois de cancelar | Passa |
 
 Reavaliado apos a Fase 1: sem violacoes. Complexity Tracking vazio.
 
@@ -75,59 +71,57 @@ Reavaliado apos a Fase 1: sem violacoes. Complexity Tracking vazio.
 ```text
 specs/001-paridade-meu-assessor/
 ├── spec.md
-├── plan.md              # US1 a US7 entregues, US8 planejada
-├── research.md          # R1 a R80 (US1 a US7), R81 a R90 (US8)
-├── data-model.md        # secoes US1 a US8
-├── quickstart.md        # secoes US1 a US8
-├── contracts/           # US1 a US7, mais api-extratos.md e ferramentas-extratos.md (US8)
+├── plan.md              # US1 a US8 entregues, US9 planejada
+├── research.md          # R1 a R90 (US1 a US8), R91 a R100 (US9)
+├── data-model.md        # secoes US1 a US9
+├── quickstart.md        # secoes US1 a US9
+├── contracts/           # US1 a US8, mais api-cobrancas.md e ferramentas-cobrancas.md (US9)
 ├── checklists/
 │   └── requirements.md
-└── tasks.md             # US1 a US7 concluidas; US8 entra via /speckit-tasks
+└── tasks.md             # US1 a US8 concluidas; US9 entra via /speckit-tasks
 ```
 
-### Source Code (repository root), US8
+### Source Code (repository root), US9
 
 ```text
 src/
-├── ofx.ts           # novo: leitor de OFX 1.x e 2.x
-├── extratos.ts      # novo: tabelas, contas bancarias, importacao, categoria, contraparte, uniao, estorno, fatura
-├── db.ts            # colunas novas em transactions; estornadas fora de todas as consultas
-├── tools.ts         # importar_extrato, contas_bancarias, fatura_do_cartao; [extrato] em consultar_transacoes
-├── prompt.ts        # regras de OFX, fatura e so leitura
-└── api.ts           # rotas /api/extratos; origem nas transacoes
+├── pix.ts           # novo: validacao de chave e payload BR Code com CRC16
+├── cobrancas.ts     # novo: tabelas, chave, cobranca, confirmacao, cancelamento, pagina publica
+├── extratos.ts      # credito que bate com cobranca aberta marca paga e liga a receita
+├── tools.ts         # criar_cobranca, consultar_cobrancas, marcar_cobranca_paga, cancelar_cobranca
+├── prompt.ts        # regras de cobranca, nota adiada e antecipacao
+└── api.ts           # rotas /api/cobrancas e /api/pagar/:slug
 
 web/src/
-├── views/financas/ExtratosView.vue    # novo: importar, resultado, contas e cartoes, fechamento e vencimento, historico
-├── views/financas/TransacoesView.vue  # selo extrato
-├── mesas.ts, router.ts                # Extratos no submenu de Financas
+├── views/financas/CobrancasView.vue   # novo: chave Pix, nova cobranca, lista, recebida, cancelar, copiar
+├── views/PagarPublico.vue             # novo: pagina publica com QR e copia-e-cola
+├── mesas.ts, router.ts                # Cobrancas no submenu de Financas e rota publica /pagar/:slug
 └── api.ts                             # tipos
 
 test/
-├── ofx/corrente-1x.ofx, ofx/cartao-2x.ofx
-└── extratos.test.ts
+└── cobrancas.test.ts
 ```
 
-**Structure Decision**: `src/ofx.ts` so le o formato; `src/extratos.ts` tem a regra e recebe
-movimentacoes ja lidas. Um parceiro de Open Finance, quando vier, entrega movimentacoes no mesmo
-formato para `src/extratos.ts`.
+**Structure Decision**: `src/pix.ts` so conhece o padrao do Banco Central; `src/cobrancas.ts` tem a
+regra. Quando houver parceiro (Asaas, por exemplo), ele entra como outro jeito de gerar a cobranca
+e de confirmar o pagamento, sem mudar a pagina nem as ferramentas.
 
-## Ordem sugerida (US8)
+## Ordem sugerida (US9)
 
-1. Leitor de OFX com os arquivos de exemplo.
-2. Tabelas, colunas e filtro de estornadas.
-3. Importacao: contraparte, categoria, forma de pagamento, ignorados, uniao, estorno.
-4. Fatura do cartao.
-5. Rotas, ferramentas e prompt.
-6. Painel: Extratos e selo nas transacoes.
+1. `src/pix.ts` com o exemplo de referencia do padrao.
+2. Tabelas, chave e cobranca.
+3. Confirmacao pelo usuario e pelo extrato.
+4. Rotas e pagina publica.
+5. Ferramentas e prompt.
+6. Painel: Cobrancas e pagina de pagamento.
 7. README e quickstart.
 
-## Fora desta entrega (US8)
+## Fora desta entrega (US9)
 
-- Conexao automatica pelo Open Finance (FR-032), aviso de consentimento (FR-034) e os cenarios 1
-  e 4: dependem de contrato com parceiro (R81).
-- Importar CSV.
-- Investimentos, emprestimos e previsao de caixa.
-- Qualquer movimentacao de dinheiro (proibida pela constituicao).
+- Nota fiscal de servico (FR-038, FR-039 com emissao) e o cenario 3.
+- Cobranca por parceiro com boleto ou cartao, e confirmacao automatica sem extrato.
+- Pix dinamico, cobranca recorrente, multa e juros por atraso.
+- Lembrete de vencimento ao pagador.
 
 ## Complexity Tracking
 

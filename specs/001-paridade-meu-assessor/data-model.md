@@ -531,3 +531,43 @@ Decisoes em [research.md](research.md) R81 a R90.
 | reversed_at | TEXT | compra estornada: sai de todos os totais como os excluidos |
 
 Indice unico: `(phone, bank_account_id, external_id) WHERE external_id IS NOT NULL`.
+
+# US9: Cobranca por Pix
+
+Decisoes em [research.md](research.md) R91 a R100.
+
+## pix_keys (nova)
+
+| Campo | Tipo | Regra |
+| --- | --- | --- |
+| conta | TEXT PK | uma chave por conta |
+| key_type | TEXT NOT NULL | `cpf`, `cnpj`, `email`, `telefone`, `aleatoria` |
+| key | TEXT NOT NULL | normalizada: so digitos (CPF, CNPJ), minusculas (e-mail), `+55...` (telefone), UUID minusculo |
+| merchant_name | TEXT NOT NULL | 1 a 25 caracteres, sem acento, maiusculas |
+| merchant_city | TEXT NOT NULL | 1 a 15 caracteres, sem acento, maiusculas |
+| updated_by | TEXT NOT NULL | |
+| updated_at | TEXT NOT NULL | |
+
+## charges (nova)
+
+| Campo | Tipo | Regra |
+| --- | --- | --- |
+| id | INTEGER PK | |
+| conta | TEXT NOT NULL | |
+| created_by | TEXT NOT NULL | quem pediu |
+| payer_name | TEXT NOT NULL | 1 a 60 caracteres |
+| payer_phone | TEXT | WhatsApp do pagador, se informado |
+| description | TEXT NOT NULL | 1 a 72 caracteres (cabe no campo do codigo Pix) |
+| amount_cents | INTEGER NOT NULL | 1 a 100.000.000 (R$ 1 milhao) |
+| due_on | TEXT | `AAAA-MM-DD` |
+| txid | TEXT NOT NULL UNIQUE | 25 caracteres `[A-Za-z0-9]` |
+| slug | TEXT NOT NULL UNIQUE | 10 caracteres `[a-z0-9]` |
+| pix_payload | TEXT NOT NULL | copia-e-cola montado na criacao (a chave pode mudar depois) |
+| status | TEXT NOT NULL | `aberta`, `paga`, `cancelada` |
+| paid_at | TEXT | data do pagamento |
+| paid_via | TEXT | `usuario` ou `extrato` |
+| transaction_id | INTEGER | receita ligada |
+| created_at | TEXT NOT NULL | |
+
+Transicoes: `aberta` --usuario confirma ou extrato bate--> `paga` (receita lancada ou ligada);
+`aberta` --usuario cancela--> `cancelada`. Vencida = `aberta` com `due_on` no passado.
