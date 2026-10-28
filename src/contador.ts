@@ -273,7 +273,7 @@ export function mesesDe(db: Db, conta: string): string[] {
   return (
     db
       .prepare(
-        `SELECT substr(occurred_on, 1, 7) AS mes FROM transactions WHERE phone = ? AND deleted_at IS NULL
+        `SELECT substr(occurred_on, 1, 7) AS mes FROM transactions WHERE phone = ? AND deleted_at IS NULL AND reversed_at IS NULL
          UNION
          SELECT substr(COALESCE(document_date, saved_at), 1, 7) FROM documents
          WHERE phone = ? AND status = 'guardado' AND folder IN (${FISCAIS})
@@ -287,7 +287,7 @@ export function mesesDe(db: Db, conta: string): string[] {
 
 function lancamentosDoMes(db: Db, conta: string, mes: string) {
   return db
-    .prepare(`SELECT * FROM transactions WHERE phone = ? AND deleted_at IS NULL AND occurred_on BETWEEN ? AND ? ORDER BY occurred_on, id`)
+    .prepare(`SELECT * FROM transactions WHERE phone = ? AND deleted_at IS NULL AND reversed_at IS NULL AND occurred_on BETWEEN ? AND ? ORDER BY occurred_on, id`)
     .all(conta, `${mes}-01`, ultimoDia(mes)) as Transaction[];
 }
 
@@ -348,7 +348,7 @@ export function documentoDoDossie(db: Db, conta: string, id: number) {
   const d = documentos(db).porId(id);
   if (!d || d.phone !== conta || d.status !== "guardado") return null;
   if ((PASTAS_FISCAIS as readonly string[]).includes(d.folder ?? "")) return d;
-  if (d.transaction_id && db.prepare(`SELECT 1 FROM transactions WHERE id = ? AND phone = ? AND deleted_at IS NULL`).get(d.transaction_id, conta)) return d;
+  if (d.transaction_id && db.prepare(`SELECT 1 FROM transactions WHERE id = ? AND phone = ? AND deleted_at IS NULL AND reversed_at IS NULL`).get(d.transaction_id, conta)) return d;
   return null;
 }
 

@@ -6,7 +6,7 @@ import { fromLocal, localDate } from "./time.js";
 import { assistantNumber, sendNotice } from "./whatsapp.js";
 import { auth, AuthError } from "./auth.js";
 import { conta as servicoConta, repoDoContexto, resolverContexto } from "./conta.js";
-import { CAPACIDADES, contextoTitular, pode, PERFIS_CONVIDAVEIS, SemPermissao, type Capacidade, type Contexto } from "./permissoes.js";
+import { CAPACIDADES, contextoTitular, exigir, pode, PERFIS_CONVIDAVEIS, SemPermissao, type Capacidade, type Contexto } from "./permissoes.js";
 import {
   addDias,
   alterarRecorrencia,
@@ -55,6 +55,7 @@ import {
 } from "./agendamento.js";
 import { GoogleExpirado, GoogleIndisponivel, GoogleNaoConectado, GoogleNaoConfigurado } from "./google.js";
 import { cancelarEnvio, listarEnvios, ultimasMensagens } from "./contatos.js";
+import { atualizarConta as atualizarContaBancaria, contasBancarias, desligarConta, importacoes, importarExtrato, paraContaBancaria } from "./extratos.js";
 import {
   aceitarConviteContador,
   aceitarConviteContadorPendente,
@@ -152,6 +153,7 @@ const toTx = (t: Transaction) => ({
   data: t.occurred_on,
   contraparte: t.counterpart,
   parcela: t.installment_total ? { numero: t.installment_number!, total: t.installment_total, grupo: t.installment_group! } : null,
+  origem: t.source === "extrato" ? ("extrato" as const) : null,
 });
 
 const toTask = (t: Task, today: string) => ({
@@ -281,6 +283,11 @@ const CAPACIDADE_ROTA: Record<string, Capacidade[]> = {
   "POST /api/conta/contador/convites": ["acessos"],
   "DELETE /api/conta/contador/convites/:id": ["acessos"],
   "DELETE /api/conta/contador/:id": ["acessos"],
+  // O extrato traz despesas e receitas; a rota confere receitas tambem.
+  "GET /api/extratos": ["despesas"],
+  "POST /api/extratos": ["despesas"],
+  "PATCH /api/extratos/contas/:id": ["despesas"],
+  "DELETE /api/extratos/contas/:id": ["despesas"],
   "GET /api/contatos/mensagens": ["agenda"],
   "DELETE /api/contatos/envios/:id": ["agenda"],
 };
@@ -1251,6 +1258,57 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
         comGoogle(reply, async () => {
           const r = await cancelarAgendamento(repo, de(req).ctx, Number((req.params as { id: string }).id), sendNotice);
           return { ...toAgendamento(r.agendamento), enviado: r.enviado };
+        }),
+      );
+
+      const comPermissao = <T>(reply: FastifyReply, f: () => T) => {
+        try {
+          return f();
+        } catch (err) {
+          if (err instanceof SemPermissao) return reply.code(403).send(SEM_ACESSO);
+          if (err instanceof Error && err.message.startsWith("Arquivo nao parece")) return reply.code(400).send({ erro: "Esse arquivo não parece um extrato OFX." });
+          return responderErro(reply, err);
+        }
+      };
+
+      api.get("/extratos", async (req, reply) =>
+        comPermissao(reply, () => {
+          const { ctx } = de(req);
+          exigir(ctx, "receitas");
+          return { contas: contasBancarias(repo.db, ctx).map(paraContaBancaria), importacoes: importacoes(repo.db, ctx) };
+        }),
+      );
+
+      api.post(
+        "/extratos",
+        { bodyLimit: 8 * 1024 * 1024 },
+        async (req, reply) => {
+          const b = parse(z.object({ nome: z.string().trim().max(200).nullable().optional(), conteudo: z.string().min(1) }), body(req), reply);
+          if (!b) return;
+          const dados = Buffer.from(b.conteudo, "base64");
+          if (dados.length > 5 * 1024 * 1024) return reply.code(400).send({ erro: "O arquivo passa de 5 MB." });
+          return comPermissao(reply, () => reply.code(201).send(importarExtrato(repo, de(req).ctx, dados, b.nome ?? null)));
+        },
+      );
+
+      api.patch("/extratos/contas/:id", async (req, reply) => {
+        const b = parse(
+          z.object({
+            nome: z.string().trim().min(1).max(60).optional(),
+            fechamento: z.number().int().min(1).max(31).nullable().optional(),
+            vencimento: z.number().int().min(1).max(31).nullable().optional(),
+          }),
+          body(req),
+          reply,
+        );
+        if (!b) return;
+        return comPermissao(reply, () => paraContaBancaria(atualizarContaBancaria(repo.db, de(req).ctx, Number((req.params as { id: string }).id), b)));
+      });
+
+      api.delete("/extratos/contas/:id", async (req, reply) =>
+        comPermissao(reply, () => {
+          desligarConta(repo.db, de(req).ctx, Number((req.params as { id: string }).id));
+          return { ok: true };
         }),
       );
 
