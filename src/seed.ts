@@ -39,7 +39,7 @@ for (const p of [phone, BIA.phone]) {
 }
 for (const table of ["contact_messages", "contact_sends", "contacts"]) db.prepare(`DELETE FROM ${table} WHERE conta = ?`).run(phone);
 for (const table of ["accountant_access", "accountant_invites"]) db.prepare(`DELETE FROM ${table} WHERE account_phone = ?`).run(phone);
-for (const table of ["bank_imports", "bank_accounts"]) db.prepare(`DELETE FROM ${table} WHERE conta = ?`).run(phone);
+for (const table of ["bank_imports", "bank_accounts", "charges", "pix_keys"]) db.prepare(`DELETE FROM ${table} WHERE conta = ?`).run(phone);
 repo.ensureUser(phone, "Demonstração");
 
 // Conta de teste para entrar no painel de demonstracao; credenciais ficticias, so deste banco.

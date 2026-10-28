@@ -718,9 +718,9 @@ como recebida, conferindo a receita na mesa Financas (spec, US9, sem a nota fisc
 
 **Painel web**
 
-- [ ] T215 [P] [US9] Em `web/src/api.ts`, tipos `ChavePix`, `Cobranca`, `CobrancaPublica` e a chamada publica `pagar(slug)` sem token (depende de T213)
-- [ ] T216 [US9] Criar `web/src/views/financas/CobrancasView.vue` e a rota `/financas/cobrancas` em `web/src/router.ts`, com "Cobrancas" em `SUBMENU_FINANCAS` de `web/src/mesas.ts`: aviso de que a nota fiscal ainda nao esta disponivel; chave Pix (tipo, chave, nome, cidade) com editar; "Nova cobranca" (pagador, WhatsApp opcional, descricao, valor, vencimento) mostrando link e copia-e-cola com copiar; lista com filtro por situacao, chip de vencida, "Recebi" e "Cancelar" (com o aviso de que o codigo ja enviado continua pagavel) (depende de T215)
-- [ ] T217 [US9] Criar `web/src/views/PagarPublico.vue` e a rota publica `/pagar/:slug` (`meta: { publica: true }`) no layout do `AuthLayout` com `cliente`: recebedor, descricao, valor, vencimento, QR desenhado com `qrcode` a partir do copia-e-cola, botao de copiar e o aviso "O pagamento vai direto para {recebedor} pelo Pix. Este site nao recebe dinheiro."; paga ou cancelada mostra so a situacao; `404` diz que a cobranca nao existe (depende de T215)
+- [X] T215 [P] [US9] Em `web/src/api.ts`, tipos `ChavePix`, `Cobranca`, `CobrancaPublica` e a chamada publica `pagar(slug)` sem token (depende de T213)
+- [X] T216 [US9] Criar `web/src/views/financas/CobrancasView.vue` e a rota `/financas/cobrancas` em `web/src/router.ts`, com "Cobrancas" em `SUBMENU_FINANCAS` de `web/src/mesas.ts`: aviso de que a nota fiscal ainda nao esta disponivel; chave Pix (tipo, chave, nome, cidade) com editar; "Nova cobranca" (pagador, WhatsApp opcional, descricao, valor, vencimento) mostrando link e copia-e-cola com copiar; lista com filtro por situacao, chip de vencida, "Recebi" e "Cancelar" (com o aviso de que o codigo ja enviado continua pagavel) (depende de T215)
+- [X] T217 [US9] Criar `web/src/views/PagarPublico.vue` e a rota publica `/pagar/:slug` (`meta: { publica: true }`) no layout do `AuthLayout` com `cliente`: recebedor, descricao, valor, vencimento, QR desenhado com `qrcode` a partir do copia-e-cola, botao de copiar e o aviso "O pagamento vai direto para {recebedor} pelo Pix. Este site nao recebe dinheiro."; paga ou cancelada mostra so a situacao; `404` diz que a cobranca nao existe (depende de T215)
 
 **Checkpoint**: US9 completa sem nota fiscal; T208 a T210 verdes; roteiro de [quickstart.md](quickstart.md#us9-cobranca-por-pix) passando.
 
@@ -728,8 +728,8 @@ como recebida, conferindo a receita na mesa Financas (spec, US9, sem a nota fisc
 
 ## Phase 36: Polish (US9)
 
-- [ ] T218 [P] Em `README.md`, secao Cobranca por Pix: cadastrar a chave, cobrar pelo WhatsApp e pelo painel, a pagina de pagamento, mandar ao cliente, confirmar (voce ou o extrato), o Pix estatico continuar pagavel depois de cancelar, a nota fiscal adiada (com as opcoes e precos citados) e a constituicao 1.2.0; tabela "Como esta organizado" com `src/pix.ts` e `src/cobrancas.ts`
-- [ ] T219 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
+- [X] T218 [P] Em `README.md`, secao Cobranca por Pix: cadastrar a chave, cobrar pelo WhatsApp e pelo painel, a pagina de pagamento, mandar ao cliente, confirmar (voce ou o extrato), o Pix estatico continuar pagavel depois de cancelar, a nota fiscal adiada (com as opcoes e precos citados) e a constituicao 1.2.0; tabela "Como esta organizado" com `src/pix.ts` e `src/cobrancas.ts`
+- [X] T219 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
 - [ ] T220 Executar o roteiro de [quickstart.md](quickstart.md#us9-cobranca-por-pix) lendo o QR com o app do banco (sem pagar) e pelo WhatsApp, com `AI_PROVIDER=gemini` e com `AI_PROVIDER=claude` quando houver `ANTHROPIC_API_KEY`
 ---
 
