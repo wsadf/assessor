@@ -21,8 +21,10 @@ const ehAtual = computed(() => mesSelecionado.value === HOJE.slice(0, 7));
 </template>
 
 <style scoped>
-.mes { display: inline-flex; align-items: center; gap: 12px; }
-.mes .icon-btn { width: 34px; height: 34px; }
-.mes .icon-btn:disabled { opacity: 0.35; cursor: default; }
-.rotulo { font-size: 12px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mesa); min-width: 120px; text-align: center; }
+.mes { display: inline-flex; align-items: center; gap: 4px; padding: 4px; border-radius: 14px; border: 1px solid var(--line); background: var(--glass); backdrop-filter: blur(16px); }
+.mes .icon-btn { width: 34px; height: 34px; border: 0; background: transparent; }
+.mes .icon-btn:hover:not(:disabled) { background: var(--glass-2); }
+.mes .icon-btn:disabled { opacity: 0.3; cursor: default; }
+.rotulo { font-size: 14px; font-weight: 500; min-width: 130px; text-align: center; }
+.rotulo::first-letter { text-transform: uppercase; }
 </style>

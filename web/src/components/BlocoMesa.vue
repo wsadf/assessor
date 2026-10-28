@@ -5,8 +5,7 @@ defineProps<{ titulo: string }>();
 <template>
   <section class="bloco">
     <div class="titulo">
-      <span class="eyebrow">{{ titulo }}</span>
-      <span class="linha" />
+      <h2>{{ titulo }}</h2>
       <slot name="acoes" />
     </div>
     <div class="grade">
@@ -17,15 +16,22 @@ defineProps<{ titulo: string }>();
 </template>
 
 <style scoped>
-.bloco { padding: 40px 0; border-bottom: 1px solid var(--line); }
-.bloco:first-child { padding-top: 8px; }
-.bloco:last-child { border-bottom: 0; }
-.titulo { display: flex; align-items: center; gap: 16px; margin-bottom: 28px; }
-.titulo .eyebrow { color: var(--mesa); }
-.linha { flex: 1; height: 1px; background: var(--line); }
-.grade { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 48px; align-items: start; }
-.esq { display: grid; gap: 22px; align-content: start; }
+.bloco {
+  padding: 28px;
+  margin-bottom: 16px;
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background: var(--glass);
+  backdrop-filter: blur(16px);
+}
+.titulo { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+h2 { margin: 0; font-size: 19px; }
+.grade { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 40px; align-items: start; }
+.esq { display: grid; gap: 20px; align-content: start; }
 @media (max-width: 960px) {
   .grade { grid-template-columns: 1fr; gap: 28px; }
+}
+@media (max-width: 600px) {
+  .bloco { padding: 22px 18px; }
 }
 </style>

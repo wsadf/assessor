@@ -154,10 +154,10 @@ h1, h2, h3 { font-family: var(--fonte-titulo); font-weight: 500; letter-spacing:
   backdrop-filter: blur(14px);
 }
 
-.page-head { display: flex; align-items: center; gap: 16px; margin-bottom: 28px; flex-wrap: wrap; }
-.page-head h1 { margin: 0; font-size: 34px; font-weight: 500; letter-spacing: -0.03em; }
-.page-head p { margin: 4px 0 0; color: var(--text-2); }
-.page-head .spacer { flex: 1; }
+.page-head { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 32px; flex-wrap: wrap; }
+.page-head h1 { margin: 0; font-size: clamp(30px, 3.6vw, 42px); font-weight: 400; letter-spacing: -0.04em; line-height: 1.1; }
+.page-head p { margin: 8px 0 0; color: var(--text-2); }
+.spacer { flex: 1; }
 
 .list-row {
   display: flex;
