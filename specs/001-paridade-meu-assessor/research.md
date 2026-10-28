@@ -2,8 +2,9 @@
 
 Decisoes por historia. R1 a R10 sao da US1 (conta compartilhada), R11 a R22 da US2 (documentos)
 R23 a R34 da US3 (avisos proativos), R35 a R46 da US4 (Google Agenda), R47 a R58 da US5 (pagina publica
-de agendamento) e R59 a R70 da US6 (mensagens a outras pessoas), todas implementadas; R71 a R80 sao
-da US7 (area do contador). As demais historias acrescentam secoes aqui.
+de agendamento) e R59 a R70 da US6 (mensagens a outras pessoas) e R71 a R80 da US7 (area do contador),
+todas implementadas; R81 a R92 sao da US8 (Open Finance so leitura). A US9 acrescenta a sua secao
+aqui.
 
 # US1: Conta compartilhada
 
@@ -747,3 +748,118 @@ da US7 (area do contador). As demais historias acrescentam secoes aqui.
 
 - Sem IA na area do contador. Arquivos lidos do disco so na hora do download. Revogar nao apaga
   nada da conta, so o vinculo.
+
+# US8: Open Finance so leitura
+
+## R81. Parceiro
+
+- **Decision**: Pluggy, por REST direto do servidor (sem SDK no back-end). E agregador que opera
+  no Open Finance Brasil, tem ambiente de testes (sandbox) gratuito com bancos simulados, API de
+  contas, cartoes, faturas e transacoes, e o widget Pluggy Connect para o consentimento. Todo o
+  codigo do parceiro fica em `src/openfinance.ts`; o resto do sistema so ve conexoes, contas e
+  lancamentos.
+- **Rationale**: FR-032 exige parceiro autorizado; construir a integracao direta com cada banco no
+  Open Finance exige ser participante regulado. Pluggy e Belvo sao os agregadores comuns no Brasil;
+  a Pluggy tem foco no Brasil e documentacao em portugues.
+- **A confirmar antes da validacao real (T da US8)**: contrato e preco por conexao com o parceiro.
+  A implementacao e os testes usam o sandbox e nao dependem disso. Sem `PLUGGY_CLIENT_ID` e
+  `PLUGGY_CLIENT_SECRET`, a tela diz que a conexao com bancos nao esta disponivel (principio VII).
+- **Alternatives considered**: Belvo (mesmo papel; trocar e reescrever so `src/openfinance.ts`);
+  importar extrato OFX/CSV (sem consentimento continuo, fica para depois).
+
+## R82. So leitura
+
+- **Decision**: o sistema chama so as rotas de leitura do parceiro (itens, contas, faturas,
+  transacoes) e a de apagar item. Nenhuma rota de pagamento ou iniciacao de Pix e chamada, e nao
+  ha ferramenta, rota ou botao para isso. Pedido de pagamento ou transferencia ao assessor recebe
+  a explicacao de que o acesso ao banco e so de leitura.
+- **Rationale**: FR-035, cenario 5 e principio II.
+
+## R83. De quem e a conexao
+
+- **Decision**: da conta (as movimentacoes sao lancamentos da conta). So o titular conecta e
+  desconecta; membros veem o que o perfil deles permite (so gastos nao ve receitas importadas).
+- **Rationale**: conectar banco expoe a vida financeira inteira; e decisao do titular, como os
+  acessos da US1.
+
+## R84. Como conecta
+
+- **Decision**: no painel, Financas > Bancos > "Conectar banco": o servidor cria um connect token
+  (`clientUserId` = telefone da conta), o painel abre o Pluggy Connect com ele e, no sucesso, manda
+  o `itemId` ao servidor, que confere no parceiro que o item e daquele `clientUserId` antes de
+  guardar. Pelo WhatsApp, "conecta meu banco" devolve o link da tela (o consentimento acontece no
+  app do banco e no widget, nao na conversa).
+- **Dependencia nova**: `pluggy-connect-sdk` so no painel (`web/`), para abrir o widget oficial. O
+  consentimento do Open Finance exige o fluxo do parceiro; reimplementar o widget nao e opcao.
+
+## R85. Sincronizacao
+
+- **Decision**: webhook do parceiro (`item/updated`, `transactions/created`, `transactions/updated`,
+  `transactions/deleted`) numa rota publica com segredo no caminho
+  (`/api/openfinance/webhook/<OPENFINANCE_WEBHOOK_SECRET>`), que so dispara uma sincronizacao do item;
+  o corpo nunca e confiado como dado. O agendador sincroniza cada item a cada 6 horas como reserva.
+  Primeira importacao: ultimos 90 dias (cenario 1); depois, desde a ultima sincronizacao menos 7
+  dias, para pegar o que o banco confirmou com atraso.
+- **Rationale**: a Pluggy nao assina o webhook; tratar o aviso so como "va buscar" evita injetar
+  movimentacao falsa.
+
+## R86. Movimentacao vira lancamento
+
+- **Decision**: cada transacao `POSTED` vira um lancamento da conta: valor negativo em conta
+  corrente ou compra no cartao = despesa, positivo = receita; categoria pelo mapa
+  categoria-do-parceiro > categoria do produto (com as categorias que a conta ja usa como
+  preferencia); contraparte do comerciante, do recebedor ou do pagador do Pix, e na falta deles a
+  descricao limpa; forma de pagamento `credito`, `debito`, `pix` ou `boleto` pelo tipo. Ficam de
+  fora: pendentes (`PENDING`, entram quando confirmadas), pagamento de fatura do cartao e
+  transferencia entre contas do proprio titular (contariam duas vezes). Lancamento importado tem
+  `source = 'banco'`, `external_id` e `bank_account_id`; o usuario pode corrigir categoria e
+  contraparte como em qualquer lancamento.
+- **Rationale**: FR-033 e principio V (categoria e contraparte na entrada). Sem IA (principio IV).
+
+## R87. Sem duplicar
+
+- **Decision**: antes de criar, procura lancamento manual da conta sem `external_id`, do mesmo
+  tipo, com o mesmo valor e data a ate 2 dias. Achando um so, ele e ligado a movimentacao (ganha
+  `external_id`, `bank_account_id` e mantem a categoria e a descricao do usuario); achando mais de
+  um, liga o de data mais proxima. `external_id` unico por conta impede importar a mesma
+  movimentacao duas vezes.
+- **Rationale**: cenario 2 e SC-009 (menos de 2% de duplicatas).
+
+## R88. Estorno e alteracao
+
+- **Decision**: `transactions/deleted` ou movimentacao que volta com valor ou data diferente:
+  o lancamento importado e marcado como estornado (`reversed_at`, sai dos totais como os excluidos)
+  ou atualizado; o lancamento manual ligado so perde a ligacao, nunca e apagado pelo banco.
+- **Rationale**: edge case da spec.
+
+## R89. Fatura do cartao
+
+- **Decision**: para conta do tipo cartao, guarda limite, fechamento e vencimento da fatura atual
+  (`creditData`) e as faturas do parceiro (valor total e vencimento). Ferramenta
+  `fatura_do_cartao` responde "minha fatura ja fechou?" e "no credito, quanto ja foi esse mes?" com
+  esses dados e a soma das compras desde o ultimo fechamento.
+- **Rationale**: cenario 3.
+
+## R90. Consentimento
+
+- **Decision**: o estado do item vem do parceiro: `UPDATED` ok; `LOGIN_ERROR`, `OUTDATED` ou
+  consentimento revogado param a importacao e geram aviso; o vencimento do consentimento
+  (`consentExpiresAt`, quando o parceiro informa) gera aviso 7 dias antes. Novo tipo de aviso
+  `bancos` (exige `despesas`, ligado para o titular), com o link para Financas > Bancos, onde
+  "Renovar" reabre o widget para o mesmo item.
+- **Rationale**: FR-034 e cenario 4.
+
+## R91. Seguranca e desconexao
+
+- **Decision**: as credenciais do banco nunca passam pelo servidor (ficam no app do banco e no
+  parceiro). O servidor guarda so o `itemId`; a chave da API do parceiro fica em memoria e e
+  renovada antes de vencer. Desconectar apaga o item no parceiro e a conexao aqui; os lancamentos
+  importados continuam, sem ligacao com o banco.
+- **Rationale**: principio I.
+
+## R92. Custo
+
+- Nenhuma chamada ao modelo na importacao, na categorizacao ou no webhook; as duas ferramentas
+  novas custam o mesmo que qualquer outra. O custo do parceiro e por conexao e depende do
+  contrato: a conexao com bancos fica disponivel so quando o servidor tem as credenciais, e o
+  README registra que o preco precisa caber na meta do principio IV antes de abrir para todos.

@@ -342,3 +342,44 @@ Com `npm run painel:demo`:
 "Gera um convite para o meu contador" devolve o codigo e o texto para encaminhar; "quem tem acesso a
 minha conta?" lista o contador; "tira o acesso do contador" pede confirmacao e revoga. Repetir com
 `AI_PROVIDER=gemini` e `AI_PROVIDER=claude`.
+
+# US8: Open Finance so leitura
+
+Contratos em [contracts/api-bancos.md](contracts/api-bancos.md) e
+[contracts/ferramentas-bancos.md](contracts/ferramentas-bancos.md).
+
+## 1. Testes automaticos
+
+Os testes novos (arquivo `test/bancos.test.ts`), com o parceiro simulado em `test/pluggyFalso.ts`,
+devem cobrir:
+
+- conexao: connect token com `clientUserId` da conta; item de outra conta recusado; so o titular
+  conecta; sem credenciais, "nao disponivel";
+- importacao: 90 dias na primeira vez; despesa, receita, categoria, contraparte e forma de
+  pagamento; pendente nao entra; pagamento de fatura e transferencia entre contas proprias nao
+  entram; segunda sincronizacao nao duplica;
+- uniao com manual: mesmo valor e data a 2 dias liga em vez de criar; valor diferente cria; o
+  lancamento manual mantem categoria e descricao;
+- estorno e alteracao: `transactions/deleted` marca estornado e tira dos totais; manual ligado
+  so perde a ligacao;
+- webhook: segredo errado `404`; corpo so dispara sincronizacao do item conhecido;
+- consentimento: `LOGIN_ERROR` para a importacao e avisa; vencimento em 7 dias avisa uma vez;
+- fatura: `fatura_do_cartao` com valor, fechamento, vencimento e compras do periodo;
+- so leitura: nenhuma chamada a rotas de pagamento do parceiro; pedido de Pix pelo assessor recebe
+  a explicacao;
+- perfil so gastos nao ve receitas importadas; outra conta nao ve nada.
+
+## 2. Sandbox do parceiro
+
+1. Criar conta em dashboard.pluggy.ai, pegar `PLUGGY_CLIENT_ID` e `PLUGGY_CLIENT_SECRET` do
+   ambiente de testes e definir `OPENFINANCE_WEBHOOK_SECRET` no `.env`.
+2. `npm run painel`, Financas > Bancos > Conectar banco: escolher o banco de testes do parceiro e
+   as credenciais de teste da documentacao dele.
+3. Conferir os lancamentos dos ultimos 90 dias com o selo "banco", as categorias e as
+   contrapartes; um gasto lancado antes pelo WhatsApp com o mesmo valor aparece uma vez so.
+4. Para o webhook local, expor o servidor com o tunel da secao 2.2 e cadastrar a URL com o segredo.
+
+## 3. WhatsApp ou terminal
+
+"Minha fatura ja fechou?", "no credito, quanto ja foi esse mes?", "conecta meu banco" e "faz um Pix
+de 50 para o Joao" (resposta: so leitura). Repetir com `AI_PROVIDER=gemini` e `AI_PROVIDER=claude`.

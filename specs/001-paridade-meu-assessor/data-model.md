@@ -481,3 +481,69 @@ revoga--> `revoked_at`; um novo convite aceito depois cria outro vinculo.
 - Documentos: `documents` guardados da conta nas pastas `notas_fiscais`, `comprovantes` e
   `boletos` com data (`document_date`, ou `saved_at` quando nao ha) no mes, mais os ligados
   (`transaction_id`) a um lancamento do mes, de qualquer pasta.
+
+# US8: Open Finance so leitura
+
+Decisoes em [research.md](research.md) R81 a R92.
+
+## bank_connections (nova)
+
+| Campo | Tipo | Regra |
+| --- | --- | --- |
+| id | INTEGER PK | |
+| conta | TEXT NOT NULL | telefone da conta |
+| item_id | TEXT NOT NULL UNIQUE | id do item no parceiro |
+| connector | TEXT NOT NULL | nome do banco, ex.: "Nubank" |
+| status | TEXT NOT NULL | `ativa`, `atualizando`, `erro`, `expirada`, `revogada` |
+| status_detail | TEXT | motivo legivel do erro |
+| consent_expires_at | TEXT | vencimento do consentimento, quando o parceiro informa |
+| last_sync_at | TEXT | ultima sincronizacao que terminou |
+| created_by | TEXT NOT NULL | o titular |
+| created_at | TEXT NOT NULL | |
+
+Transicoes: `ativa` --webhook ou agendador--> `atualizando` --> `ativa`; qualquer --parceiro diz
+`LOGIN_ERROR` ou `OUTDATED`--> `erro`; --consentimento venceu--> `expirada`; --revogado no banco--> `revogada`;
+`erro|expirada|revogada` --renovar no widget--> `ativa`; desconectar apaga a linha.
+
+## bank_accounts (nova)
+
+| Campo | Tipo | Regra |
+| --- | --- | --- |
+| id | INTEGER PK | |
+| connection_id | INTEGER NOT NULL | conexao |
+| external_id | TEXT NOT NULL UNIQUE | id da conta no parceiro |
+| type | TEXT NOT NULL | `corrente` ou `cartao` |
+| name | TEXT NOT NULL | ex.: "Conta corrente", "Nubank Mastercard" |
+| number_hint | TEXT | 4 ultimos digitos |
+| balance_cents | INTEGER | saldo (corrente) ou fatura atual (cartao) |
+| credit_limit_cents | INTEGER | so cartao |
+| available_cents | INTEGER | so cartao |
+| close_date | TEXT | so cartao: fechamento da fatura atual (`AAAA-MM-DD`) |
+| due_date | TEXT | so cartao: vencimento da fatura atual |
+| updated_at | TEXT NOT NULL | |
+
+## card_bills (nova)
+
+| Campo | Tipo | Regra |
+| --- | --- | --- |
+| id | INTEGER PK | |
+| bank_account_id | INTEGER NOT NULL | cartao |
+| external_id | TEXT NOT NULL UNIQUE | id da fatura no parceiro |
+| due_date | TEXT NOT NULL | vencimento |
+| total_cents | INTEGER NOT NULL | valor total |
+
+## Colunas novas em transactions
+
+| Campo | Tipo | Regra |
+| --- | --- | --- |
+| source | TEXT | `banco` quando veio do Open Finance; nulo = manual |
+| external_id | TEXT | id da movimentacao no parceiro; unico por conta quando nao nulo |
+| bank_account_id | INTEGER | conta ou cartao de origem |
+| reversed_at | TEXT | estornada no banco; sai dos totais como `deleted_at` |
+
+Indice unico: `(phone, external_id) WHERE external_id IS NOT NULL`.
+
+## Aviso novo
+
+`notice_prefs.kind` ganha `bancos` (recria a tabela como na US5): consentimento perto de vencer,
+erro ou revogacao, ligado por padrao para o titular.
