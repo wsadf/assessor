@@ -314,8 +314,8 @@ const FRASES = [
 .passos strong { font-size: 15px; }
 .passos div span { font-size: 13px; color: #a4a4ae; }
 .num { width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid #4a4a52; display: grid; place-items: center; font-size: 12px; font-weight: 600; flex: none; }
-.passos li.atual .num { border-color: #34d399; color: #34d399; box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.15); }
-.passos li.feito .num { background: #10b981; border-color: #10b981; color: #06140f; }
+.passos li.atual .num { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+.passos li.feito .num { background: var(--accent); border-color: var(--accent); color: var(--botao-texto); }
 .progresso { display: grid; grid-template-columns: repeat(4, 1fr) auto; gap: 8px; align-items: center; }
 .progresso span { height: 4px; border-radius: 4px; background: var(--line-strong); transition: background 0.25s; }
 .progresso span.cheio { background: var(--accent); }

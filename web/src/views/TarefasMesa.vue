@@ -202,7 +202,7 @@ async function excluir() {
 .mini > div { display: grid; gap: 4px; }
 .mini strong { font-size: 20px; }
 .tarefa { padding: 10px 0; }
-.check { width: 22px; height: 22px; border-radius: 50%; border: 1.8px solid var(--line-strong); background: transparent; display: grid; place-items: center; cursor: pointer; flex: none; color: #06140f; }
+.check { width: 22px; height: 22px; border-radius: 50%; border: 1.8px solid var(--line-strong); background: transparent; display: grid; place-items: center; cursor: pointer; flex: none; color: var(--botao-texto); }
 .check:hover { border-color: var(--mesa); }
 .check.feito { background: var(--accent); border-color: var(--accent); }
 .corpo { flex: 1; min-width: 0; display: grid; border: 0; background: transparent; text-align: left; cursor: pointer; padding: 0; }

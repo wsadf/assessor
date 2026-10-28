@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api, limparSessao } from "./api";
 import AppIcon from "./components/AppIcon.vue";
+import AppLogo from "./components/AppLogo.vue";
 import AssessorAvatar from "./components/AssessorAvatar.vue";
 import BotaoWhatsapp from "./components/BotaoWhatsapp.vue";
 import { carregarEu, eu as me, pode } from "./estado";
@@ -61,13 +62,7 @@ onMounted(async () => {
   <div v-else class="shell" :style="{ '--mesa': mesaAtual.cor }">
     <aside class="lateral" :class="{ aberto: menuAberto }">
       <div class="marca">
-        <span class="logo">
-          <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
-            <rect width="32" height="32" rx="9" fill="var(--accent)" />
-            <path d="M9 22l7-13 7 13" stroke="#06140f" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-          assessor
-        </span>
+        <RouterLink to="/" aria-label="assessor, início"><AppLogo /></RouterLink>
       </div>
 
       <nav>
@@ -149,7 +144,8 @@ onMounted(async () => {
   width: 248px;
   flex: none;
   border-right: 1px solid var(--line);
-  background: var(--bg);
+  background: var(--glass);
+  backdrop-filter: blur(18px);
   display: flex;
   flex-direction: column;
   position: sticky;
@@ -158,7 +154,6 @@ onMounted(async () => {
   padding: 20px 14px;
 }
 .marca { padding: 4px 8px 18px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
-.logo { display: flex; align-items: center; gap: 10px; font-size: 21px; font-weight: 600; letter-spacing: -0.01em; }
 nav { flex: 1; overflow: auto; }
 .secao { padding: 8px 10px; }
 .item-mesa {
@@ -170,8 +165,8 @@ nav { flex: 1; overflow: auto; }
   color: var(--text-2);
   font-weight: 500;
 }
-.item-mesa:hover { background: var(--surface); color: var(--text); }
-.item-mesa.ativo { color: var(--text); }
+.item-mesa:hover { background: var(--glass-2); color: var(--text); }
+.item-mesa.ativo { color: var(--text); background: var(--glass-2); }
 .sub { display: grid; gap: 2px; padding: 2px 0 8px 18px; }
 .item-sub {
   display: flex;
@@ -182,8 +177,8 @@ nav { flex: 1; overflow: auto; }
   color: var(--text-2);
   font-size: 14px;
 }
-.item-sub:hover { color: var(--text); background: var(--surface); }
-.item-sub.ativo { color: var(--text); background: var(--surface-2); }
+.item-sub:hover { color: var(--text); background: var(--glass); }
+.item-sub.ativo { color: var(--text); background: var(--glass-2); }
 .item-sub.ativo :deep(svg) { color: var(--mesa); }
 .rodape { border-top: 1px solid var(--line); padding-top: 14px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .usuario { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -203,8 +198,8 @@ nav { flex: 1; overflow: auto; }
   align-items: center;
   gap: 12px;
   padding: 12px 28px;
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
-  backdrop-filter: blur(10px);
+  background: color-mix(in srgb, var(--bg) 60%, transparent);
+  backdrop-filter: blur(18px);
   border-bottom: 1px solid var(--line);
 }
 .topo::after {
@@ -228,8 +223,8 @@ nav { flex: 1; overflow: auto; }
   opacity: 0.62;
   transition: opacity 0.15s, background 0.15s;
 }
-.aba:hover { opacity: 1; background: var(--surface); }
-.aba.ativa { opacity: 1; }
+.aba:hover { opacity: 1; background: var(--glass); }
+.aba.ativa { opacity: 1; background: var(--glass-2); }
 .aba > span:last-child { display: grid; line-height: 1.15; }
 .aba-nome { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
 .aba.ativa .aba-nome { color: var(--c); }
@@ -242,7 +237,7 @@ nav { flex: 1; overflow: auto; }
 
 
 @media (max-width: 900px) {
-  .lateral { position: fixed; left: 0; top: 0; z-index: 40; transform: translateX(-100%); transition: transform 0.2s; }
+  .lateral { position: fixed; left: 0; top: 0; z-index: 40; background: var(--surface); transform: translateX(-100%); transition: transform 0.2s; }
   .lateral.aberto { transform: none; }
   .veu { display: block; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 30; }
   .so-mobile { display: grid; }

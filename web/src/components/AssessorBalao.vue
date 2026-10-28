@@ -25,13 +25,16 @@ const hora = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "
   position: relative;
   background: var(--bubble);
   color: var(--bubble-text);
-  padding: 10px 14px 8px;
-  border-radius: 4px 14px 14px 14px;
+  border: 1px solid var(--line);
+  backdrop-filter: blur(14px);
+  padding: 12px 16px 10px;
+  border-radius: 6px 16px 16px 16px;
   font-size: 15px;
-  line-height: 1.45;
+  line-height: 1.5;
+  box-shadow: var(--shadow);
 }
-.quem { font-size: 12.5px; opacity: 0.85; margin-bottom: 2px; }
-.quem strong { filter: brightness(1.25); }
+.quem { font-size: 12px; color: var(--text-3); margin-bottom: 4px; }
+.quem strong { font-weight: 600; }
 .texto :deep(b) { font-weight: 700; }
 .hora { text-align: right; font-size: 11px; opacity: 0.6; margin-top: 2px; }
 </style>

@@ -228,7 +228,7 @@ header { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 14px; 
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
 .pedido input { flex: 1; border: 0; background: transparent; outline: none; height: 40px; }
-.enviar { background: var(--mesa); border-color: transparent; color: #06140f; }
+.enviar { background: var(--mesa); border-color: transparent; color: var(--botao-texto); }
 @media (max-width: 700px) {
   .cartao.largo { grid-column: auto; }
 }
