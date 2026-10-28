@@ -214,6 +214,38 @@ export interface Transacao {
   recorrente?: boolean;
   /** Conta a pagar quitada por esta despesa; so vem na lista de Transacoes. */
   contaPagarId?: number | null;
+  /** Veio de um extrato OFX importado. */
+  origem?: "extrato" | null;
+}
+
+export interface ContaBancaria {
+  id: number;
+  tipo: "corrente" | "cartao";
+  nome: string;
+  banco: string | null;
+  final: string | null;
+  saldo: number | null;
+  saldoEm: string | null;
+  fechamento: number | null;
+  vencimento: number | null;
+  ultimaImportacao: string | null;
+}
+
+export interface Importacao {
+  id: number;
+  conta: string;
+  arquivo: string | null;
+  de: string | null;
+  ate: string | null;
+  criados: number;
+  unidos: number;
+  ignorados: number;
+  estornados: number;
+  em: string;
+}
+
+export interface ResultadoImportacao extends Importacao {
+  contaBancaria: ContaBancaria;
 }
 
 export interface ContaPagar {

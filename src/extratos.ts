@@ -94,19 +94,32 @@ export function limparContraparte(nome: string, memo = "") {
 }
 
 const REGRAS: [RegExp, string][] = [
-  [/ifood|rappi|restaurante|lanchonete|padaria|pizzaria|burger/i, "Alimentacao"],
+  [/ifood|rappi|restaurante|lanchonete|padaria|pizzaria|burger/i, "Alimentação"],
   [/uber|\b99\b|99pop|cabify|metro|onibus|estacionamento/i, "Transporte"],
-  [/posto|shell|ipiranga|petrobras|br mania|combust/i, "Combustivel"],
-  [/farmacia|drogaria|droga|raia|pacheco|pague menos/i, "Saude"],
+  [/posto|shell|ipiranga|petrobras|br mania|combust/i, "Combustível"],
+  [/farmacia|drogaria|droga|raia|pacheco|pague menos/i, "Saúde"],
   [/mercado|supermerc|atacad|assai|carrefour|extra|pao de acucar/i, "Mercado"],
   [/netflix|spotify|disney|prime video|amazon prime|youtube|hbo|deezer|apple\.com/i, "Assinaturas"],
-  [/tarifa|anuidade|cesta de servicos|pacote servicos/i, "Tarifas bancarias"],
+  [/tarifa|anuidade|cesta de servicos|pacote servicos/i, "Tarifas bancárias"],
   [/juros|iof|encargo|multa/i, "Juros e encargos"],
-  [/salario|folha|pagto salario|proventos/i, "Salario"],
+  [/salario|folha|pagto salario|proventos/i, "Salário"],
 ];
+
+const semAcento = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+
+/** "Saude" da regra vira a "Saúde" que a conta ja usa, para nao abrir categoria paralela. */
+function comoAContaEscreve(db: Db, conta: string, nome: string) {
+  const alvo = semAcento(nome);
+  const existentes = db.prepare(`SELECT DISTINCT category FROM transactions WHERE phone = ? AND deleted_at IS NULL`).all(conta) as { category: string }[];
+  return existentes.find((c) => semAcento(c.category) === alvo)?.category ?? nome;
+}
 
 /** A categoria que a propria pessoa ja deu para essa contraparte vale mais que qualquer regra. */
 export function categoriaPara(db: Db, conta: string, contraparte: string | null, texto: string, tipo: Kind) {
+  return comoAContaEscreve(db, conta, categoriaSugerida(db, conta, contraparte, texto, tipo));
+}
+
+function categoriaSugerida(db: Db, conta: string, contraparte: string | null, texto: string, tipo: Kind) {
   if (contraparte) {
     const usada = db
       .prepare(
@@ -209,7 +222,7 @@ export function importarExtrato(repo: Repo, ctx: Contexto, dados: Buffer, nomeAr
       conta,
       chave,
       ofx.conta.tipo,
-      `${ofx.conta.tipo === "cartao" ? "Cartao" : "Conta"} ${banco ?? ""}${final ? ` final ${final}` : ""}`.replace(/\s+/g, " ").trim().slice(0, 60),
+      `${ofx.conta.tipo === "cartao" ? "Cartão" : "Conta"} ${banco ?? ""}${final ? ` final ${final}` : ""}`.replace(/\s+/g, " ").trim().slice(0, 60),
       banco,
       final,
       agora.toISOString(),

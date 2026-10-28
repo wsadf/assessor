@@ -653,9 +653,9 @@ e ausencia de duplicatas com lancamentos manuais (spec, US8, sem o parceiro).
 
 **Painel web**
 
-- [ ] T199 [P] [US8] Em `web/src/api.ts`, tipos `ContaBancaria`, `Importacao`, `ResultadoImportacao` e `origem` em `Transacao` (depende de T197)
-- [ ] T200 [US8] Criar `web/src/views/financas/ExtratosView.vue` e a rota `/financas/extratos` em `web/src/router.ts`, com "Extratos" em `SUBMENU_FINANCAS` de `web/src/mesas.ts`: aviso de que a conexao automatica pelo Open Finance ainda nao existe e como exportar o OFX no app do banco; botao "Importar extrato" (arquivo `.ofx`, lido como base64); resultado (criados, unidos, ignorados, estornados); contas e cartoes com saldo e ultima importacao, renomear, fechamento e vencimento no cartao e "Desligar" com confirmacao; historico de importacoes (depende de T199)
-- [ ] T201 [US8] Em `web/src/views/financas/TransacoesView.vue`, chip "extrato" nas transacoes com `origem = 'extrato'` (depende de T199)
+- [X] T199 [P] [US8] Em `web/src/api.ts`, tipos `ContaBancaria`, `Importacao`, `ResultadoImportacao` e `origem` em `Transacao` (depende de T197)
+- [X] T200 [US8] Criar `web/src/views/financas/ExtratosView.vue` e a rota `/financas/extratos` em `web/src/router.ts`, com "Extratos" em `SUBMENU_FINANCAS` de `web/src/mesas.ts`: aviso de que a conexao automatica pelo Open Finance ainda nao existe e como exportar o OFX no app do banco; botao "Importar extrato" (arquivo `.ofx`, lido como base64); resultado (criados, unidos, ignorados, estornados); contas e cartoes com saldo e ultima importacao, renomear, fechamento e vencimento no cartao e "Desligar" com confirmacao; historico de importacoes (depende de T199)
+- [X] T201 [US8] Em `web/src/views/financas/TransacoesView.vue`, chip "extrato" nas transacoes com `origem = 'extrato'` (depende de T199)
 
 **Checkpoint**: US8 completa sem parceiro; T191 a T193 verdes; roteiro de [quickstart.md](quickstart.md#us8-extrato-bancario) passando.
 
@@ -663,8 +663,8 @@ e ausencia de duplicatas com lancamentos manuais (spec, US8, sem o parceiro).
 
 ## Phase 32: Polish (US8)
 
-- [ ] T202 [P] Em `README.md`, secao Extrato bancario: como exportar OFX, importar pelo painel e pelo WhatsApp, o que vira lancamento, o que e ignorado, sem duplicar, estorno, fatura do cartao, so leitura, e que a conexao automatica pelo Open Finance esta adiada ate haver contrato (com os precos citados como referencia); tabela "Como esta organizado" com `src/ofx.ts` e `src/extratos.ts`
-- [ ] T203 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
+- [X] T202 [P] Em `README.md`, secao Extrato bancario: como exportar OFX, importar pelo painel e pelo WhatsApp, o que vira lancamento, o que e ignorado, sem duplicar, estorno, fatura do cartao, so leitura, e que a conexao automatica pelo Open Finance esta adiada ate haver contrato (com os precos citados como referencia); tabela "Como esta organizado" com `src/ofx.ts` e `src/extratos.ts`
+- [X] T203 Rodar `npm run typecheck`, `npm test` e `npx vue-tsc --noEmit` em `web/` e corrigir o que falhar
 - [ ] T204 Executar o roteiro de [quickstart.md](quickstart.md#us8-extrato-bancario) com um OFX real do internet banking e pelo WhatsApp, com `AI_PROVIDER=gemini` e com `AI_PROVIDER=claude` quando houver `ANTHROPIC_API_KEY`
 ---
 

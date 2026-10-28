@@ -90,13 +90,16 @@ test("importacao: categoria, contraparte, ignorados, uniao com manual, sem dupli
 
   const porId = new Map(doMes(repo).map((t) => [t.external_id, t]));
   const ifood = porId.get("C1")!;
-  assert.deepEqual([ifood.kind, ifood.amount_cents, ifood.counterpart, ifood.category, ifood.payment_method, ifood.source], ["despesa", 4590, "Ifood Restaurante", "Alimentacao", "debito", "extrato"]);
+  assert.deepEqual([ifood.kind, ifood.amount_cents, ifood.counterpart, ifood.category, ifood.payment_method, ifood.source], ["despesa", 4590, "Ifood Restaurante", "Alimentação", "debito", "extrato"]);
   const ligado = repo.getTransaction(titular, manual.id)!;
   assert.deepEqual([ligado.external_id, ligado.category, ligado.description, ligado.source], ["C2", "Personal", "Personal de outubro", null]);
   assert.deepEqual([porId.get("C3")!.counterpart, porId.get("C3")!.category, porId.get("C3")!.payment_method], ["Maria Souza", "Freela", "pix"]);
-  assert.equal(porId.get("C4")!.category, "Salario");
-  assert.equal(porId.get("C5")!.category, "Tarifas bancarias");
-  assert.deepEqual([porId.get("C8")!.counterpart, porId.get("C8")!.category], ["Padaria São José", "Alimentacao"]);
+  assert.equal(porId.get("C4")!.category, "Salário");
+  assert.equal(porId.get("C5")!.category, "Tarifas bancárias");
+  // A conta escreve "saude" do jeito dela: a regra segue a conta em vez de abrir outra categoria.
+  repo.addTransaction({ phone: titular, kind: "despesa", amount_cents: 100, category: "saude", description: "Consulta", payment_method: null, occurred_on: "2026-08-01" });
+  assert.equal(x.categoriaPara(db, titular, null, "DROGARIA SAO PAULO", "despesa"), "saude");
+  assert.deepEqual([porId.get("C8")!.counterpart, porId.get("C8")!.category], ["Padaria São José", "Alimentação"]);
   assert.ok(!porId.has("C6") && !porId.has("C7"));
 
   const deNovo = x.importarExtrato(repo, ctx, corrente, "extrato.ofx");
@@ -109,7 +112,7 @@ test("importacao: categoria, contraparte, ignorados, uniao com manual, sem dupli
   const doCartao = doMes(repo, "despesa").filter((t) => t.bank_account_id === k.contaBancaria.id);
   assert.deepEqual(doCartao.map((t) => [t.counterpart, t.category, t.payment_method]).sort(), [
     ["Netflix.com", "Assinaturas", "credito"],
-    ["Posto Shell Sao Paulo", "Combustivel", "credito"],
+    ["Posto Shell Sao Paulo", "Combustível", "credito"],
     ["Uber Trip", "Transporte", "credito"],
   ]);
   assert.equal(soma(doCartao), 3240 + 21000 + 5590);
