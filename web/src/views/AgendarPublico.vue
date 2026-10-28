@@ -224,7 +224,7 @@ const podeVoltar = computed(() => ["dados", "horario"].includes(etapa.value) || 
 <style scoped>
 .como { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; color: #d6d6dc; }
 .como li { display: flex; gap: 12px; align-items: center; font-size: 15px; }
-.como span { width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid #34d399; color: #34d399; display: grid; place-items: center; font-size: 12px; font-weight: 600; flex: none; }
+.como span { width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid var(--accent); color: var(--accent); display: grid; place-items: center; font-size: 12px; font-weight: 600; flex: none; }
 .auth-titulo::first-letter { text-transform: uppercase; }
 .voltar { padding-left: 0; margin-bottom: 8px; }
 .opcoes { display: grid; gap: 10px; }

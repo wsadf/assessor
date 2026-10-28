@@ -89,6 +89,6 @@ async function entrar() {
 .beneficios div { display: grid; gap: 2px; }
 .beneficios strong { font-size: 15px; }
 .beneficios span:not(.check) { font-size: 13px; color: #a4a4ae; }
-.check { width: 20px; height: 20px; border-radius: 50%; background: #10b981; color: #06140f; display: grid; place-items: center; flex: none; margin-top: 1px; }
+.check { width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: var(--botao-texto); display: grid; place-items: center; flex: none; margin-top: 1px; }
 .link-aviso { color: inherit; text-decoration: underline; font-weight: 600; }
 </style>

@@ -86,7 +86,7 @@ async function copiar() {
 <style scoped>
 .como { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; color: #d6d6dc; }
 .como li { display: flex; gap: 12px; align-items: center; font-size: 15px; }
-.como span { width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid #34d399; color: #34d399; display: grid; place-items: center; font-size: 12px; font-weight: 600; flex: none; }
+.como span { width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid var(--accent); color: var(--accent); display: grid; place-items: center; font-size: 12px; font-weight: 600; flex: none; }
 .valor { font-size: 36px; font-weight: 700; text-align: center; }
 .centro { text-align: center; margin: 0; }
 .qr { display: block; margin: 0 auto; border-radius: 12px; background: #fff; padding: 8px; max-width: 100%; height: auto; }
