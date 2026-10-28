@@ -25,9 +25,15 @@ Razao: o produto guarda a vida financeira das pessoas. Um vazamento entre contas
   proprio produto e links de cobranca que o usuario gera para os clientes dele.
 - No link de cobranca, o valor MUST ir direto do pagador para a conta do usuario no parceiro. O
   produto MUST NOT receber, reter, repassar ou antecipar esse dinheiro; so le a confirmacao.
+- A cobranca do usuario aos clientes dele tambem MAY usar Pix estatico (copia-e-cola e QR no padrao
+  BR Code do Banco Central) montado com a chave Pix do proprio usuario. Nesse caso o produto so
+  monta o codigo: o pagamento sai do banco do pagador direto para o banco do usuario, e o produto
+  MUST NOT iniciar, intermediar ou guardar a transacao. A confirmacao MUST vir do usuario ou do
+  extrato importado, nunca presumida.
 
 Razao: movimentar dinheiro exige ser instituicao de pagamento. Fica fora do escopo do produto.
-Cobrar pelo parceiro, sem custodia, mantem o produto fora desse papel.
+Cobrar pelo parceiro, sem custodia, mantem o produto fora desse papel. O Pix estatico com a chave do
+usuario tambem nao poe o produto nesse papel: quem liquida e o banco de cada um.
 
 ### III. Provedor de IA intercambiavel
 
@@ -114,4 +120,4 @@ Razao: produto financeiro que parece funcionar e nao funciona gera decisao errad
   MUST ser justificada na secao de complexidade do plano.
 - Orientacao do dia a dia fica no `README.md` e em `docs/`.
 
-**Version**: 1.1.0 | **Ratified**: 2026-10-27 | **Last Amended**: 2026-10-27
+**Version**: 1.2.0 | **Ratified**: 2026-10-27 | **Last Amended**: 2026-10-27
