@@ -7,7 +7,9 @@
 **Note**: o plano cresce por historia. US1 (conta compartilhada, PR #1), US2 (documentos, PR #2),
 US3 (avisos proativos, PR #3), US4 (Google Agenda, PR #4), US5 (pagina de agendamento, PR #5), US6
 (mensagens a outras pessoas, PR #6) e US7 (area do contador, PR #7) estao implementadas e na
-`main`. Esta revisao planeja a US8 (Open Finance so leitura). A US9 entra depois.
+`main`. Esta revisao planeja a US8 sem parceiro de Open Finance (decisao de 2026-10-27, R81): o
+extrato OFX entra agora e a conexao automatica fica para quando houver contrato. A US9 entra
+depois.
 
 ## Summary
 
@@ -15,42 +17,40 @@ US3 (avisos proativos, PR #3), US4 (Google Agenda, PR #4), US5 (pagina de agenda
 proativos (R23 a R34), Google Agenda (R35 a R46), pagina de agendamento (R47 a R58), mensagens a
 outras pessoas (R59 a R70) e area do contador (R71 a R80).
 
-**US8, este plano**: o titular conecta bancos e cartoes pelo Pluggy Connect, no painel. O servidor
-le contas, cartoes, faturas e movimentacoes pela API REST do parceiro, so leitura, e transforma cada
-movimentacao confirmada num lancamento com categoria, contraparte e forma de pagamento, unindo com o
-lancamento manual equivalente (mesmo valor, data a ate 2 dias) em vez de duplicar. A primeira
-importacao traz 90 dias; depois o webhook do parceiro (que so dispara uma busca) e o agendador a
-cada 6 horas mantem tudo em dia. Estorno tira do total. Consentimento perto de vencer, com erro ou
-revogado para a importacao e avisa o titular. O assessor responde sobre a fatura do cartao e recusa
-qualquer pedido de movimentar dinheiro. Detalhes em [research.md](research.md) R81 a R92.
+**US8, este plano**: o usuario manda o extrato ou a fatura em OFX, pelo painel ou pelo WhatsApp.
+Um leitor proprio (OFX 1.x e 2.x, sem dependencia) identifica a conta ou o cartao e cada
+movimentacao, que vira lancamento com categoria (pela historia da contraparte ou por regras),
+contraparte limpa e forma de pagamento. O mesmo arquivo nao duplica; um gasto ja registrado pelo
+WhatsApp com mesmo valor e data a ate 2 dias e unido; pagamento de fatura e investimento sao
+ignorados; credito no cartao estorna a compra correspondente. Com fechamento e vencimento
+informados no cartao, o assessor responde sobre a fatura. Nada movimenta dinheiro. Adiados: conexao
+por parceiro (FR-032), aviso de consentimento (FR-034) e os cenarios 1 e 4. Detalhes em
+[research.md](research.md) R81 a R90.
 
 ## Technical Context
 
 **Language/Version**: TypeScript 7 em ESM, Node 22
 
-**Primary Dependencies**: Fastify 5, zod 4, better-sqlite3 13; API REST da Pluggy (sem SDK no
-servidor); no painel, `pluggy-connect-sdk` para abrir o widget de consentimento (dependencia nova,
-justificada em R84)
+**Primary Dependencies**: Fastify 5, zod 4, better-sqlite3 13; painel em Vue 3 + Vue Router.
+Nenhuma dependencia nova.
 
-**Storage**: SQLite: `bank_connections`, `bank_accounts`, `card_bills`; colunas `source`,
-`external_id`, `bank_account_id` e `reversed_at` em `transactions`; tipo de aviso `bancos`
+**Storage**: SQLite: `bank_accounts`, `bank_imports`; colunas `source`, `external_id`,
+`bank_account_id` e `reversed_at` em `transactions`
 
-**Testing**: `node --test` via `npm test`, com `test/bancos.test.ts` e o parceiro simulado em
-`test/pluggyFalso.ts`; `npm run typecheck`; `vue-tsc` no painel
+**Testing**: `node --test` via `npm test`, com `test/extratos.test.ts` e arquivos de exemplo em
+`test/ofx/`; `npm run typecheck`; `vue-tsc` no painel
 
 **Target Platform**: servidor Node unico
 
 **Project Type**: web service com painel web (back-end em `src/`, front-end em `web/`)
 
-**Performance Goals**: primeira importacao de 90 dias em menos de 1 minuto por conta; webhook
-responde `202` na hora e sincroniza fora do pedido
+**Performance Goals**: extrato de 1.000 movimentacoes importado em menos de 5 s
 
-**Constraints**: so leitura (FR-032, FR-035); sem duplicar (FR-033, SC-009 abaixo de 2%); avisar
-consentimento (FR-034); corpo do webhook nunca vira dado (R85); custo do parceiro a confirmar
-(R92)
+**Constraints**: sem duplicar (FR-033, SC-009 abaixo de 2%); so leitura (FR-035); arquivo nao fica
+no servidor; numero completo da conta nao e guardado (R84, R90)
 
-**Scale/Scope**: 5 rotas privadas e 1 publica, 2 ferramentas, 1 tipo de aviso, tela Financas >
-Bancos, selo "banco" nas transacoes, tarefa nova no agendador
+**Scale/Scope**: 4 rotas, 3 ferramentas, `src/ofx.ts` e `src/extratos.ts`, tela Financas >
+Extratos, selo "extrato" nas transacoes, estornadas fora dos totais
 
 ## Constitution Check
 
@@ -58,13 +58,13 @@ Bancos, selo "banco" nas transacoes, tarefa nova no agendador
 
 | Principio | Avaliacao (US8) | Status |
 | --- | --- | --- |
-| I. Dados financeiros sao do usuario | Conexao por conta, so o titular conecta; item conferido pelo `clientUserId`; credenciais do banco nunca passam pelo servidor; webhook so dispara busca do item conhecido; perfis continuam filtrando o que cada membro ve | Passa |
-| II. Dinheiro so leitura | So rotas de leitura do parceiro; nenhuma iniciacao de pagamento; assessor recusa Pix e transferencia (R82) | Passa |
+| I. Dados financeiros sao do usuario | Contas e lancamentos por conta; so a chave da conta bancaria (hash) e 4 digitos; arquivo descartado; perfil so gastos nao importa nem ve receitas | Passa |
+| II. Dinheiro so leitura | Extrato e leitura; nenhuma ferramenta movimenta dinheiro (R89) | Passa |
 | III. Provedor de IA intercambiavel | Ferramentas comuns aos dois provedores | Passa |
-| IV. Custo por conta sob controle | Importacao e categorizacao sem IA; custo do parceiro por conexao a confirmar no contrato antes de abrir a todos (R92) | Passa, com a condicao de R92 |
-| V. Uma fonte de verdade | Movimentacoes viram lancamentos comuns, com categoria e contraparte na entrada, vistos igual no WhatsApp e no painel | Passa |
-| VI. Simplicidade de MVP | REST direto no servidor; uma dependencia so no painel, obrigatoria para o consentimento (R84); codigo do parceiro isolado em um arquivo | Passa |
-| VII. Honestidade | Sem credenciais, "nao disponivel"; erro de consentimento visivel e avisado; estorno marcado | Passa |
+| IV. Custo por conta sob controle | Sem IA na importacao; sem parceiro pago (R81) | Passa |
+| V. Uma fonte de verdade | Movimentacoes viram lancamentos comuns, com categoria e contraparte na entrada; importacao pelo painel e pelo WhatsApp com a mesma funcao | Passa |
+| VI. Simplicidade de MVP | Leitor de OFX proprio, sem biblioteca; reaproveita o arquivo pendente da US2 | Passa |
+| VII. Honestidade | Tela e README dizem que a conexao automatica nao existe ainda; resultado da importacao mostra o que foi ignorado e por que | Passa |
 
 Reavaliado apos a Fase 1: sem violacoes. Complexity Tracking vazio.
 
@@ -76,10 +76,10 @@ Reavaliado apos a Fase 1: sem violacoes. Complexity Tracking vazio.
 specs/001-paridade-meu-assessor/
 ├── spec.md
 ├── plan.md              # US1 a US7 entregues, US8 planejada
-├── research.md          # R1 a R80 (US1 a US7), R81 a R92 (US8)
+├── research.md          # R1 a R80 (US1 a US7), R81 a R90 (US8)
 ├── data-model.md        # secoes US1 a US8
 ├── quickstart.md        # secoes US1 a US8
-├── contracts/           # US1 a US7, mais api-bancos.md e ferramentas-bancos.md (US8)
+├── contracts/           # US1 a US7, mais api-extratos.md e ferramentas-extratos.md (US8)
 ├── checklists/
 │   └── requirements.md
 └── tasks.md             # US1 a US7 concluidas; US8 entra via /speckit-tasks
@@ -89,46 +89,44 @@ specs/001-paridade-meu-assessor/
 
 ```text
 src/
-├── openfinance.ts   # novo: cliente REST do parceiro (auth, connect token, itens, contas, faturas, transacoes)
-├── bancos.ts        # novo: tabelas, conexoes, sincronizacao, mapa de categorias, uniao com manuais, estorno, fatura, avisos
-├── db.ts            # colunas novas em transactions; estornadas fora das consultas
-├── avisos.ts        # tipo de aviso bancos
-├── scheduler.ts     # sincronizacao a cada 6 h e aviso de consentimento
-├── tools.ts         # bancos_conectados, fatura_do_cartao; [banco] em consultar_transacoes
-├── prompt.ts        # regras de fatura e de so leitura
-├── config.ts        # PLUGGY_CLIENT_ID, PLUGGY_CLIENT_SECRET, OPENFINANCE_WEBHOOK_SECRET
-└── api.ts           # rotas /api/bancos e webhook publico
+├── ofx.ts           # novo: leitor de OFX 1.x e 2.x
+├── extratos.ts      # novo: tabelas, contas bancarias, importacao, categoria, contraparte, uniao, estorno, fatura
+├── db.ts            # colunas novas em transactions; estornadas fora de todas as consultas
+├── tools.ts         # importar_extrato, contas_bancarias, fatura_do_cartao; [extrato] em consultar_transacoes
+├── prompt.ts        # regras de OFX, fatura e so leitura
+└── api.ts           # rotas /api/extratos; origem nas transacoes
 
 web/src/
-├── views/financas/BancosView.vue   # novo: conectar, renovar, sincronizar, desconectar, contas e cartoes
-├── views/financas/TransacoesView.vue  # selo banco e estornada
-├── mesas.ts, router.ts             # Bancos no submenu de Financas
-└── api.ts                          # tipos
+├── views/financas/ExtratosView.vue    # novo: importar, resultado, contas e cartoes, fechamento e vencimento, historico
+├── views/financas/TransacoesView.vue  # selo extrato
+├── mesas.ts, router.ts                # Extratos no submenu de Financas
+└── api.ts                             # tipos
 
 test/
-├── pluggyFalso.ts
-└── bancos.test.ts
+├── ofx/corrente-1x.ofx, ofx/cartao-2x.ofx
+└── extratos.test.ts
 ```
 
-**Structure Decision**: `src/openfinance.ts` fala com o parceiro e mais nada; `src/bancos.ts` tem a
-regra de negocio e nao conhece URL nem formato do parceiro alem dos tipos que o cliente devolve.
-Trocar de parceiro e reescrever so o primeiro.
+**Structure Decision**: `src/ofx.ts` so le o formato; `src/extratos.ts` tem a regra e recebe
+movimentacoes ja lidas. Um parceiro de Open Finance, quando vier, entrega movimentacoes no mesmo
+formato para `src/extratos.ts`.
 
 ## Ordem sugerida (US8)
 
-1. Tabelas, colunas e cliente do parceiro, com o simulado.
-2. Sincronizacao: contas, faturas, movimentacoes, categoria, contraparte, uniao, estorno.
-3. Rotas, webhook e agendador.
-4. Avisos de consentimento.
-5. Ferramentas e prompt.
-6. Painel: Bancos e selo nas transacoes.
-7. README, `.env.example` e quickstart com o sandbox.
+1. Leitor de OFX com os arquivos de exemplo.
+2. Tabelas, colunas e filtro de estornadas.
+3. Importacao: contraparte, categoria, forma de pagamento, ignorados, uniao, estorno.
+4. Fatura do cartao.
+5. Rotas, ferramentas e prompt.
+6. Painel: Extratos e selo nas transacoes.
+7. README e quickstart.
 
 ## Fora desta entrega (US8)
 
-- Importar extrato OFX ou CSV.
-- Saldo consolidado e previsao de caixa com dados do banco.
-- Investimentos e emprestimos do Open Finance.
+- Conexao automatica pelo Open Finance (FR-032), aviso de consentimento (FR-034) e os cenarios 1
+  e 4: dependem de contrato com parceiro (R81).
+- Importar CSV.
+- Investimentos, emprestimos e previsao de caixa.
 - Qualquer movimentacao de dinheiro (proibida pela constituicao).
 
 ## Complexity Tracking

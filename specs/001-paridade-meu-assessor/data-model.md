@@ -482,68 +482,52 @@ revoga--> `revoked_at`; um novo convite aceito depois cria outro vinculo.
   `boletos` com data (`document_date`, ou `saved_at` quando nao ha) no mes, mais os ligados
   (`transaction_id`) a um lancamento do mes, de qualquer pasta.
 
-# US8: Open Finance so leitura
+# US8: Extrato bancario
 
-Decisoes em [research.md](research.md) R81 a R92.
-
-## bank_connections (nova)
-
-| Campo | Tipo | Regra |
-| --- | --- | --- |
-| id | INTEGER PK | |
-| conta | TEXT NOT NULL | telefone da conta |
-| item_id | TEXT NOT NULL UNIQUE | id do item no parceiro |
-| connector | TEXT NOT NULL | nome do banco, ex.: "Nubank" |
-| status | TEXT NOT NULL | `ativa`, `atualizando`, `erro`, `expirada`, `revogada` |
-| status_detail | TEXT | motivo legivel do erro |
-| consent_expires_at | TEXT | vencimento do consentimento, quando o parceiro informa |
-| last_sync_at | TEXT | ultima sincronizacao que terminou |
-| created_by | TEXT NOT NULL | o titular |
-| created_at | TEXT NOT NULL | |
-
-Transicoes: `ativa` --webhook ou agendador--> `atualizando` --> `ativa`; qualquer --parceiro diz
-`LOGIN_ERROR` ou `OUTDATED`--> `erro`; --consentimento venceu--> `expirada`; --revogado no banco--> `revogada`;
-`erro|expirada|revogada` --renovar no widget--> `ativa`; desconectar apaga a linha.
+Decisoes em [research.md](research.md) R81 a R90.
 
 ## bank_accounts (nova)
 
 | Campo | Tipo | Regra |
 | --- | --- | --- |
 | id | INTEGER PK | |
-| connection_id | INTEGER NOT NULL | conexao |
-| external_id | TEXT NOT NULL UNIQUE | id da conta no parceiro |
+| conta | TEXT NOT NULL | telefone da conta |
+| account_key | TEXT NOT NULL | SHA-256 de `BANKID` + `ACCTID`; `UNIQUE (conta, account_key)` |
 | type | TEXT NOT NULL | `corrente` ou `cartao` |
-| name | TEXT NOT NULL | ex.: "Conta corrente", "Nubank Mastercard" |
+| name | TEXT NOT NULL | 1 a 60 caracteres; sugerido pelo banco, editavel |
+| bank_name | TEXT | `ORG` ou codigo do banco |
 | number_hint | TEXT | 4 ultimos digitos |
-| balance_cents | INTEGER | saldo (corrente) ou fatura atual (cartao) |
-| credit_limit_cents | INTEGER | so cartao |
-| available_cents | INTEGER | so cartao |
-| close_date | TEXT | so cartao: fechamento da fatura atual (`AAAA-MM-DD`) |
-| due_date | TEXT | so cartao: vencimento da fatura atual |
-| updated_at | TEXT NOT NULL | |
+| balance_cents | INTEGER | saldo do ultimo extrato (`LEDGERBAL`) |
+| balance_at | TEXT | data do saldo |
+| close_day | INTEGER | so cartao, 1 a 31: dia de fechamento |
+| due_day | INTEGER | so cartao, 1 a 31: dia de vencimento |
+| last_import_at | TEXT | |
+| created_at | TEXT NOT NULL | |
 
-## card_bills (nova)
+## bank_imports (nova)
 
 | Campo | Tipo | Regra |
 | --- | --- | --- |
 | id | INTEGER PK | |
-| bank_account_id | INTEGER NOT NULL | cartao |
-| external_id | TEXT NOT NULL UNIQUE | id da fatura no parceiro |
-| due_date | TEXT NOT NULL | vencimento |
-| total_cents | INTEGER NOT NULL | valor total |
+| bank_account_id | INTEGER NOT NULL | conta de origem |
+| conta | TEXT NOT NULL | |
+| created_by | TEXT NOT NULL | quem importou |
+| file_name | TEXT | nome do arquivo |
+| period_start | TEXT | `DTSTART` |
+| period_end | TEXT | `DTEND` |
+| created | INTEGER NOT NULL | lancamentos novos |
+| linked | INTEGER NOT NULL | unidos a manuais |
+| skipped | INTEGER NOT NULL | ja importados, pagamentos de fatura e investimentos |
+| reversed | INTEGER NOT NULL | compras estornadas |
+| created_at | TEXT NOT NULL | |
 
 ## Colunas novas em transactions
 
 | Campo | Tipo | Regra |
 | --- | --- | --- |
-| source | TEXT | `banco` quando veio do Open Finance; nulo = manual |
-| external_id | TEXT | id da movimentacao no parceiro; unico por conta quando nao nulo |
+| source | TEXT | `extrato` quando veio de OFX; nulo = manual |
+| external_id | TEXT | `FITID`; unico por `(phone, bank_account_id)` quando nao nulo |
 | bank_account_id | INTEGER | conta ou cartao de origem |
-| reversed_at | TEXT | estornada no banco; sai dos totais como `deleted_at` |
+| reversed_at | TEXT | compra estornada: sai de todos os totais como os excluidos |
 
-Indice unico: `(phone, external_id) WHERE external_id IS NOT NULL`.
-
-## Aviso novo
-
-`notice_prefs.kind` ganha `bancos` (recria a tabela como na US5): consentimento perto de vencer,
-erro ou revogacao, ligado por padrao para o titular.
+Indice unico: `(phone, bank_account_id, external_id) WHERE external_id IS NOT NULL`.
