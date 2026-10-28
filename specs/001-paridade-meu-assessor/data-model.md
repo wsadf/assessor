@@ -543,8 +543,8 @@ Decisoes em [research.md](research.md) R91 a R100.
 | conta | TEXT PK | uma chave por conta |
 | key_type | TEXT NOT NULL | `cpf`, `cnpj`, `email`, `telefone`, `aleatoria` |
 | key | TEXT NOT NULL | normalizada: so digitos (CPF, CNPJ), minusculas (e-mail), `+55...` (telefone), UUID minusculo |
-| merchant_name | TEXT NOT NULL | 1 a 25 caracteres, sem acento, maiusculas |
-| merchant_city | TEXT NOT NULL | 1 a 15 caracteres, sem acento, maiusculas |
+| merchant_name | TEXT NOT NULL | 1 a 25 caracteres, sem acento |
+| merchant_city | TEXT NOT NULL | 1 a 15 caracteres, sem acento |
 | updated_by | TEXT NOT NULL | |
 | updated_at | TEXT NOT NULL | |
 

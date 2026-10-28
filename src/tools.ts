@@ -15,6 +15,16 @@ import { config } from "./config.js";
 import { cancelarEnvio, envioDaConta, listarEnvios, pedirEnvio, ultimasMensagens } from "./contatos.js";
 import { contadoresDe, gerarConviteContador, revogarContador, type ContadorDaConta } from "./contador.js";
 import { contasBancarias, faturaDoCartao, importarExtrato } from "./extratos.js";
+import {
+  AVISO_CANCELAMENTO,
+  cancelarCobranca,
+  cobrancaDaConta,
+  criarCobranca,
+  linkDaCobranca,
+  listarCobrancas,
+  marcarPaga,
+  vencida,
+} from "./cobrancas.js";
 import { conta, repoDoContexto, type Membro } from "./conta.js";
 import type { Kind, Recurrence, Repo, Task, Transaction } from "./db.js";
 import { documentos, nomePasta, PASTA_IDS, PASTAS, podeVerDocumento, type Documento } from "./documentos.js";
@@ -210,6 +220,16 @@ const schemas = {
   importar_extrato: z.object({}),
   contas_bancarias: z.object({}),
   fatura_do_cartao: z.object({ cartao: z.string().min(1).max(60).nullish() }),
+  criar_cobranca: z.object({
+    pagador: z.string().min(1).max(60),
+    whatsapp: z.string().min(1).nullish(),
+    valor: z.number().positive().max(1_000_000),
+    descricao: z.string().min(1).max(72),
+    vencimento: nullableIsoDate,
+  }),
+  consultar_cobrancas: z.object({ situacao: z.enum(["aberta", "paga", "cancelada"]).nullish(), pagador: z.string().min(1).max(60).nullish() }),
+  marcar_cobranca_paga: z.object({ id: z.number().int(), data: nullableIsoDate }),
+  cancelar_cobranca: z.object({ id: z.number().int(), confirmado: z.boolean() }),
   cancelar_mensagem_contato: z.object({ id: z.number().int(), confirmado: z.boolean() }),
 };
 
@@ -259,6 +279,10 @@ const CAPACIDADE: Partial<Record<keyof typeof schemas, Capacidade>> = {
   importar_extrato: "despesas",
   contas_bancarias: "despesas",
   fatura_do_cartao: "despesas",
+  criar_cobranca: "receitas",
+  consultar_cobrancas: "receitas",
+  marcar_cobranca_paga: "receitas",
+  cancelar_cobranca: "receitas",
   mensagem_para_contato: "agenda",
   consultar_mensagens_contato: "agenda",
   cancelar_mensagem_contato: "agenda",
@@ -557,6 +581,31 @@ export const toolDefinitions: Anthropic.Tool[] = [
     "fatura_do_cartao",
     "Responde sobre a fatura do cartao importado: valor em aberto, se a ultima ja fechou, fechamento, vencimento e compras do mes no credito.",
     { cartao: nullable({ ...str, description: "Nome ou final do cartao; null para todos" }) },
+  ),
+  tool(
+    "criar_cobranca",
+    "Cria uma cobranca por Pix na chave do proprio usuario, ex.: 'cobra R$ 850 do Joao pela consultoria de agosto'. Devolve o link de pagamento e o copia-e-cola.",
+    {
+      pagador: { ...str, description: "Quem paga, ex.: Joao Silva" },
+      whatsapp: nullable({ ...str, description: "WhatsApp do pagador, se o usuario informou" }),
+      valor: { type: "number", description: "Valor em reais" },
+      descricao: { ...str, description: "O que esta sendo cobrado, curto, ex.: Consultoria de agosto" },
+      vencimento: nullable({ ...str, description: `${dateDesc}. null se nao foi dito` }),
+    },
+  ),
+  tool("consultar_cobrancas", "Lista as cobrancas por Pix, com situacao (aberta, paga, cancelada) e as vencidas, com o id de cada uma.", {
+    situacao: nullable({ type: "string", enum: ["aberta", "paga", "cancelada"] }),
+    pagador: nullable({ ...str, description: "Parte do nome de quem paga" }),
+  }),
+  tool(
+    "marcar_cobranca_paga",
+    "Registra que uma cobranca foi paga e lanca a receita. So use quando o usuario disser que recebeu ('o Joao pagou').",
+    { id: { type: "integer" }, data: nullable({ ...str, description: `${dateDesc} do pagamento. null = hoje` }) },
+  ),
+  tool(
+    "cancelar_cobranca",
+    "Cancela uma cobranca aberta. Chame com confirmado false, mostre qual e, e so chame com true depois da confirmacao.",
+    { id: { type: "integer" }, confirmado: { type: "boolean" } },
   ),
   tool(
     "convidar_contador",
@@ -907,6 +956,7 @@ function run(repo: Repo, ctx: Contexto, toolName: ToolName, input: any, extras: 
         return [
           `Extrato importado: ${r.contaBancaria.nome}${periodo}.`,
           `${r.criados} lancamentos novos, ${r.unidos} unidos a lancamentos ja registrados, ${r.ignorados} ignorados (ja importados, pagamento de fatura ou investimento)${r.estornados ? `, ${r.estornados} compras estornadas` : ""}.`,
+          ...r.avisos,
           r.contaBancaria.tipo === "cartao" && !r.contaBancaria.fechamento
             ? "Para responder sobre a fatura, o usuario pode informar o dia de fechamento e de vencimento em Financas > Extratos."
             : "",
@@ -944,6 +994,36 @@ function run(repo: Repo, ctx: Contexto, toolName: ToolName, input: any, extras: 
             : `${f.cartao}: no credito este mes ${brl(Math.round(f.comprasNoMes * 100))} em ${f.quantidade} compras. Para saber fechamento e vencimento, o usuario informa os dias em Financas > Extratos.`,
         )
         .join("\n");
+    }
+
+    case "criar_cobranca": {
+      const c = criarCobranca(repo.db, ctx, input);
+      return [
+        `Cobranca #${c.id}: ${c.payer_name}, ${brl(c.amount_cents)}, ${c.description}${c.due_on ? `, vence ${c.due_on}` : ""}.`,
+        `Link de pagamento: ${linkDaCobranca(c.slug)}`,
+        `Copia-e-cola: ${c.pix_payload}`,
+        "O pagamento vai direto para a conta do usuario pelo Pix. Para mandar ao pagador, use mensagem_para_contato com o link, se o usuario pedir.",
+      ].join("\n");
+    }
+
+    case "consultar_cobrancas": {
+      const lista = listarCobrancas(repo.db, ctx, input);
+      if (!lista.length) return "Nenhuma cobranca encontrada.";
+      return lista
+        .map((c) => `#${c.id} | ${c.payer_name} | ${brl(c.amount_cents)} | ${c.due_on ? `vence ${c.due_on}` : "sem vencimento"} | ${c.status}${vencida(c) ? " (VENCIDA)" : ""}${c.paid_via === "extrato" ? " (pelo extrato)" : ""}`)
+        .join("\n");
+    }
+
+    case "marcar_cobranca_paga": {
+      const c = marcarPaga(repo, ctx, input.id, { data: input.data });
+      return `Cobranca #${c.id} paga: receita de ${brl(c.amount_cents)} de ${c.payer_name} lancada (#${c.transaction_id}).`;
+    }
+
+    case "cancelar_cobranca": {
+      const c = cobrancaDaConta(repo.db, ctx, input.id);
+      if (!input.confirmado) return `Confirme com o usuario antes de cancelar a cobranca #${c.id} (${c.payer_name}, ${brl(c.amount_cents)}). ${AVISO_CANCELAMENTO}`;
+      cancelarCobranca(repo.db, ctx, input.id);
+      return `Cobranca #${c.id} cancelada. ${AVISO_CANCELAMENTO}`;
     }
 
     case "convidar_contador": {
