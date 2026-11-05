@@ -146,12 +146,14 @@ test("categoria acima do normal, comparativo e resumo da noite", () => {
   assert.equal(comp.totalAnterior, 58000);
   assert.deepEqual(comp.variacoes.map((v) => v.categoria), ["Mercado", "Lazer", "Padaria"]);
 
+  // Conta propria: o resumo le o dia real, e os gastos fixos acima podem cair nele.
+  const noite = contaCom("agenda_tarefas");
   const hoje = localDate();
-  repo.addTransaction({ phone: titular, kind: "despesa", amount_cents: 4000, category: "x", description: "x", payment_method: null, occurred_on: hoje });
-  repo.addTask(titular, { title: "Revisar" });
+  noite.repo.addTransaction({ phone: titular, kind: "despesa", amount_cents: 4000, category: "x", description: "x", payment_method: null, occurred_on: hoje });
+  noite.repo.addTask(titular, { title: "Revisar" });
   const now = new Date();
-  assert.match(av.resumoNoite(repo, ctxDe(repo, titular), now)!, /1 gasto \(R\$\s?40,00\).*1 tarefa/);
-  const daBia = av.resumoNoite(repo, ctxDe(repo, bia), now)!;
+  assert.match(av.resumoNoite(noite.repo, ctxDe(noite.repo, titular), now)!, /1 gasto \(R\$\s?40,00\).*1 tarefa/);
+  const daBia = av.resumoNoite(noite.repo, ctxDe(noite.repo, bia), now)!;
   assert.doesNotMatch(daBia, /gasto/);
   assert.match(daBia, /1 tarefa/);
   const vazio = contaCom();
