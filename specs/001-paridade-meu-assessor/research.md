@@ -195,7 +195,7 @@ aqui.
 
 ## R19. Painel
 
-- **Decision**: a mesa de Tarefas (Davi) passa a cuidar tambem dos documentos: cargo "Projetos e
+- **Decision**: a mesa de Tarefas (Jonny) passa a cuidar tambem dos documentos: cargo "Projetos e
   documentos" e subtela `/tarefas/documentos` com pastas, busca, download, renomear, mover e
   excluir. Em Transacoes, o lancamento com comprovante mostra "ver comprovante". O download usa
   `fetch` com o token da sessao e abre o arquivo como `blob:`.

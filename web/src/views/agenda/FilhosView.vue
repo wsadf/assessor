@@ -214,7 +214,7 @@ function apagar(c: CompromissoFilho) {
 
 function cancelarAberto() {
   const atual = painel.value?.modo === "compromisso" ? painel.value.atual : undefined;
-  if (!atual || !confirm(`Cancelar "${atual.titulo}"? A Lia não avisa mais dele.`)) return;
+  if (!atual || !confirm(`Cancelar "${atual.titulo}"? A Day não avisa mais dele.`)) return;
   return executar(() => api.patch(`/filhos/compromissos/${atual.id}`, { acao: "cancelar" }));
 }
 
@@ -232,7 +232,7 @@ function removerFilho(f: Filho) {
       <RouterLink class="icon-btn" to="/agenda" aria-label="Voltar para Agenda"><AppIcon name="voltar" /></RouterLink>
       <div>
         <h1>Filhos</h1>
-        <p>Provas, vacinas, consultas e aniversários de amiguinhos. A Lia avisa na véspera, no seu WhatsApp.</p>
+        <p>Provas, vacinas, consultas e aniversários de amiguinhos. A Day avisa na véspera, no seu WhatsApp.</p>
       </div>
       <span class="spacer" />
       <button class="btn" :disabled="noLimite" :title="noLimite ? 'Limite de filhos por conta' : undefined" @click="abrirFilho()"><AppIcon name="mais" :size="16" /> Filho</button>
@@ -245,7 +245,7 @@ function removerFilho(f: Filho) {
     <EstadoVazio
       v-if="filhos.dados.value && !cartoes.length"
       titulo="Nenhum filho cadastrado"
-      texto="Cadastre o primeiro e a Lia passa a avisar os compromissos dele. No WhatsApp: “tenho a Marina, 8 anos” e depois “a Marina tem prova de ciências sexta”."
+      texto="Cadastre o primeiro e a Day passa a avisar os compromissos dele. No WhatsApp: “tenho a Marina, 8 anos” e depois “a Marina tem prova de ciências sexta”."
     >
       <button class="btn primary" @click="abrirFilho()">Cadastrar o primeiro filho</button>
     </EstadoVazio>
@@ -346,7 +346,7 @@ function removerFilho(f: Filho) {
         <section class="card lista">
           <LinhaCompromisso v-for="c in aMarcar" :key="c.id ?? c.titulo" :c="c" acoes @acao="acionar" @editar="abrirCompromisso" @apagar="apagar" />
         </section>
-        <p class="faint dica">Sem data não há aviso de dia. A Lia lembra disso uma vez por semana.</p>
+        <p class="faint dica">Sem data não há aviso de dia. A Day lembra disso uma vez por semana.</p>
       </template>
     </template>
 
@@ -368,7 +368,7 @@ function removerFilho(f: Filho) {
         <label v-if="formFilho.modo === 'nascimento'" class="field"><span>Nascimento</span><input v-model="formFilho.nascimento" class="input" type="date" :max="HOJE" /></label>
         <template v-else>
           <label class="field"><span>Idade em anos</span><input v-model="formFilho.idade" class="input" inputmode="numeric" placeholder="Ex.: 8" /></label>
-          <p class="faint">Sem a data de nascimento, a Lia não avisa o aniversário do filho.</p>
+          <p class="faint">Sem a data de nascimento, a Day não avisa o aniversário do filho.</p>
         </template>
       </template>
 

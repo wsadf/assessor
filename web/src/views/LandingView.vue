@@ -123,7 +123,7 @@ onMounted(() => (document.title = "Assessor · Sua equipe no WhatsApp"));
         <div class="msg ele m1">
           <span class="ico"><AppLogo :tamanho="22" :nome="false" /></span>
           <div>
-            <div class="cab"><span>Lia</span><time>07:58</time></div>
+            <div class="cab"><span>Day</span><time>07:58</time></div>
             Bom dia! Como posso ajudar hoje?
           </div>
         </div>
@@ -134,7 +134,7 @@ onMounted(() => (document.title = "Assessor · Sua equipe no WhatsApp"));
         <div class="msg ele m3">
           <span class="ico"><AppLogo :tamanho="22" :nome="false" /></span>
           <div>
-            <div class="cab"><span>Lia</span><time>07:59</time></div>
+            <div class="cab"><span>Day</span><time>07:59</time></div>
             Você tem 3 compromissos. Deixei o almoço livre e o Bento já anotou os gastos de ontem.
           </div>
         </div>

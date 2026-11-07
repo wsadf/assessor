@@ -45,9 +45,9 @@ O painel mostra os mesmos dados do chat e do WhatsApp, organizados em mesas, cad
 | Mesa | Assessor | O que mostra |
 | --- | --- | --- |
 | Finanças | Bento | Saldo do período, maiores saídas, fim do mês projetado, categorias, renda média e variação, parcelas já comprometidas, pulso do mês; telas de Transações (lançar, parcelar, editar, excluir), Categorias, Pessoas e lojas, Formas de pagamento e Análises (gráficos reorganizáveis e pedidos de gráfico) |
-| Fiscal | Clara | Receitas do mês como base de faturamento e o histórico de 6 meses. A emissão de nota fiscal ainda não está ligada |
-| Agenda | Lia | Lembretes por dia, próximos compromissos, as duas próximas semanas e criação de lembretes |
-| Tarefas | Davi | Tarefas por status, atrasadas, projetos; criar, editar, concluir; tela de Documentos |
+| Fiscal | Liz | Receitas do mês como base de faturamento e o histórico de 6 meses. A emissão de nota fiscal ainda não está ligada |
+| Agenda | Day | Lembretes por dia, próximos compromissos, as duas próximas semanas e criação de lembretes |
+| Tarefas | Jonny | Tarefas por status, atrasadas, projetos; criar, editar, concluir; tela de Documentos |
 | Operação | Otto | Registros por mês e a equipe de assessores |
 | Pesquisas | Nina | Balcão de pesquisas. A busca na internet ainda não está ligada no assessor |
 
@@ -225,7 +225,7 @@ Fora desta versão: nota fiscal, boleto e cartão, Pix dinâmico, cobrança reco
 
 ### Compromissos dos filhos
 
-A Lia cuida da rotina dos filhos: provas e trabalhos da escola, aniversários de amiguinhos com o presente, vacinas e consultas. Funciona pelo WhatsApp e pela tela **Agenda > Filhos**, com os mesmos dados.
+A Day cuida da rotina dos filhos: provas e trabalhos da escola, aniversários de amiguinhos com o presente, vacinas e consultas. Funciona pelo WhatsApp e pela tela **Agenda > Filhos**, com os mesmos dados.
 
 - **Cadastrar:** "tenho a Marina, 8 anos" ou o botão **Filho**. Vale o nome ou apelido (até 40 caracteres) e a data de nascimento. Sem a data, guarda só a idade aproximada, e então não há aviso de aniversário do filho. Até 10 filhos por conta.
 - **Registrar:** "a Marina tem prova de ciências sexta às 8h", "aniversário do João, amigo do Pedro, sábado às 15h, presente quebra-cabeça", "consulta do Pedro no pediatra dia 14". Com mais de um filho e sem o nome na mensagem, o assessor pergunta de qual. Sem data, grava como **a marcar** e lembra uma vez por semana.

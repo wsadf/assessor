@@ -7,7 +7,7 @@
 **Status**: Draft
 
 **Input**: User description: "Evoluir o Assessor MVP para paridade funcional com o Meu Assessor
-(meuassessor.com), mantendo nome, assessores e identidade proprios (Bento, Clara, Lia, Davi, Otto,
+(meuassessor.com), mantendo nome, assessores e identidade proprios (Bento, Liz, Day, Jonny, Otto,
 Nina) e respeitando a constituicao v1.0.0. Faltam, em ordem de prioridade: conta compartilhada,
 documentos, avisos proativos de financas, Google Agenda, pagina publica de agendamento, contato com
 terceiros, area do contador, Open Finance so leitura, link de cobranca e NFS-e. Fora de escopo:
@@ -123,7 +123,7 @@ avancar o relogio de teste e verificar que o aviso e o lancamento automatico aco
 
 ### User Story 4 - Google Agenda pelo WhatsApp (Priority: P4)
 
-O usuario conecta a propria conta Google uma vez. Depois a assessora de agenda (Lia) cria,
+O usuario conecta a propria conta Google uma vez. Depois a assessora de agenda (Day) cria,
 consulta e remarca compromissos a partir de texto ou audio ("marca o dentista quinta as tres da
 tarde"), convida pessoas por e-mail, gera o link de videochamada quando pedido e manda de manha os
 compromissos do dia.
