@@ -315,7 +315,7 @@ export interface Recorrencia {
   situacao: "ativa" | "pausada" | "cancelada";
 }
 
-export type TipoAviso = "vencimentos" | "categoria" | "recorrentes" | "resumo_manha" | "resumo_noite" | "agendamentos";
+export type TipoAviso = "vencimentos" | "categoria" | "recorrentes" | "resumo_manha" | "resumo_noite" | "agendamentos" | "filhos";
 
 export interface Aviso {
   tipo: TipoAviso;
@@ -601,4 +601,62 @@ export interface Pesquisas {
   andamento: number;
   fontes: number;
   habilitado: boolean;
+}
+
+export type TipoCompromisso = "escola" | "aniversario_amigo" | "vacina" | "consulta" | "outro";
+
+export interface CompromissoFilho {
+  /** Nulo no aniversario do proprio filho, que e calculado e nao tem registro. */
+  id: number | null;
+  virtual: boolean;
+  filhoId: number;
+  filhoNome: string;
+  tipo: TipoCompromisso | "aniversario";
+  titulo: string;
+  disciplina: string | null;
+  amigo: string | null;
+  presente: string | null;
+  presenteSituacao: "por_comprar" | "comprado" | null;
+  local: string | null;
+  observacao: string | null;
+  data: string | null;
+  hora: string | null;
+  antecedenciaDias: number | null;
+  repetirMeses: number | null;
+  situacao: "aberto" | "concluido" | "cancelado";
+  aMarcar: boolean;
+}
+
+export interface Filho {
+  id: number;
+  nome: string;
+  nascimento: string | null;
+  idade: number | null;
+  idadeAproximada: boolean;
+  proximo: CompromissoFilho | null;
+}
+
+export interface FilhosResposta {
+  filhos: Filho[];
+  limite: number;
+}
+
+export interface CompromissosFilhos {
+  compromissos: CompromissoFilho[];
+  aMarcar: CompromissoFilho[];
+  semana: CompromissoFilho[];
+}
+
+export type AcaoCompromisso = "concluir" | "cancelar" | "reabrir" | "presente_comprado" | "presente_por_comprar";
+export interface Vacina {
+  id: number;
+  vacina: string;
+  dose: string | null;
+  aplicadaEm: string;
+  proximoCompromissoId: number | null;
+}
+
+export interface VacinasResposta {
+  vacinas: Vacina[];
+  proximas: CompromissoFilho[];
 }

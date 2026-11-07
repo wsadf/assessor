@@ -6,7 +6,7 @@ import AppIcon from "./components/AppIcon.vue";
 import AppLogo from "./components/AppLogo.vue";
 import BotaoWhatsapp from "./components/BotaoWhatsapp.vue";
 import { carregarEu, eu as me, pode } from "./estado";
-import { MESAS, SUBMENU_FINANCAS, mesaLiberada, mesaPorId } from "./mesas";
+import { MESAS, SUBMENU_FINANCAS, SUBPAGINAS, mesaLiberada, mesaPorId } from "./mesas";
 
 const route = useRoute();
 const router = useRouter();
@@ -16,7 +16,7 @@ const menuAberto = ref(false);
 const tema = ref(document.documentElement.dataset.theme === "light" ? "light" : "dark");
 const mesas = computed(() => MESAS.filter((m) => mesaLiberada(m, pode)));
 const emClientes = computed(() => route.path === "/contador");
-const pagina = computed(() => (emClientes.value ? "Clientes" : SUBMENU_FINANCAS.find((s) => s.rota === route.path)?.nome));
+const pagina = computed(() => (emClientes.value ? "Clientes" : (SUBMENU_FINANCAS.find((s) => s.rota === route.path)?.nome ?? SUBPAGINAS[route.path])));
 
 watch(() => route.fullPath, () => (menuAberto.value = false));
 // Carrega a conta ao entrar na area logada (inclusive logo depois do login).

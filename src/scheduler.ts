@@ -31,6 +31,7 @@ import { enviarVencidos, limparContatos } from "./contatos.js";
 import { repoDoContexto, resolverContexto } from "./conta.js";
 import type { Repo } from "./db.js";
 import { documentos } from "./documentos.js";
+import { avancarRepetidos, avisosDevidos, lembreteAMarcar, linhasDoDia } from "./filhos.js";
 import { estado as estadoGoogle, eventosDoDia, limparAutorizacoes, type Evento } from "./google.js";
 import { contextoTitular } from "./permissoes.js";
 import { localDate, localHour, nextOccurrence } from "./time.js";
@@ -54,7 +55,8 @@ export async function runRemindersOnce(repo: Repo, send: Envio, now = new Date()
 }
 
 export function buildDailySummary(repo: Repo, phone: string, now = new Date()): string | null {
-  return resumoManha(repo, contextoTitular(phone), now);
+  const ctx = contextoTitular(phone);
+  return resumoManha(repo, ctx, now, undefined, linhasDoDia(repo.db, ctx, localDate(now)));
 }
 
 /**
@@ -67,6 +69,7 @@ export async function rodarAvisos(repo: Repo, send: Envio, now = new Date()) {
   const hora = localHour(now);
   const amanha = addDias(hoje, 1);
   lancarDevidas(repo, hoje);
+  avancarRepetidos(db, hoje);
 
   const pessoas = (db.prepare(`SELECT phone FROM users`).all() as { phone: string }[]).map((u) => u.phone);
   for (const phone of pessoas) {
@@ -97,8 +100,17 @@ export async function rodarAvisos(repo: Repo, send: Envio, now = new Date()) {
         case "resumo_manha":
         case "resumo_noite": {
           if (!uma(p.tipo)) break;
-          const texto = p.tipo === "resumo_manha" ? resumoManha(repo, ctx, now, await eventosDoResumo(repo, phone, hoje)) : resumoNoite(repo, ctx, now);
+          const texto =
+            p.tipo === "resumo_manha"
+              ? resumoManha(repo, ctx, now, await eventosDoResumo(repo, phone, hoje), linhasDoDia(db, ctx, hoje))
+              : resumoNoite(repo, ctx, now);
           if (texto) await entregar(db, send, phone, p.tipo, hoje, texto, now);
+          break;
+        }
+        case "filhos": {
+          for (const a of avisosDevidos(db, ctx.conta, hoje)) await entregar(db, send, phone, p.tipo, a.chave, a.texto, now);
+          const marcar = lembreteAMarcar(db, ctx.conta);
+          if (marcar) await entregar(db, send, phone, p.tipo, `filho-amarcar:${semanaIso(hoje)}`, marcar, now);
           break;
         }
       }

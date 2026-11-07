@@ -8,7 +8,7 @@ import EstadoVazio from "../components/EstadoVazio.vue";
 import StatusCarga from "../components/StatusCarga.vue";
 import ValorGrande from "../components/ValorGrande.vue";
 import { addDias, dataLocal, horaLocal, rotuloDia } from "../format";
-import { HOJE, useCarregar } from "../estado";
+import { HOJE, pode, useCarregar } from "../estado";
 
 const dia = ref(HOJE);
 const { dados: ag, carregando, erro, recarregar } = useCarregar(() => api.get<Agenda>("/agenda", { dia: dia.value }), [dia]);
@@ -179,6 +179,8 @@ async function cancelar(l: Lembrete) {
         <h1>Agenda</h1>
         <p>Compromissos e lembretes que a Lia avisa no seu WhatsApp.</p>
       </div>
+      <span class="spacer" />
+      <RouterLink v-if="pode('agenda')" class="btn" to="/agenda/filhos">Filhos →</RouterLink>
     </div>
 
     <StatusCarga :carregando="carregando && !ag" :erro="erro" @tentar="recarregar" />
