@@ -11,6 +11,7 @@ import { prepararTabelasContatos } from "./contatos.js";
 import { prepararTabelasContador } from "./contador.js";
 import { prepararTabelasExtratos } from "./extratos.js";
 import { prepararTabelasCobrancas } from "./cobrancas.js";
+import { prepararTabelasFilhos } from "./filhos.js";
 
 export type Kind = "despesa" | "receita";
 export type Recurrence = "diario" | "semanal" | "mensal" | null;
@@ -207,6 +208,7 @@ export function openDb(file = config.dbPath) {
   prepararTabelasContador(db);
   prepararTabelasExtratos(db);
   prepararTabelasCobrancas(db);
+  prepararTabelasFilhos(db);
   return db;
 }
 

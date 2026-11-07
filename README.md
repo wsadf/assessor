@@ -223,6 +223,22 @@ O assessor cobra os seus clientes por Pix na **sua própria chave**. O dinheiro 
 
 Fora desta versão: nota fiscal, boleto e cartão, Pix dinâmico, cobrança recorrente, multa e juros, lembrete de vencimento ao cliente.
 
+### Compromissos dos filhos
+
+A Lia cuida da rotina dos filhos: provas e trabalhos da escola, aniversários de amiguinhos com o presente, vacinas e consultas. Funciona pelo WhatsApp e pela tela **Agenda > Filhos**, com os mesmos dados.
+
+- **Cadastrar:** "tenho a Marina, 8 anos" ou o botão **Filho**. Vale o nome ou apelido (até 40 caracteres) e a data de nascimento. Sem a data, guarda só a idade aproximada, e então não há aviso de aniversário do filho. Até 10 filhos por conta.
+- **Registrar:** "a Marina tem prova de ciências sexta às 8h", "aniversário do João, amigo do Pedro, sábado às 15h, presente quebra-cabeça", "consulta do Pedro no pediatra dia 14". Com mais de um filho e sem o nome na mensagem, o assessor pergunta de qual. Sem data, grava como **a marcar** e lembra uma vez por semana.
+- **Avisos:** na véspera de cada compromisso, às 9h (o horário muda em Operação > Avisos, no tipo "Compromissos dos filhos"). Aniversário de amigo avisa 3 dias antes, citando o presente, e na véspera. O aniversário de cada filho avisa 7 dias antes. Para mudar um compromisso, diga "me avisa uma semana antes". Todo responsável com acesso à agenda recebe, cada um com a própria preferência. Compromisso criado no dia em que o aviso sairia não gera aviso retroativo; o resumo da manhã mostra o item no dia.
+- **Todo ano:** o aniversário de amigo volta sozinho na data do ano seguinte, com o presente de novo por comprar. A consulta de rotina ("de 6 em 6 meses") cria a seguinte quando você a conclui.
+- **Consultar e atualizar:** "o que o Pedro tem essa semana?", "entreguei o trabalho da Marina", "a consulta passou para dia 18", "já comprei o presente do João".
+- **Vacinas:** "o Pedro tomou a 2ª dose da gripe hoje, a próxima é em 6 meses" guarda o histórico e cria a próxima dose com aviso. **O assessor não indica quais vacinas, doses nem prazos.** Só repete o que você registrou e manda consultar o calendário oficial de vacinação e o pediatra.
+- **Dados sensíveis:** dado de criança e de saúde é sensível (LGPD). O produto guarda só nome ou apelido, data de nascimento e o texto dos compromissos, sem documento, foto ou endereço. Os dados ficam só na sua conta e não aparecem na área do contador. Vale a regra de plano de IA da constituição: com a cota gratuita do Gemini, só em teste local.
+- **Remover um filho** apaga os compromissos e as vacinas dele, sem volta. **O produto ainda não tem exclusão da conta inteira.**
+- **Quem pode:** quem tem acesso à agenda. O membro "só gastos" não vê.
+
+Fora desta versão: ler foto de convite ou de bilhete, anexar documento ao filho, grade escolar e notas, integração com escola ou plano de saúde, e qualquer calendário de vacinas.
+
 Para desenvolver com recarga automática, em dois terminais:
 
 ```bash
@@ -346,6 +362,7 @@ O agente usa o fallback do servidor da Anthropic (`fallbacks: "default"`): se um
 | `src/pix.ts` | Código Pix estático no padrão BR Code do Banco Central e validação da chave |
 | `src/cobrancas.ts` | Cobranças por Pix: chave, link público, confirmação pelo usuário ou pelo extrato e cancelamento |
 | `src/extratos.ts` | Contas bancárias, importação com categoria, contraparte e união com lançamentos manuais, estorno e fatura do cartão |
+| `src/filhos.ts` | Filhos: compromissos de escola, aniversários de amigo e do filho, vacinas e consultas de rotina, aviso antes de cada um e a repetição anual |
 | `src/avisos.ts` | Contas a pagar, recorrências, categoria acima do normal, comparativo, preferências de aviso, registro contra repetição e fila de avisos não entregues |
 | `src/painel.ts` | Sobe a API e o painel compilado, sem WhatsApp |
 | `src/seed.ts` | Dados de demonstração em `data/demo.db` |
@@ -364,3 +381,4 @@ Em `docs/aprendizados-meu-assessor.md` está o que veio da entrevista do fundado
 - Sem Open Finance: o extrato entra por arquivo OFX até haver contrato com um agregador (seção Extrato bancário).
 - Só o calendário principal do Google; Outlook, iCloud e agendas secundárias ficam de fora.
 - Arquivos no disco do servidor: para mais de um servidor, armazenamento de objetos (S3, R2).
+- Filhos: sem foto de convite, sem documento por filho e sem calendário de vacinas. Não há exclusão da conta inteira, só a remoção de cada filho.

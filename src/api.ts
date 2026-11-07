@@ -56,6 +56,20 @@ import {
 import { GoogleExpirado, GoogleIndisponivel, GoogleNaoConectado, GoogleNaoConfigurado } from "./google.js";
 import { cancelarEnvio, listarEnvios, ultimasMensagens } from "./contatos.js";
 import {
+  apagarCompromisso,
+  atualizarCompromisso,
+  atualizarFilho,
+  cadastrarFilho,
+  criarCompromisso,
+  LIMITE_FILHOS,
+  listarCompromissos,
+  listarFilhos,
+  listarVacinas,
+  registrarVacina,
+  removerFilho,
+  TIPOS_COMPROMISSO,
+} from "./filhos.js";
+import {
   cancelarCobranca,
   chaveDe,
   cobrancaPublica,
@@ -211,6 +225,53 @@ const taskBody = z.object({
   status: z.enum(["pendente", "andamento", "concluida"]).optional(),
 });
 
+const filhoBody = z.object({
+  nome: z.string().trim().min(1).max(40),
+  nascimento: dataSchema.nullable().optional(),
+  idadeAproximada: z.number().int().nullable().optional(),
+});
+
+const compromissoBody = z.object({
+  filhoId: z.number().int().positive(),
+  tipo: z.enum(TIPOS_COMPROMISSO),
+  titulo: z.string().trim().min(1).max(80),
+  data: dataSchema.nullable().optional(),
+  hora: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
+  local: z.string().trim().max(80).nullable().optional(),
+  observacao: z.string().trim().max(300).nullable().optional(),
+  disciplina: z.string().trim().max(40).nullable().optional(),
+  amigo: z.string().trim().max(40).nullable().optional(),
+  presente: z.string().trim().max(80).nullable().optional(),
+  antecedenciaDias: z.number().int().min(0).max(60).nullable().optional(),
+  repetirMeses: z.number().int().min(1).max(24).nullable().optional(),
+  /** So para registrar algo que ja aconteceu; sem isso, data no passado e recusada. */
+  situacao: z.literal("concluido").optional(),
+});
+
+const compromissoAlteracao = compromissoBody
+  .omit({ filhoId: true, tipo: true, situacao: true })
+  .partial()
+  .extend({ acao: z.enum(["concluir", "cancelar", "reabrir", "presente_comprado", "presente_por_comprar"]).optional() });
+
+const filtroCompromissos = z.object({
+  filho: z.coerce.number().int().positive().optional(),
+  tipo: z.enum([...TIPOS_COMPROMISSO, "aniversario"]).optional(),
+  de: dataSchema.optional(),
+  ate: dataSchema.optional(),
+  situacao: z.enum(["aberto", "concluido", "cancelado", "todos"]).optional(),
+});
+
+const vacinaBody = z.object({
+  filhoId: z.number().int().positive(),
+  vacina: z.string().trim().min(1).max(60),
+  dose: z.string().trim().max(20).nullable().optional(),
+  data: dataSchema,
+  proximaData: dataSchema.nullable().optional(),
+  proximaEmMeses: z.number().int().min(1).max(24).nullable().optional(),
+});
+
+const idDaRota = z.coerce.number().int().positive();
+
 const reminderBody = z.object({
   texto: z.string().trim().min(1),
   dataHora: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
@@ -305,6 +366,16 @@ const CAPACIDADE_ROTA: Record<string, Capacidade[]> = {
   "DELETE /api/extratos/contas/:id": ["despesas"],
   "GET /api/contatos/mensagens": ["agenda"],
   "DELETE /api/contatos/envios/:id": ["agenda"],
+  "GET /api/filhos": ["agenda"],
+  "POST /api/filhos": ["agenda"],
+  "PATCH /api/filhos/:id": ["agenda"],
+  "DELETE /api/filhos/:id": ["agenda"],
+  "GET /api/filhos/compromissos": ["agenda"],
+  "POST /api/filhos/compromissos": ["agenda"],
+  "PATCH /api/filhos/compromissos/:id": ["agenda"],
+  "DELETE /api/filhos/compromissos/:id": ["agenda"],
+  "GET /api/filhos/:id/vacinas": ["agenda"],
+  "POST /api/filhos/vacinas": ["agenda"],
 };
 const SEM_ACESSO = { erro: "Seu acesso a esta conta não inclui isso." };
 
@@ -1436,6 +1507,103 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
         try {
           cancelarEnvio(repo.db, de(req).ctx, Number((req.params as { id: string }).id));
           return { ok: true };
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      // Filhos: as mesmas funcoes de src/filhos.ts que o assistente usa; a regra nao e reescrita aqui.
+      api.get("/filhos", async (req) => ({ filhos: listarFilhos(repo.db, de(req).ctx), limite: LIMITE_FILHOS }));
+
+      api.post("/filhos", async (req, reply) => {
+        const b = parse(filhoBody, body(req), reply);
+        if (!b) return;
+        try {
+          return reply.code(201).send(cadastrarFilho(repo.db, de(req).ctx, b));
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      api.patch("/filhos/:id", async (req, reply) => {
+        const id = parse(idDaRota, (req.params as { id: string }).id, reply);
+        const b = parse(filhoBody.partial(), body(req), reply);
+        if (!id || !b) return;
+        try {
+          return atualizarFilho(repo.db, de(req).ctx, id, b);
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      api.delete("/filhos/:id", async (req, reply) => {
+        const id = parse(idDaRota, (req.params as { id: string }).id, reply);
+        if (!id) return;
+        try {
+          return { ok: true, compromissosApagados: removerFilho(repo.db, de(req).ctx, id).compromissos };
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      api.get("/filhos/compromissos", async (req, reply) => {
+        const f = parse(filtroCompromissos, req.query, reply);
+        if (!f) return;
+        try {
+          return listarCompromissos(repo.db, de(req).ctx, { filhoId: f.filho, tipo: f.tipo, de: f.de, ate: f.ate, situacao: f.situacao });
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      api.post("/filhos/compromissos", async (req, reply) => {
+        const b = parse(compromissoBody, body(req), reply);
+        if (!b) return;
+        const { situacao, ...campos } = b;
+        try {
+          return reply.code(201).send(criarCompromisso(repo.db, de(req).ctx, { ...campos, jaAconteceu: situacao === "concluido" }));
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      api.patch("/filhos/compromissos/:id", async (req, reply) => {
+        const id = parse(idDaRota, (req.params as { id: string }).id, reply);
+        const b = parse(compromissoAlteracao, body(req), reply);
+        if (!id || !b) return;
+        try {
+          return atualizarCompromisso(repo.db, de(req).ctx, id, b);
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      api.delete("/filhos/compromissos/:id", async (req, reply) => {
+        const id = parse(idDaRota, (req.params as { id: string }).id, reply);
+        if (!id) return;
+        try {
+          apagarCompromisso(repo.db, de(req).ctx, id);
+          return { ok: true };
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      api.get("/filhos/:id/vacinas", async (req, reply) => {
+        const id = parse(idDaRota, (req.params as { id: string }).id, reply);
+        if (!id) return;
+        try {
+          return listarVacinas(repo.db, de(req).ctx, id);
+        } catch (err) {
+          return responderErro(reply, err);
+        }
+      });
+
+      api.post("/filhos/vacinas", async (req, reply) => {
+        const b = parse(vacinaBody, body(req), reply);
+        if (!b) return;
+        try {
+          return reply.code(201).send(registrarVacina(repo.db, de(req).ctx, b));
         } catch (err) {
           return responderErro(reply, err);
         }

@@ -13,6 +13,7 @@ export const TIPOS_AVISO = {
   resumo_manha: { nome: "Resumo da manhã", descricao: "Gastos de ontem, total do mês, lembretes e vencimentos do dia", exige: null, hora: config.dailySummaryHour },
   resumo_noite: { nome: "Resumo da noite", descricao: "O que a equipe registrou no dia", exige: null, hora: 21 },
   agendamentos: { nome: "Agendamentos da página", descricao: "Novo horário marcado, confirmação e pedido de remarcar dos clientes", exige: ["agenda"], hora: 0 },
+  filhos: { nome: "Compromissos dos filhos", descricao: "Antes de cada compromisso dos filhos e nos aniversários deles", exige: ["agenda"], hora: 9 },
 } satisfies Record<string, { nome: string; descricao: string; exige: Capacidade[] | null; hora: number }>;
 
 export type TipoAviso = keyof typeof TIPOS_AVISO;
@@ -166,11 +167,15 @@ const disponivel = (ctx: Contexto, tipo: TipoAviso) => {
   return !exige || exige.some((c) => pode(ctx, c));
 };
 
-/** Titular recebe o essencial como antes da conta compartilhada; membro so o que ligar. Agendamentos: quem tem pagina ativa. */
-const padraoLigado = (db: Db, ctx: Contexto, tipo: TipoAviso) =>
-  tipo === "agendamentos"
-    ? !!db.prepare(`SELECT 1 FROM booking_pages WHERE phone = ? AND status = 'ativa'`).get(ctx.membro)
-    : ctx.perfil === "titular" && tipo !== "resumo_noite";
+/**
+ * Titular recebe o essencial como antes da conta compartilhada; membro so o que ligar. Agendamentos: quem tem
+ * pagina ativa. Filhos: todo responsavel com acesso a agenda, porque os dois pais precisam saber.
+ */
+const padraoLigado = (db: Db, ctx: Contexto, tipo: TipoAviso) => {
+  if (tipo === "agendamentos") return !!db.prepare(`SELECT 1 FROM booking_pages WHERE phone = ? AND status = 'ativa'`).get(ctx.membro);
+  if (tipo === "filhos") return pode(ctx, "agenda");
+  return ctx.perfil === "titular" && tipo !== "resumo_noite";
+};
 
 export function preferencias(db: Db, ctx: Contexto) {
   const linhas = db.prepare(`SELECT kind, enabled, hour FROM notice_prefs WHERE phone = ?`).all(ctx.membro) as {
@@ -532,8 +537,11 @@ export const textoRecorrente = (t: Transaction) =>
 const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
 const criadoHoje = (criado: string, hoje: string) => localDate(new Date(criado.includes("T") ? criado : `${criado.replace(" ", "T")}Z`)) === hoje;
 
-/** `eventos` sao os do Google Agenda de quem recebe; "falhou" quando o Google nao respondeu. */
-export function resumoManha(repo: Repo, ctx: Contexto, now: Date, eventos?: Evento[] | "falhou"): string | null {
+/**
+ * `eventos` sao os do Google Agenda de quem recebe; "falhou" quando o Google nao respondeu. `extras` sao linhas
+ * de outros modulos (os filhos), que chegam prontas para este arquivo nao depender deles.
+ */
+export function resumoManha(repo: Repo, ctx: Contexto, now: Date, eventos?: Evento[] | "falhou", extras: string[] = []): string | null {
   const r = repoDoContexto(repo, ctx);
   const hoje = localDate(now);
   const ontem = addDias(hoje, -1);
@@ -554,6 +562,7 @@ export function resumoManha(repo: Repo, ctx: Contexto, now: Date, eventos?: Even
     const hora = (iso: string) => new Intl.DateTimeFormat("pt-BR", { timeZone: config.timezone, hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
     linhas.push(`- Compromissos de hoje: ${eventos.map((e) => (e.diaInteiro ? e.titulo : `${hora(e.inicio)} ${e.titulo}`)).join("; ")}`);
   }
+  linhas.push(...extras);
   return linhas.length ? ["Bom dia! Seu resumo:", ...linhas].join("\n") : null;
 }
 

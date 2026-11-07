@@ -5,6 +5,7 @@ import { config, DEMO_DB_PATH } from "./config.js";
 import { conta } from "./conta.js";
 import { openDb, repo as makeRepo } from "./db.js";
 import { documentos, pastaDeArquivos, type PastaId } from "./documentos.js";
+import { apagarFilhosDaConta, cadastrarFilho, criarCompromisso, registrarVacina } from "./filhos.js";
 import fs from "node:fs";
 import path from "node:path";
 import { fromLocal, localDate } from "./time.js";
@@ -40,6 +41,7 @@ for (const p of [phone, BIA.phone]) {
 for (const table of ["contact_messages", "contact_sends", "contacts"]) db.prepare(`DELETE FROM ${table} WHERE conta = ?`).run(phone);
 for (const table of ["accountant_access", "accountant_invites"]) db.prepare(`DELETE FROM ${table} WHERE account_phone = ?`).run(phone);
 for (const table of ["bank_imports", "bank_accounts", "charges", "pix_keys"]) db.prepare(`DELETE FROM ${table} WHERE conta = ?`).run(phone);
+apagarFilhosDaConta(db, phone);
 repo.ensureUser(phone, "Demonstração");
 
 // Conta de teste para entrar no painel de demonstracao; credenciais ficticias, so deste banco.
@@ -299,6 +301,30 @@ criarRecorrencia(db, titularDemo, { tipo: "despesa", valor: 89.9, categoria: "Sa
 criarRecorrencia(db, titularDemo, { tipo: "despesa", valor: 55.9, categoria: "Assinaturas", descricao: "Streaming", frequencia: "mensal", inicio: proximoDia(18), pagamento: "credito Nubank" });
 definirPreferencia(db, phone, "resumo_noite", { ligado: true });
 
+// Filhos criados "ha uma semana": assim os avisos dos compromissos proximos ainda estao por vir.
+const criadoEm = addDays(today, -7);
+const marina = cadastrarFilho(db, titularDemo, { nome: "Marina", nascimento: `${Number(today.slice(0, 4)) - 8}-${addDays(today, 12).slice(5)}` }, criadoEm);
+const pedro = cadastrarFilho(db, titularDemo, { nome: "Pedro", idadeAproximada: 6 }, criadoEm);
+const compromisso = (filhoId: number, d: Omit<Parameters<typeof criarCompromisso>[2], "filhoId">) => criarCompromisso(db, titularDemo, { filhoId, ...d }, criadoEm);
+compromisso(marina.id, { tipo: "escola", titulo: "Prova de ciências", disciplina: "Ciências", data: addDays(today, 3), hora: "08:00" });
+compromisso(marina.id, { tipo: "escola", titulo: "Entrega do trabalho de história", disciplina: "História", data: addDays(today, 6) });
+compromisso(marina.id, { tipo: "consulta", titulo: "Dentista", data: addDays(today, 9), hora: "16:30", local: "Clínica Sorriso", repetirMeses: 6 });
+compromisso(pedro.id, { tipo: "outro", titulo: "Reunião de pais", data: addDays(today, 2), hora: "19:00", local: "Escola" });
+compromisso(pedro.id, {
+  tipo: "aniversario_amigo",
+  titulo: "Aniversário do João",
+  amigo: "João",
+  presente: "quebra-cabeça",
+  local: "Buffet Alegria",
+  data: addDays(today, 5),
+  hora: "15:00",
+});
+compromisso(pedro.id, { tipo: "vacina", titulo: "Gripe", data: addDays(today, 14), local: "Posto de saúde" });
+compromisso(pedro.id, { tipo: "consulta", titulo: "Pediatra" });
+compromisso(pedro.id, { tipo: "consulta", titulo: "Oftalmologista", data: addDays(today, -10), jaAconteceu: true });
+registrarVacina(db, titularDemo, { filhoId: pedro.id, vacina: "Tríplice viral", dose: "1ª dose", data: addDays(today, -30), proximaEmMeses: 6 }, criadoEm);
+registrarVacina(db, titularDemo, { filhoId: pedro.id, vacina: "Hepatite A", dose: "reforço", data: addDays(today, -200) }, criadoEm);
+
 for (const [role, text] of [
   ["user", "gastei 62 na farmácia"],
   ["assistant", "Lancei R$ 62,00 em Saúde. No mês já são R$ 180,00."],
@@ -308,6 +334,6 @@ for (const [role, text] of [
   repo.addHistory(phone, role, text);
 }
 
-console.log(`Demonstracao gravada em ${file}: ${total} lancamentos, 6 lembretes, ${tarefas.length} tarefas, ${exemplos.length} documentos, 3 contas a pagar e 2 recorrencias.`);
+console.log(`Demonstracao gravada em ${file}: ${total} lancamentos, 6 lembretes, ${tarefas.length} tarefas, ${exemplos.length} documentos, 3 contas a pagar, 2 recorrencias e 2 filhos com compromissos.`);
 console.log(`Para entrar no painel de demonstracao: ${DEMO_EMAIL} / ${DEMO_SENHA}`);
 console.log(`Como membro so gastos da mesma conta: ${BIA.email} / ${DEMO_SENHA}`);

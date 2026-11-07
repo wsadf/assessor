@@ -55,7 +55,7 @@ test("fundacao: preferencias padrao, registro unico e fila de pendentes", async 
   const doTitular = Object.fromEntries(av.preferencias(db, ctxDe(repo, titular)).map((p) => [p.tipo, p]));
   assert.deepEqual(
     Object.fromEntries(Object.entries(doTitular).map(([k, p]) => [k, [p.ligado, p.hora, p.disponivel]])),
-    { vencimentos: [true, 9, true], categoria: [true, 9, true], recorrentes: [true, 9, true], resumo_manha: [true, 7, true], resumo_noite: [false, 21, true], agendamentos: [false, 0, true] },
+    { vencimentos: [true, 9, true], categoria: [true, 9, true], recorrentes: [true, 9, true], resumo_manha: [true, 7, true], resumo_noite: [false, 21, true], agendamentos: [false, 0, true], filhos: [true, 9, true] },
   );
   const daBia = Object.fromEntries(av.preferencias(db, ctxDe(repo, bia)).map((p) => [p.tipo, p]));
   assert.ok(Object.values(daBia).every((p) => !p.ligado));
@@ -146,12 +146,14 @@ test("categoria acima do normal, comparativo e resumo da noite", () => {
   assert.equal(comp.totalAnterior, 58000);
   assert.deepEqual(comp.variacoes.map((v) => v.categoria), ["Mercado", "Lazer", "Padaria"]);
 
+  // Conta propria: o resumo le o dia real, e os gastos fixos acima podem cair nele.
+  const noite = contaCom("agenda_tarefas");
   const hoje = localDate();
-  repo.addTransaction({ phone: titular, kind: "despesa", amount_cents: 4000, category: "x", description: "x", payment_method: null, occurred_on: hoje });
-  repo.addTask(titular, { title: "Revisar" });
+  noite.repo.addTransaction({ phone: titular, kind: "despesa", amount_cents: 4000, category: "x", description: "x", payment_method: null, occurred_on: hoje });
+  noite.repo.addTask(titular, { title: "Revisar" });
   const now = new Date();
-  assert.match(av.resumoNoite(repo, ctxDe(repo, titular), now)!, /1 gasto \(R\$\s?40,00\).*1 tarefa/);
-  const daBia = av.resumoNoite(repo, ctxDe(repo, bia), now)!;
+  assert.match(av.resumoNoite(noite.repo, ctxDe(noite.repo, titular), now)!, /1 gasto \(R\$\s?40,00\).*1 tarefa/);
+  const daBia = av.resumoNoite(noite.repo, ctxDe(noite.repo, bia), now)!;
   assert.doesNotMatch(daBia, /gasto/);
   assert.match(daBia, /1 tarefa/);
   const vazio = contaCom();

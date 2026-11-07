@@ -26,6 +26,23 @@ import {
   vencida,
 } from "./cobrancas.js";
 import { conta, repoDoContexto, type Membro } from "./conta.js";
+import {
+  atualizarCompromisso,
+  AVISO_SAUDE,
+  cadastrarFilho,
+  contarDoFilho,
+  criarCompromisso,
+  DATA_PASSADA,
+  descreverCompromisso,
+  listarCompromissos,
+  listarFilhos,
+  quando,
+  registrarVacina,
+  removerFilho,
+  resolverFilho,
+  textoLista,
+  TIPOS_COMPROMISSO,
+} from "./filhos.js";
 import type { Kind, Recurrence, Repo, Task, Transaction } from "./db.js";
 import { documentos, nomePasta, PASTA_IDS, PASTAS, podeVerDocumento, type Documento } from "./documentos.js";
 import {
@@ -231,6 +248,47 @@ const schemas = {
   marcar_cobranca_paga: z.object({ id: z.number().int(), data: nullableIsoDate }),
   cancelar_cobranca: z.object({ id: z.number().int(), confirmado: z.boolean() }),
   cancelar_mensagem_contato: z.object({ id: z.number().int(), confirmado: z.boolean() }),
+  cadastrar_filho: z.object({ nome: z.string().min(1), nascimento: nullableIsoDate, idade_aproximada: z.number().int().nullish() }),
+  listar_filhos: z.object({}),
+  remover_filho: z.object({ filho: z.string().min(1), confirmado: z.boolean() }),
+  registrar_compromisso_filho: z.object({
+    filho: z.string().nullish(),
+    tipo: z.enum(TIPOS_COMPROMISSO),
+    titulo: z.string().min(1),
+    data: nullableIsoDate,
+    hora: z.string().nullish(),
+    local: z.string().nullish(),
+    observacao: z.string().nullish(),
+    disciplina: z.string().nullish(),
+    amigo: z.string().nullish(),
+    presente: z.string().nullish(),
+    avisar_dias_antes: z.number().int().nullish(),
+    repetir_meses: z.number().int().nullish(),
+    ja_aconteceu: z.boolean().nullish(),
+  }),
+  consultar_compromissos_filhos: z.object({
+    filho: z.string().nullish(),
+    de: nullableIsoDate,
+    ate: nullableIsoDate,
+    tipo: z.enum([...TIPOS_COMPROMISSO, "aniversario"]).nullish(),
+    incluir_concluidos: z.boolean().nullish(),
+  }),
+  atualizar_compromisso_filho: z.object({
+    id: z.number().int(),
+    acao: z.enum(["concluir", "cancelar", "reabrir", "presente_comprado", "presente_por_comprar"]).nullish(),
+    nova_data: nullableIsoDate,
+    nova_hora: z.string().nullish(),
+    titulo: z.string().nullish(),
+    avisar_dias_antes: z.number().int().nullish(),
+  }),
+  registrar_vacina: z.object({
+    filho: z.string().nullish(),
+    vacina: z.string().min(1),
+    dose: z.string().nullish(),
+    data: isoDate,
+    proxima_data: nullableIsoDate,
+    proxima_em_meses: z.number().int().nullish(),
+  }),
 };
 
 /** O que o turno do agente oferece as ferramentas alem da entrada do modelo. */
@@ -286,6 +344,13 @@ const CAPACIDADE: Partial<Record<keyof typeof schemas, Capacidade>> = {
   mensagem_para_contato: "agenda",
   consultar_mensagens_contato: "agenda",
   cancelar_mensagem_contato: "agenda",
+  cadastrar_filho: "agenda",
+  listar_filhos: "agenda",
+  remover_filho: "agenda",
+  registrar_compromisso_filho: "agenda",
+  consultar_compromissos_filhos: "agenda",
+  atualizar_compromisso_filho: "agenda",
+  registrar_vacina: "agenda",
 };
 
 const GOOGLE = new Set<string>([
@@ -634,6 +699,75 @@ export const toolDefinitions: Anthropic.Tool[] = [
     "Para os envios futuros de um pedido, pelo id de consultar_mensagens_contato, ex.: 'para de cobrar o Joao'. Chame com confirmado false, mostre qual e, e so chame com true depois da confirmacao.",
     { id: { type: "integer" }, confirmado: { type: "boolean" } },
   ),
+  tool(
+    "cadastrar_filho",
+    "Cadastra um filho do usuario para guardar os compromissos dele (escola, vacina, consulta, aniversario de amigo). Pergunte a data de nascimento; se o usuario nao souber, use so a idade aproximada.",
+    {
+      nome: { ...str, description: "Nome ou apelido, ate 40 caracteres" },
+      nascimento: nullable({ ...str, description: `${dateDesc} de nascimento` }),
+      idade_aproximada: nullable({ type: "integer", description: "So quando nao ha data de nascimento" }),
+    },
+  ),
+  tool("listar_filhos", "Lista os filhos cadastrados, com a idade e o proximo compromisso de cada um.", {}),
+  tool(
+    "remover_filho",
+    "Remove um filho e apaga os compromissos e as vacinas dele. Chame com confirmado false, mostre o que some, e so chame com true depois que o usuario confirmar.",
+    { filho: { ...str, description: "Nome do filho" }, confirmado: { type: "boolean" } },
+  ),
+  tool(
+    "registrar_compromisso_filho",
+    "Registra um compromisso de um filho: prova, trabalho ou reuniao da escola (escola), aniversario de amiguinho (aniversario_amigo), vacina, consulta ou outro. O assessor avisa antes. Sem data, grava como a marcar. Com mais de um filho e sem o nome na mensagem, pergunte de qual antes.",
+    {
+      filho: nullable({ ...str, description: "Nome do filho; null so quando ha um filho" }),
+      tipo: { type: "string", enum: [...TIPOS_COMPROMISSO] },
+      titulo: { ...str, description: "Curto, ex.: Prova de ciencias, Dentista, Aniversario do Joao" },
+      data: nullable({ ...str, description: `${dateDesc}. null = a marcar` }),
+      hora: nullable({ ...str, description: "HH:MM no horario local" }),
+      local: nullable(str),
+      observacao: nullable(str),
+      disciplina: nullable({ ...str, description: "So em escola" }),
+      amigo: nullable({ ...str, description: "Nome do amigo, so em aniversario_amigo" }),
+      presente: nullable({ ...str, description: "Ideia de presente, so em aniversario_amigo" }),
+      avisar_dias_antes: nullable({ type: "integer", description: "So se o usuario pedir; null usa o padrao do tipo" }),
+      repetir_meses: nullable({ type: "integer", description: "So em consulta de rotina, ex.: 6 para de 6 em 6 meses" }),
+      ja_aconteceu: nullable({ type: "boolean", description: "true so quando o usuario confirmar que e o registro de algo que ja aconteceu" }),
+    },
+  ),
+  tool(
+    "consultar_compromissos_filhos",
+    "Lista o que vem por ai dos filhos, agrupado por filho e em ordem de data, com os aniversarios dos proprios filhos e os compromissos a marcar. Use para 'o que o Pedro tem essa semana?' (ate = daqui a 6 dias) ou 'o que vem por ai dos meninos?'. O id de cada item e o que atualizar_compromisso_filho pede.",
+    {
+      filho: nullable({ ...str, description: "Nome do filho; null = todos" }),
+      de: nullable({ ...str, description: `${dateDesc}. null = hoje` }),
+      ate: nullable({ ...str, description: `${dateDesc}. null = daqui a 30 dias` }),
+      tipo: nullable({ type: "string", enum: [...TIPOS_COMPROMISSO, "aniversario"], description: "aniversario = o aniversario dos proprios filhos" }),
+      incluir_concluidos: nullable({ type: "boolean" }),
+    },
+  ),
+  tool(
+    "atualizar_compromisso_filho",
+    "Conclui, cancela, reabre ou remarca um compromisso de filho, marca o presente de um aniversario como comprado, ou corrige o titulo. Use o id que veio de consultar_compromissos_filhos; nunca invente. Com mais de um compromisso parecido, pergunte qual antes.",
+    {
+      id: { type: "integer" },
+      acao: nullable({ type: "string", enum: ["concluir", "cancelar", "reabrir", "presente_comprado", "presente_por_comprar"] }),
+      nova_data: nullable({ ...str, description: `${dateDesc}. So para remarcar` }),
+      nova_hora: nullable({ ...str, description: "HH:MM. So para remarcar" }),
+      titulo: nullable({ ...str, description: "Novo titulo, se o usuario quiser corrigir" }),
+      avisar_dias_antes: nullable({ type: "integer", description: "Nova antecedencia do aviso, se o usuario pedir" }),
+    },
+  ),
+  tool(
+    "registrar_vacina",
+    "Registra uma vacina que o filho ja tomou e, se o usuario disser quando e a proxima dose, cria o compromisso dela com aviso. Nunca diga qual vacina ou dose o filho deve tomar nem em que idade; guarde so o que o usuario contou. Se ele nao falou da proxima dose, pergunte.",
+    {
+      filho: nullable({ ...str, description: "Nome do filho; null so quando ha um filho" }),
+      vacina: { ...str, description: "Nome da vacina como o usuario disse, ex.: Gripe, Tripla viral" },
+      dose: nullable({ ...str, description: "Ex.: 1a dose, 2a dose, reforco" }),
+      data: { ...str, description: `${dateDesc} em que foi aplicada; hoje, se o usuario disser que tomou agora` },
+      proxima_data: nullable({ ...str, description: `${dateDesc} da proxima dose, so se o usuario disser` }),
+      proxima_em_meses: nullable({ type: "integer", description: "Proxima dose daqui a quantos meses (1 a 24), so se o usuario disser. Nao use junto com proxima_data" }),
+    },
+  ),
 ];
 
 const describeConta = (c: ContaPagar) =>
@@ -713,6 +847,8 @@ function describeTask(t: Task) {
 }
 
 const toCents = (v: number) => Math.round(v * 100);
+const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
+const anos = (n: number) => plural(n, "ano", "anos");
 
 function describe(t: Transaction) {
   const pay = t.payment_method ? `, ${t.payment_method}` : "";
@@ -1222,6 +1358,119 @@ function run(repo: Repo, ctx: Contexto, toolName: ToolName, input: any, extras: 
       if (!input.confirmado) return `Confirme com o usuario antes de cancelar: #${e.id} para ${e.contato}, "${e.text}"${e.recurrence ? `, ${e.recurrence}` : ""}.`;
       cancelarEnvio(repo.db, ctx, input.id);
       return `Cancelado: nao mando mais "${e.text}" para ${e.contato}.`;
+    }
+
+    case "cadastrar_filho": {
+      const f = cadastrarFilho(repo.db, ctx, { nome: input.nome, nascimento: input.nascimento, idadeAproximada: input.idade_aproximada });
+      const aviso = f.nascimento ? "" : ` Sem a data de nascimento nao aviso o aniversario de ${f.nome}.`;
+      return `Filho cadastrado: #${f.id} ${f.nome}${f.idade == null ? "" : `, ${anos(f.idade)}`}.${aviso}`;
+    }
+
+    case "listar_filhos": {
+      const filhos = listarFilhos(repo.db, ctx);
+      if (!filhos.length) return "Nenhum filho cadastrado.";
+      return filhos
+        .map((f) => {
+          const idade = f.idade == null ? "" : `, ${anos(f.idade)}${f.idadeAproximada ? " (aproximado)" : ""}`;
+          const p = f.proximo;
+          return `#${f.id} ${f.nome}${idade}${p ? ` | proximo: ${p.titulo}${p.data ? `, ${quando(p.data, p.hora)}` : ""}` : ""}`;
+        })
+        .join("\n");
+    }
+
+    case "remover_filho": {
+      const f = resolverFilho(repo.db, ctx, input.filho);
+      const some = contarDoFilho(repo.db, ctx, f.id);
+      const o = `${plural(some.compromissos, "compromisso", "compromissos")} e ${plural(some.vacinas, "vacina", "vacinas")}`;
+      if (!input.confirmado) return `Confirme com o usuario antes de remover ${f.name}: apago tambem ${o}. Nao tem volta.`;
+      removerFilho(repo.db, ctx, f.id);
+      return `Removi ${f.name}, com ${o}.`;
+    }
+
+    case "registrar_compromisso_filho": {
+      const f = resolverFilho(repo.db, ctx, input.filho);
+      try {
+        return descreverCompromisso(
+          criarCompromisso(repo.db, ctx, {
+            filhoId: f.id,
+            tipo: input.tipo,
+            titulo: input.titulo,
+            data: input.data,
+            hora: input.hora,
+            local: input.local,
+            observacao: input.observacao,
+            disciplina: input.disciplina,
+            amigo: input.amigo,
+            presente: input.presente,
+            antecedenciaDias: input.avisar_dias_antes,
+            repetirMeses: input.repetir_meses,
+            jaAconteceu: input.ja_aconteceu,
+          }),
+        );
+      } catch (err) {
+        if (err instanceof AuthError && err.message === DATA_PASSADA) {
+          throw new AuthError(400, "A data ja passou. Pergunte se e um registro do que ja aconteceu; se for, chame de novo com ja_aconteceu true.");
+        }
+        throw err;
+      }
+    }
+
+    case "consultar_compromissos_filhos": {
+      const f = input.filho ? resolverFilho(repo.db, ctx, input.filho) : null;
+      const lista = listarCompromissos(repo.db, ctx, {
+        filhoId: f?.id,
+        tipo: input.tipo,
+        de: input.de,
+        ate: input.ate,
+        situacao: input.incluir_concluidos ? "todos" : "aberto",
+      });
+      const texto = textoLista(lista, f?.name ?? null);
+      // A chamada natural de "que vacinas ele precisa tomar?": o produto so repete o que foi registrado.
+      return input.tipo === "vacina" || input.tipo === "consulta" ? `${texto}\n${AVISO_SAUDE}` : texto;
+    }
+
+    case "registrar_vacina": {
+      const f = resolverFilho(repo.db, ctx, input.filho);
+      const r = registrarVacina(repo.db, ctx, {
+        filhoId: f.id,
+        vacina: input.vacina,
+        dose: input.dose,
+        data: input.data,
+        proximaData: input.proxima_data,
+        proximaEmMeses: input.proxima_em_meses,
+      });
+      const dose = r.vacina.dose ? `, ${r.vacina.dose}` : "";
+      const base = `Vacina registrada: ${r.vacina.vacina}${dose} (${f.name}), aplicada em ${quando(r.vacina.aplicadaEm, null)}.`;
+      return r.proximo ? `${base} Proxima dose: ${quando(r.proximo.data!, null)}, com aviso.` : `${base} Tem proxima dose? Se tiver, me diga a data.`;
+    }
+
+    case "atualizar_compromisso_filho": {
+      const r = atualizarCompromisso(repo.db, ctx, input.id, {
+        acao: input.acao,
+        titulo: input.titulo ?? undefined,
+        data: input.nova_data ?? undefined,
+        hora: input.nova_hora ?? undefined,
+        antecedenciaDias: input.avisar_dias_antes ?? undefined,
+      });
+      const c = r.compromisso;
+      const base = `#${c.id} ${c.titulo} (${c.filhoNome})`;
+      switch (input.acao) {
+        case "concluir":
+          if (r.proximo?.data) return `Concluido: ${base}. Proxima consulta marcada para ${quando(r.proximo.data, r.proximo.hora)}.`;
+          return c.tipo === "aniversario_amigo" && c.situacao === "aberto" && c.data
+            ? `Concluido: ${base}. Volta no ano que vem: ${quando(c.data, c.hora)}.`
+            : `Concluido: ${base}.`;
+        case "cancelar":
+          return `Cancelado: ${base}. Nao aviso mais.`;
+        case "reabrir":
+          return `Reaberto: ${base}.`;
+        case "presente_comprado":
+          return `Presente comprado: ${base}.`;
+        case "presente_por_comprar":
+          return `Presente por comprar de novo: ${base}.`;
+      }
+      const quandoFica = c.data ? quando(c.data, c.hora) : "sem data";
+      return input.nova_data || input.nova_hora ? `Remarcado: ${base}, ${quandoFica}.` : `Atualizado: ${base}${c.data ? `, ${quandoFica}` : ""}.`;
     }
 
     default:

@@ -35,7 +35,10 @@ export const SUBMENU_FINANCAS = [
   { nome: "Análises", rota: "/financas/analises", icone: "analises" },
 ];
 
-export const mesaPorId = (id: string) => MESAS.find((m) => m.id === id) ?? MESAS[0];
+/** Titulo do topo das subpaginas que nao estao no submenu lateral (o de Financas e o unico submenu). */
+export const SUBPAGINAS: Record<string, string> = { "/agenda/filhos": "Filhos" };
+
+export const mesaPorId =(id: string) => MESAS.find((m) => m.id === id) ?? MESAS[0];
 
 /** Paleta das series dos graficos, na ordem em que as categorias aparecem. */
 export const PALETA = ["#a98bf5", "#f3b23c", "#ee7aa8", "#10b981", "#5b9cf6", "#22b8cf", "#f08a5d", "#9aa0a6"];
