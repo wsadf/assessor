@@ -418,7 +418,7 @@ const mascarar = (phone: string) => `+${phone.slice(0, 2)} ••••• ${pho
  * recusar), o codigo vai para o terminal do servidor, o que basta para testar localmente.
  */
 async function enviarCodigo(phone: string, codigo: string, log: FastifyInstance["log"]): Promise<"whatsapp" | "terminal"> {
-  const texto = `Seu código do Assessor é ${codigo}. Ele vale por 10 minutos. Não compartilhe com ninguém.`;
+  const texto = `Seu código da Secretai é ${codigo}. Ele vale por 10 minutos. Não compartilhe com ninguém.`;
   if (process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID) {
     try {
       await sendNotice(phone, texto);
@@ -598,14 +598,14 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
       pub.get("/conectar/:token", async (req, reply) => {
         if (!googleConfigurado()) return pagina(reply, "Google Agenda indisponível", "A agenda do Google não está configurada neste servidor.", 503);
         const phone = usarLink(repo.db, (req.params as { token: string }).token);
-        if (!phone) return pagina(reply, "Link vencido", "Link vencido ou já usado. Peça outro ao assessor no WhatsApp.", 400);
+        if (!phone) return pagina(reply, "Link vencido", "Link vencido ou já usado. Peça outro à Secretai no WhatsApp.", 400);
         return reply.redirect(urlDeAutorizacao(repo.db, phone), 302);
       });
 
       pub.get("/retorno", async (req, reply) => {
         const q = req.query as { code?: string; state?: string; error?: string };
         if (q.error || !q.code || !q.state) {
-          return pagina(reply, "Agenda não conectada", "A Google Agenda não foi conectada. Se quiser tentar de novo, peça outro link ao assessor.", 400);
+          return pagina(reply, "Agenda não conectada", "A Google Agenda não foi conectada. Se quiser tentar de novo, peça outro link à Secretai.", 400);
         }
         try {
           await concluirConexao(repo.db, q.code, q.state);
@@ -986,7 +986,7 @@ export function registerApi(app: FastifyInstance, repo: Repo) {
             codigo: c.codigo,
             perfil: c.perfil,
             validoAte: c.validoAte,
-            mensagemWhatsapp: `Oi! Use o código ${c.codigo} em Criar conta no painel do Assessor para entrar na conta de ${quem}. Vale até ${ate}.`,
+            mensagemWhatsapp: `Oi! Use o código ${c.codigo} em Criar conta no painel da Secretai para entrar na conta de ${quem}. Vale até ${ate}.`,
           });
         } catch (err) {
           return responderErro(reply, err);

@@ -126,7 +126,7 @@ const nomeDe = (db: Db, phone: string) =>
 
 /** Identificacao e PARAR sao de codigo: o modelo escreve so o miolo. */
 export const textoFinal = (contato: string, usuario: string | null, texto: string) =>
-  `Oi, ${contato.trim().split(/\s+/)[0]}! Aqui e o assessor de ${usuario ?? "um conhecido seu"}. ${texto.trim()} Para nao receber mais mensagens do assessor, responda PARAR.`;
+  `Oi, ${contato.trim().split(/\s+/)[0]}! Aqui e a Secretai de ${usuario ?? "um conhecido seu"}. ${texto.trim()} Para nao receber mais mensagens da Secretai, responda PARAR.`;
 
 const emOptout = (db: Db, phone: string) => !!db.prepare(`SELECT 1 FROM client_optouts WHERE client_phone = ?`).get(phone);
 
@@ -187,7 +187,7 @@ export function pedirEnvio(db: Db, ctx: Contexto, dados: DadosPedido, agora: Dat
     phone = achado.um.phone;
   }
 
-  if (emOptout(db, phone)) return { ok: false, texto: `${nome} pediu para nao receber mensagens do assessor. Nada foi enviado.` };
+  if (emOptout(db, phone)) return { ok: false, texto: `${nome} pediu para nao receber mensagens da Secretai. Nada foi enviado.` };
   const quando = d.dataHora ? fromLocal(d.dataHora) : agora;
   if (quando.getTime() < agora.getTime() - 60_000) return { ok: false, texto: `Esse horario (${formatLocal(quando)}) ja passou. Confirme a data com o usuario.` };
   const agoraMesmo = quando.getTime() <= agora.getTime() + 60_000;
@@ -307,7 +307,7 @@ export async function enviarVencidos(repo: Repo, send: Envio, now = new Date()) 
   for (const e of vencidos) {
     if (emOptout(db, e.phone)) {
       db.prepare(`UPDATE contact_sends SET status = 'cancelado', next_run_at = NULL WHERE id = ?`).run(e.id);
-      await avisar(db, send, e.created_by, `optout:${e.id}`, `🚫 ${e.contato} pediu para nao receber mais mensagens do assessor. Cancelei o envio #${e.id}.`, now);
+      await avisar(db, send, e.created_by, `optout:${e.id}`, `🚫 ${e.contato} pediu para nao receber mais mensagens da Secretai. Cancelei o envio #${e.id}.`, now);
       continue;
     }
     const motivo = motivoDoLimite(db, e.conta, e.phone, now);

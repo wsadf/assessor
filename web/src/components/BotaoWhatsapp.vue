@@ -21,7 +21,7 @@ const ASSUNTO: Record<string, string> = {
 const link = computed(() => {
   if (!props.numero) return null;
   const m = mesaPorId(props.mesa);
-  const texto = `Oi, ${m.assessor}! Quero falar sobre ${ASSUNTO[m.id] ?? "o assessor"}.`;
+  const texto = `Oi, ${m.assessor}! Quero falar sobre ${ASSUNTO[m.id] ?? "a Secretai"}.`;
   return `https://wa.me/${props.numero}?text=${encodeURIComponent(texto)}`;
 });
 
@@ -40,7 +40,7 @@ onBeforeUnmount(() => document.removeEventListener("click", fora));
       :is="link ? 'a' : 'button'"
       class="btn-wa"
       v-bind="link ? { href: link, target: '_blank', rel: 'noopener' } : { type: 'button', 'aria-expanded': ajuda }"
-      :title="link ? 'Abrir a conversa com o assessor no WhatsApp' : 'Configurar o número do WhatsApp'"
+      :title="link ? 'Abrir a conversa com a Secretai no WhatsApp' : 'Configurar o número do WhatsApp'"
       @click="!link && (ajuda = !ajuda)"
     >
       <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" :d="LOGO" /></svg>
@@ -48,8 +48,8 @@ onBeforeUnmount(() => document.removeEventListener("click", fora));
     </component>
 
     <div v-if="ajuda && !link" class="ajuda card" role="dialog" aria-label="Como ligar o botão do WhatsApp">
-      <strong>Falta o número do assessor</strong>
-      <p>Coloque o número do WhatsApp do assessor no <code>.env</code>, só com dígitos, e reinicie o painel:</p>
+      <strong>Falta o número da Secretai</strong>
+      <p>Coloque o número do WhatsApp da Secretai no <code>.env</code>, só com dígitos, e reinicie o painel:</p>
       <code class="bloco">WHATSAPP_NUMERO=5511999999999</code>
       <p class="faint">Com o app da Meta configurado (<code>WHATSAPP_TOKEN</code> e <code>WHATSAPP_PHONE_NUMBER_ID</code>), o número é descoberto sozinho.</p>
     </div>

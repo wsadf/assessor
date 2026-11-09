@@ -106,7 +106,7 @@ export function gerarConviteContador(db: Db, ctx: Contexto, rotulo?: string | nu
     id,
     codigo,
     validoAte,
-    mensagemWhatsapp: `Oi! Use o código ${codigo} em Criar conta (ou em Clientes, se já tiver conta) no painel do Assessor para ver o dossiê mensal de ${ctx.titular ?? "quem te convidou"}. Vale até ${ate}.`,
+    mensagemWhatsapp: `Oi! Use o código ${codigo} em Criar conta (ou em Clientes, se já tiver conta) no painel da Secretai para ver o dossiê mensal de ${ctx.titular ?? "quem te convidou"}. Vale até ${ate}.`,
   };
 }
 

@@ -26,7 +26,7 @@ const selos = computed(() =>
   <div class="auth">
     <header class="topo">
       <AppLogo v-if="cliente" />
-      <RouterLink v-else to="/" aria-label="assessor, início"><AppLogo /></RouterLink>
+      <RouterLink v-else to="/" aria-label="secretai, início"><AppLogo /></RouterLink>
       <template v-if="!cliente">
         <RouterLink v-if="naEntrada" to="/criar-conta" class="link-seta">Criar conta <AppIcon name="seta" :size="15" class="diag" /></RouterLink>
         <RouterLink v-else to="/entrar" class="link-seta">Entrar <AppIcon name="seta" :size="15" class="diag" /></RouterLink>
@@ -34,7 +34,7 @@ const selos = computed(() =>
     </header>
 
     <section class="chamada">
-      <span class="eyebrow">{{ cliente ? "Assessor" : "Sua equipe no WhatsApp" }}</span>
+      <span class="eyebrow">{{ cliente ? "Secretai" :"Sua equipe no WhatsApp" }}</span>
       <h1>{{ antes }}<br /><span>{{ destaque }}{{ depois ?? "" }}</span></h1>
     </section>
 

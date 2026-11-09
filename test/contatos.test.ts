@@ -94,7 +94,7 @@ test("fundacao: telefone, contato, texto final, cartao, statuses e wamid", async
 
   assert.equal(
     c.textoFinal("Joao Silva", "Wesley", "Lembrete: o personal vence hoje."),
-    "Oi, Joao! Aqui e o assessor de Wesley. Lembrete: o personal vence hoje. Para nao receber mais mensagens do assessor, responda PARAR.",
+    "Oi, Joao! Aqui e a Secretai de Wesley. Lembrete: o personal vence hoje. Para nao receber mais mensagens da Secretai, responda PARAR.",
   );
 
   const cartao = parseWebhook({
@@ -129,7 +129,7 @@ test("pedido e envio: previa, confirmacao, recorrencia, limites, falha e opt-out
   const previa = pedir({ confirmado: false });
   assert.ok(previa.ok);
   assert.match(previa.texto, /Para: Joao \(final 4321\)/);
-  assert.match(previa.texto, /"Oi, Joao! Aqui e o assessor de Wesley\. Lembrete: o personal vence hoje\. Para nao receber mais mensagens do assessor, responda PARAR\."/);
+  assert.match(previa.texto, /"Oi, Joao! Aqui e a Secretai de Wesley\. Lembrete: o personal vence hoje\. Para nao receber mais mensagens da Secretai, responda PARAR\."/);
   assert.match(previa.texto, /Sem o modelo aprovado da Meta/);
   assert.equal(envios(), 0);
   assert.equal(qtd(db, `SELECT COUNT(*) AS n FROM contacts`), 0);
@@ -149,7 +149,7 @@ test("pedido e envio: previa, confirmacao, recorrencia, limites, falha e opt-out
   const agora = pedir({ contato: "Ana", telefone: "11955554444", texto: "Chego as 15h." }, fromLocal("2026-11-05T10:00"));
   await c.enviarVencidos(repo, send, fromLocal("2026-11-05T10:00"));
   assert.equal((db.prepare(`SELECT status FROM contact_sends WHERE id = ?`).get(agora.envio!.id) as { status: string }).status, "concluido");
-  assert.equal(enviados.at(-1)!.texto, "Oi, Ana! Aqui e o assessor de Wesley. Chego as 15h. Para nao receber mais mensagens do assessor, responda PARAR.");
+  assert.equal(enviados.at(-1)!.texto, "Oi, Ana! Aqui e a Secretai de Wesley. Chego as 15h. Para nao receber mais mensagens da Secretai, responda PARAR.");
 
   // Ja foram 3 para o Joao no dia: a quarta e recusada no pedido e pulada no agendador.
   const dia = fromLocal("2026-11-05T11:00");
@@ -190,7 +190,7 @@ test("pedido e envio: previa, confirmacao, recorrencia, limites, falha e opt-out
   await c.enviarVencidos(repo, send, fromLocal("2026-12-05T09:00"));
   assert.ok(!enviados.some((e) => e.para === joao));
   assert.equal((db.prepare(`SELECT status FROM contact_sends WHERE id = ?`).get(mensal.envio!.id) as { status: string }).status, "cancelado");
-  assert.match(pedir({ texto: "De novo." }, fromLocal("2026-12-06T09:00")).texto, /Joao pediu para nao receber mensagens do assessor/);
+  assert.match(pedir({ texto: "De novo." }, fromLocal("2026-12-06T09:00")).texto, /Joao pediu para nao receber mensagens da Secretai/);
 });
 
 test("webhook: situacao, resposta repassada, PARAR, prioridade do agendamento e cartao de contato", async () => {

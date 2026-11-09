@@ -160,7 +160,7 @@ const cache = new Map<string, { token: string; expira: number }>();
 export async function concluirConexao(db: Db, code: string, state: string, agora = new Date()): Promise<string> {
   if (!googleConfigurado()) throw new GoogleNaoConfigurado();
   const phone = consumir(db, "state", state, agora);
-  if (!phone) throw new Error("O pedido de conexão venceu ou já foi usado. Peça um novo link ao assessor.");
+  if (!phone) throw new Error("O pedido de conexão venceu ou já foi usado. Peça um novo link à Secretai.");
   const res = await postForm(URL_TOKEN, {
     code,
     client_id: config.google.clientId,

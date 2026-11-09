@@ -151,7 +151,7 @@ async function ativar() {
 
 const FRASES = [
   { titulo: "Vamos montar sua equipe.", frase: "Me conta quem você é, <b>o resto é com a gente</b>." },
-  { titulo: "Escolha seu plano.", frase: "Os dois liberam <b>todos os assessores</b>, sem limite." },
+  { titulo: "Escolha seu plano.", frase: "Os dois liberam <b>a equipe inteira</b>, sem limite." },
   { titulo: "Pagamento", frase: "Primeiro você testa, <b>depois decide</b>." },
   { titulo: "Ative pelo WhatsApp.", frase: "Um código confirma que <b>o número é seu</b>." },
 ];
@@ -188,7 +188,7 @@ const FRASES = [
         <input v-model="form.nome" class="input" placeholder="Como podemos te chamar?" autocomplete="given-name" autofocus />
       </label>
       <label class="campo">
-        <span class="rotulo-campo">WhatsApp <em>é onde seu assessor trabalha</em></span>
+        <span class="rotulo-campo">WhatsApp <em>é onde a Secretai trabalha</em></span>
         <span class="telefone">
           <select v-model="form.ddi" class="input ddi" aria-label="País">
             <option v-for="p in PAISES" :key="p.sigla" :value="p.ddi">{{ p.sigla }} +{{ p.ddi }}</option>
@@ -252,7 +252,7 @@ const FRASES = [
         <span class="preco"><b class="num">{{ p.preco }}</b>{{ p.sufixo }}</span>
       </button>
       <ul class="inclui">
-        <li><AppIcon name="check" :size="14" /> Todos os assessores no seu WhatsApp</li>
+        <li><AppIcon name="check" :size="14" /> A equipe inteira no seu WhatsApp</li>
         <li><AppIcon name="check" :size="14" /> Painel completo com as seis mesas</li>
         <li><AppIcon name="check" :size="14" /> Família ou sócio na mesma conta, sem custo extra</li>
       </ul>

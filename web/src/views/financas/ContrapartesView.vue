@@ -39,7 +39,7 @@ const pixMaior = computed(() => [...(dados.value?.contrapartes ?? [])].filter((c
     <EstadoVazio
       v-if="dados && !dados.contrapartes.length"
       titulo="Ninguém registrado neste mês"
-      texto="Diga quem recebeu ou pagou ao lançar, como “mandei 50 de Pix pro João” ou “almoço 45 no Restaurante Sabor”, e o assessor guarda aqui."
+      texto="Diga quem recebeu ou pagou ao lançar, como “mandei 50 de Pix pro João” ou “almoço 45 no Restaurante Sabor”, e a Secretai guarda aqui."
     />
 
     <template v-else-if="dados">

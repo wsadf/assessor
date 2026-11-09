@@ -528,7 +528,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
   tool("listar_pastas", "Mostra as pastas de documentos com a quantidade em cada uma e o espaco usado.", {}),
   tool(
     "cadastrar_conta_pagar",
-    "Cadastra uma conta a pagar com vencimento (condominio, fatura do cartao, IPVA). O assessor avisa na vespera.",
+    "Cadastra uma conta a pagar com vencimento (condominio, fatura do cartao, IPVA). A Secretai avisa na vespera.",
     {
       descricao: { ...str, description: "Nome curto da conta, ex.: Condominio, Fatura Nubank" },
       vencimento: { ...str, description: `${dateDesc} do proximo vencimento` },
@@ -585,7 +585,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
       hora: nullable({ type: "integer", description: "Hora local de 0 a 23. null mantem a atual" }),
     },
   ),
-  tool("conectar_google_agenda", "Manda o link para a pessoa ligar a propria conta do Google Agenda ao assessor.", {}),
+  tool("conectar_google_agenda", "Manda o link para a pessoa ligar a propria conta do Google Agenda a Secretai.", {}),
   tool(
     "criar_compromisso",
     "Marca um compromisso com dia e hora no Google Agenda de quem fala e cria o lembrete no WhatsApp. Sem Google conectado, cria so o lembrete. Para aviso solto sem compromisso, use criar_lembrete.",
@@ -716,7 +716,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
   ),
   tool(
     "registrar_compromisso_filho",
-    "Registra um compromisso de um filho: prova, trabalho ou reuniao da escola (escola), aniversario de amiguinho (aniversario_amigo), vacina, consulta ou outro. O assessor avisa antes. Sem data, grava como a marcar. Com mais de um filho e sem o nome na mensagem, pergunte de qual antes.",
+    "Registra um compromisso de um filho: prova, trabalho ou reuniao da escola (escola), aniversario de amiguinho (aniversario_amigo), vacina, consulta ou outro. A Secretai avisa antes. Sem data, grava como a marcar. Com mais de um filho e sem o nome na mensagem, pergunte de qual antes.",
     {
       filho: nullable({ ...str, description: "Nome do filho; null so quando ha um filho" }),
       tipo: { type: "string", enum: [...TIPOS_COMPROMISSO] },
@@ -1175,7 +1175,7 @@ function run(repo: Repo, ctx: Contexto, toolName: ToolName, input: any, extras: 
       const ate = new Date(c.validoAte).toLocaleDateString("pt-BR", { timeZone: config.timezone });
       return [
         `Convite criado: ${c.codigo}, perfil ${NOME_PERFIL[c.perfil]}, vale ate ${ate} e serve uma vez.`,
-        `Texto para o usuario encaminhar: "Use o codigo ${c.codigo} em Criar conta no painel do Assessor para entrar na conta de ${ctx.titular ?? "quem te convidou"}. Vale ate ${ate}."`,
+        `Texto para o usuario encaminhar: "Use o codigo ${c.codigo} em Criar conta no painel da Secretai para entrar na conta de ${ctx.titular ?? "quem te convidou"}. Vale ate ${ate}."`,
       ].join("\n");
     }
 

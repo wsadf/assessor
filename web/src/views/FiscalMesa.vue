@@ -46,7 +46,7 @@ const serie = computed(() => ({
           <div v-for="s in STATUS_NOTAS" :key="s.nome"><span class="eyebrow">{{ s.nome }}</span><strong class="num">0</strong></div>
         </div>
         <AssessorBalao mesa="fiscal">
-          a emissão de notas ainda <b>não está ligada</b> neste assessor. Enquanto isso, acompanho as suas receitas para quando ela entrar.
+          a emissão de notas ainda <b>não está ligada</b> na Secretai. Enquanto isso, acompanho as suas receitas para quando ela entrar.
         </AssessorBalao>
         <span class="chip warning">emissão de NFS-e inativa</span>
         <template #lado>

@@ -31,7 +31,7 @@ const { dados: p, carregando, erro, recarregar } = useCarregar(() => api.get<Pes
           <div><span class="eyebrow">Fontes citadas</span><strong class="num">{{ p.fontes }}</strong></div>
         </div>
         <AssessorBalao mesa="pesquisas">
-          <template v-if="!p.habilitado">minha mesa está montada, mas a busca na internet ainda <b>não está ligada</b> no assessor. Quando ligar, cada pesquisa pedida no WhatsApp aparece aqui com o resumo e as fontes.</template>
+          <template v-if="!p.habilitado">minha mesa está montada, mas a busca na internet ainda <b>não está ligada</b> na Secretai. Quando ligar, cada pesquisa pedida no WhatsApp aparece aqui com o resumo e as fontes.</template>
           <template v-else>me mande a primeira missão no WhatsApp: preço, cotação, avaliação, o que precisar.</template>
         </AssessorBalao>
         <span v-if="!p.habilitado" class="chip warning">pesquisa na internet inativa</span>

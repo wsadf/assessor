@@ -158,7 +158,7 @@ const quando = (iso: string) => new Date(iso).toLocaleString("pt-BR", { day: "2-
           <label class="field"><span>Dia do fechamento</span><input v-model="form.fechamento" class="input" type="number" min="1" max="31" /></label>
           <label class="field"><span>Dia do vencimento</span><input v-model="form.vencimento" class="input" type="number" min="1" max="31" /></label>
         </div>
-        <p class="faint">Com as datas, o assessor responde "minha fatura já fechou?" e quanto está em aberto.</p>
+        <p class="faint">Com as datas, a Secretai responde "minha fatura já fechou?" e quanto está em aberto.</p>
       </template>
       <p v-if="erroForm" class="erro">{{ erroForm }}</p>
       <template #rodape>

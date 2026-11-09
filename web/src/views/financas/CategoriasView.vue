@@ -40,7 +40,7 @@ const semUso = computed(() => (dados.value?.categorias ?? []).filter((c) => c.qt
     </CabecalhoSub>
 
     <StatusCarga :carregando="carregando && !dados" :erro="erro" @tentar="recarregar" />
-    <EstadoVazio v-if="dados && !dados.categorias.length" titulo="Nenhuma categoria ainda" texto="As categorias nascem dos lançamentos: o assessor cria uma nova quando você registra um gasto." />
+    <EstadoVazio v-if="dados && !dados.categorias.length" titulo="Nenhuma categoria ainda" texto="As categorias nascem dos lançamentos: a Secretai cria uma nova quando você registra um gasto." />
 
     <template v-else-if="dados">
       <AssessorBalao mesa="financas" class="balao">

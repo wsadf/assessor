@@ -101,7 +101,7 @@ async function excluir() {
 
     <StatusCarga :carregando="carregando && !t" :erro="erro" @tentar="recarregar" />
 
-    <EstadoVazio v-if="t && !t.tarefas.length" titulo="Nenhuma tarefa" texto="Crie a primeira aqui ou peça ao assessor no WhatsApp.">
+    <EstadoVazio v-if="t && !t.tarefas.length" titulo="Nenhuma tarefa" texto="Crie a primeira aqui ou peça à Secretai no WhatsApp.">
       <button class="btn primary" @click="abrir()">Nova tarefa</button>
     </EstadoVazio>
 

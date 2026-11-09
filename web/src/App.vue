@@ -62,7 +62,7 @@ onMounted(async () => {
   <div v-else class="shell">
     <aside class="lateral" :class="{ aberto: menuAberto }">
       <div class="marca">
-        <RouterLink to="/" aria-label="assessor, início"><AppLogo /></RouterLink>
+        <RouterLink to="/" aria-label="secretai, início"><AppLogo /></RouterLink>
       </div>
 
       <nav>
