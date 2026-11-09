@@ -109,7 +109,7 @@ Cada decisao tem a escolha, o motivo e o que foi descartado. Nenhum item ficou c
   Nao mexe no submenu lateral. O titulo do topo ("Agenda / Filhos") usa um pequeno mapa de
   subpaginas em `mesas.ts`.
 - **Motivo**: dois cliques a partir do menu (SC-006) e o padrao ja usado.
-- **Descartado**: mesa nova "Familia". Exigiria assessor, cor e item de menu para um recurso da Lia.
+- **Descartado**: mesa nova "Familia". Exigiria assessor, cor e item de menu para um recurso da Day.
 
 ## R12. Exclusao de dados
 

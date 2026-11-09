@@ -15,7 +15,7 @@ const naoAtivada = ref(false);
 const enviando = ref(false);
 
 const BENEFICIOS = [
-  { titulo: "Equipe de assessores no WhatsApp", texto: "gastos, lembretes e tarefas por mensagem, áudio ou foto" },
+  { titulo: "Sua equipe no WhatsApp", texto: "gastos, lembretes e tarefas por mensagem, áudio ou foto" },
   { titulo: "Pessoas, lojas e parcelas", texto: "para quem foi cada Pix e o que já está comprometido" },
   { titulo: "Painel completo", texto: "finanças, agenda, tarefas e operação em um lugar" },
 ];

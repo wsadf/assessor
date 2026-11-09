@@ -32,7 +32,7 @@ async function conectarGoogle() {
 }
 
 async function desconectarGoogle() {
-  if (!confirm("Desconectar o Google Agenda? Seus compromissos continuam no Google, mas a Lia para de ler e marcar.")) return;
+  if (!confirm("Desconectar o Google Agenda? Seus compromissos continuam no Google, mas a Day para de ler e marcar.")) return;
   await api.del("/google");
   await Promise.all([recarregarGoogle(), recarregar()]);
 }
@@ -177,7 +177,7 @@ async function cancelar(l: Lembrete) {
     <div class="page-head">
       <div>
         <h1>Agenda</h1>
-        <p>Compromissos e lembretes que a Lia avisa no seu WhatsApp.</p>
+        <p>Compromissos e lembretes que a Day avisa no seu WhatsApp.</p>
       </div>
       <span class="spacer" />
       <RouterLink v-if="pode('agenda')" class="btn" to="/agenda/filhos">Filhos →</RouterLink>

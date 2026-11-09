@@ -56,7 +56,7 @@ const PLANOS = [
 ];
 
 const INCLUI = [
-  "Todos os assessores no seu WhatsApp",
+  "A equipe inteira no seu WhatsApp",
   "Mensagens de texto, áudio e foto",
   "Lembretes, tarefas e lançamentos sem limite",
   "Painel completo com as seis mesas",
@@ -66,7 +66,7 @@ const INCLUI = [
 const PERGUNTAS = [
   {
     p: "O que acontece depois que eu crio a conta?",
-    r: "Você confirma o número com um código de 6 números e já pode mandar mensagem para o assessor no WhatsApp. O painel abre na mesma hora, com as mesmas informações da conversa.",
+    r: "Você confirma o número com um código de 6 números e já pode mandar mensagem para a Secretai no WhatsApp. O painel abre na mesma hora, com as mesmas informações da conversa.",
   },
   { p: "Preciso instalar algum aplicativo?", r: "Não. Tudo acontece no WhatsApp que você já usa. O painel abre no navegador, no computador ou no celular." },
   {
@@ -75,22 +75,22 @@ const PERGUNTAS = [
   },
   {
     p: "Meus dados estão seguros?",
-    r: "A senha é guardada com criptografia, cada conta só enxerga os próprios dados e nada é compartilhado com terceiros. O assessor não movimenta dinheiro, só anota o que você conta.",
+    r: "A senha é guardada com criptografia, cada conta só enxerga os próprios dados e nada é compartilhado com terceiros. A Secretai não movimenta dinheiro, só anota o que você conta.",
   },
   { p: "Posso cancelar quando quiser?", r: "Sim. Não tem fidelidade, e os 7 primeiros dias são grátis, sem pedir cartão." },
   { p: "Esqueci a senha do painel. E agora?", r: "Em “Esqueceu?”, na tela de entrada, você informa o e-mail e recebe um código no WhatsApp cadastrado para criar uma senha nova." },
 ];
 
-onMounted(() => (document.title = "Assessor · Sua equipe no WhatsApp"));
+onMounted(() => (document.title = "Secretai · Sua equipe no WhatsApp"));
 </script>
 
 <template>
   <div class="landing">
     <div class="moldura">
       <header class="topo">
-        <RouterLink to="/" aria-label="assessor, início"><AppLogo /></RouterLink>
+        <RouterLink to="/" aria-label="secretai, início"><AppLogo /></RouterLink>
         <nav class="links">
-          <a href="#equipe">Assessores</a>
+          <a href="#equipe">Equipe</a>
           <a href="#planos">Planos</a>
           <a href="#perguntas">Perguntas</a>
         </nav>
@@ -115,7 +115,7 @@ onMounted(() => (document.title = "Assessor · Sua equipe no WhatsApp"));
       <div class="palco" aria-hidden="true">
         <div class="celular">
           <span class="notch" />
-          <b>Assessor</b>
+          <b>Secretai</b>
           <small>Sua equipe</small>
           <div class="escrever">Escreva algo…</div>
         </div>
@@ -123,7 +123,7 @@ onMounted(() => (document.title = "Assessor · Sua equipe no WhatsApp"));
         <div class="msg ele m1">
           <span class="ico"><AppLogo :tamanho="22" :nome="false" /></span>
           <div>
-            <div class="cab"><span>Lia</span><time>07:58</time></div>
+            <div class="cab"><span>Day</span><time>07:58</time></div>
             Bom dia! Como posso ajudar hoje?
           </div>
         </div>
@@ -134,7 +134,7 @@ onMounted(() => (document.title = "Assessor · Sua equipe no WhatsApp"));
         <div class="msg ele m3">
           <span class="ico"><AppLogo :tamanho="22" :nome="false" /></span>
           <div>
-            <div class="cab"><span>Lia</span><time>07:59</time></div>
+            <div class="cab"><span>Day</span><time>07:59</time></div>
             Você tem 3 compromissos. Deixei o almoço livre e o Bento já anotou os gastos de ontem.
           </div>
         </div>
@@ -174,7 +174,7 @@ onMounted(() => (document.title = "Assessor · Sua equipe no WhatsApp"));
 
       <section id="equipe" class="bloco">
         <span class="eyebrow">Sua equipe</span>
-        <h2>Um assessor para cada parte da rotina.</h2>
+        <h2>Alguém para cada parte da rotina.</h2>
         <p class="sub">Cada um é especialista numa área, e todos trabalham na mesma conversa.</p>
         <div class="equipe">
           <article v-for="m in MESAS" :key="m.id" class="vidro membro" :style="{ '--c': m.cor }">
@@ -226,7 +226,7 @@ onMounted(() => (document.title = "Assessor · Sua equipe no WhatsApp"));
         <div>
           <span class="eyebrow">Dúvidas</span>
           <h2>Perguntas frequentes.</h2>
-          <p class="sub">Não achou a sua? Pergunte direto para o assessor no WhatsApp.</p>
+          <p class="sub">Não achou a sua? Pergunte direto para a Secretai no WhatsApp.</p>
         </div>
         <div class="lista-faq">
           <details v-for="(q, i) in PERGUNTAS" :key="q.p" class="vidro" :open="i === 0">
@@ -248,11 +248,11 @@ onMounted(() => (document.title = "Assessor · Sua equipe no WhatsApp"));
       <footer class="rodape">
         <div class="rodape-marca">
           <AppLogo :tamanho="22" />
-          <p>Uma equipe de assessores de inteligência artificial dentro do seu WhatsApp. Dinheiro, agenda e tarefas organizados numa conversa só.</p>
+          <p>Sua equipe de inteligência artificial dentro do WhatsApp. Dinheiro, agenda e tarefas organizados numa conversa só.</p>
         </div>
         <nav>
           <b>Produto</b>
-          <a href="#equipe">Assessores</a>
+          <a href="#equipe">Equipe</a>
           <a href="#como-funciona">Como funciona</a>
           <a href="#perguntas">Perguntas frequentes</a>
         </nav>

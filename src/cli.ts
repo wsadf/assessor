@@ -20,7 +20,7 @@ const repo = makeRepo(openDb());
 if (!repo.getUser(phone)) repo.ensureUser(phone, "Terminal");
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-console.log(`Assessor no terminal (IA: ${config.aiProvider}). Escreva como no WhatsApp; 'sair' encerra.\n`);
+console.log(`Secretai no terminal (IA: ${config.aiProvider}). Escreva como no WhatsApp; 'sair' encerra.\n`);
 
 setInterval(() => {
   void runRemindersOnce(repo, async (_to, text) => console.log(`\n${text}\n> `));

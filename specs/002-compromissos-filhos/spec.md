@@ -21,7 +21,7 @@ escola, prova, aniversario de amiguinho com presente para comprar, vacina com do
 consulta de rotina. Hoje isso vira lembrete solto, sem saber de qual filho e sem agrupar.
 
 Esta spec cria o conceito de **filho** e de **compromisso do filho**, para que o assessor de agenda
-(Lia) cuide dessa rotina por conversa e o painel mostre tudo por filho e por semana. Cada historia
+(Day) cuide dessa rotina por conversa e o painel mostre tudo por filho e por semana. Cada historia
 abaixo pode ser planejada, entregue e demonstrada sozinha.
 
 O produto nao e um prontuario, nem um sistema escolar. Guarda so o que o usuario conta, para
@@ -352,7 +352,7 @@ conferir que a seguinte nasce na data certa.
 - A feature reutiliza contas, perfis de acesso e o modelo de aviso existentes. O acesso aos filhos
   segue a capacidade de agenda: titular, acesso completo e "agenda e tarefas" veem; "so gastos"
   nao.
-- Quem cuida desses compromissos e a assessora de agenda (Lia). Nao ha novo assessor.
+- Quem cuida desses compromissos e a assessora de agenda (Day). Nao ha novo assessor.
 - O horario padrao dos avisos e o ja usado pelo produto (09h), no fuso da conta.
 - O produto nao traz calendario oficial de vacinacao nem recomenda vacinas, doses ou prazos. Isso
   evita informacao de saude errada e fica fora desta versao.

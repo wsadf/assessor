@@ -39,7 +39,7 @@ async function salvar(aviso: Aviso, mudanca: { ligado?: boolean; hora?: number }
 
     <template v-if="a">
       <div v-if="!a.modeloAprovado" class="aviso info">
-        Sem modelo aprovado na Meta, os avisos só chegam se você falou com o assessor nas últimas 24 horas. Os que não chegarem
+        Sem modelo aprovado na Meta, os avisos só chegam se você falou com a Secretai nas últimas 24 horas. Os que não chegarem
         aparecem na sua próxima conversa.
       </div>
       <AssessorBalao mesa="operacao">

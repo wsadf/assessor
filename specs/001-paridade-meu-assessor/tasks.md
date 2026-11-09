@@ -185,7 +185,7 @@ certa e recuperar um deles descrevendo o conteudo sem citar o nome do arquivo (s
 **Painel web**
 
 - [X] T056 [P] [US2] Em `web/src/api.ts`, tipos `Pasta`, `Documento`, `Documentos` (resposta de `GET /documentos`) e `comprovanteId?: number | null` em `Transacao`; funcao `abrirArquivo(id)` que faz `fetch` com o token da sessao, cria `URL.createObjectURL(blob)`, abre numa nova aba e revoga a URL depois de 60 s (depende de T054)
-- [X] T057 [US2] Em `web/src/mesas.ts`, cargo do Davi passa a "Projetos e documentos" e a mesa de Tarefas exige `["tarefas", "documentos"]`; em `web/src/router.ts`, rota `/tarefas/documentos` com `meta: { mesa: "tarefas" }` (depende de T056)
+- [X] T057 [US2] Em `web/src/mesas.ts`, cargo do Jonny passa a "Projetos e documentos" e a mesa de Tarefas exige `["tarefas", "documentos"]`; em `web/src/router.ts`, rota `/tarefas/documentos` com `meta: { mesa: "tarefas" }` (depende de T056)
 - [X] T058 [US2] Criar `web/src/views/tarefas/DocumentosView.vue` no padrao de `web/src/views/operacao/AcessosView.vue`: cabecalho com voltar para `/tarefas`, barra de uso (vira aviso a partir de 80%), lista de pastas com quantidade como filtro, campo de busca, lista de documentos (titulo, descricao em uma linha, pasta, data, quem enviou), abrir com `abrirArquivo`, e `PainelLateral` para renomear, mover (select com `PASTAS`), editar descricao e excluir com confirmacao; `EstadoVazio` explicando "mande um PDF ou foto pelo WhatsApp e diga guarda esse"; `StatusCarga` (depende de T057)
 - [X] T059 [P] [US2] Em `web/src/views/TarefasMesa.vue`, atalho "Documentos →" para `/tarefas/documentos`, visivel so com `pode("documentos")` (depende de T057)
 - [X] T060 [P] [US2] Em `web/src/views/financas/TransacoesView.vue`, quando `t.comprovanteId`, mostrar o chip "comprovante" na linha e o botao "Ver comprovante" no `PainelLateral` de edicao, ambos chamando `abrirArquivo` (depende de T056)
@@ -323,7 +323,7 @@ tabelas em [data-model.md](data-model.md#us4-google-agenda).
 
 ## Phase 15: User Story 4 - Google Agenda pelo WhatsApp (Priority: P4)
 
-**Goal**: a pessoa conecta a propria conta Google e a Lia cria, consulta, remarca e cancela
+**Goal**: a pessoa conecta a propria conta Google e a Day cria, consulta, remarca e cancela
 compromissos no calendario principal pelo WhatsApp, com convidados, Meet, aviso de conflito e o
 lembrete do WhatsApp ligado; o resumo da manha traz os compromissos do dia.
 
