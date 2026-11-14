@@ -3,6 +3,8 @@ import { criarConta, criarRecorrencia, definirPreferencia } from "./avisos.js";
 import { contextoTitular } from "./permissoes.js";
 import { config, DEMO_DB_PATH } from "./config.js";
 import { conta } from "./conta.js";
+import { criarCobranca, marcarPaga, salvarChave } from "./cobrancas.js";
+import { atualizarConta as atualizarContaBancaria, importarExtrato } from "./extratos.js";
 import { openDb, repo as makeRepo } from "./db.js";
 import { documentos, pastaDeArquivos, type PastaId } from "./documentos.js";
 import { apagarFilhosDaConta, cadastrarFilho, criarCompromisso, registrarVacina } from "./filhos.js";
@@ -325,6 +327,29 @@ compromisso(pedro.id, { tipo: "consulta", titulo: "Oftalmologista", data: addDay
 registrarVacina(db, titularDemo, { filhoId: pedro.id, vacina: "Tríplice viral", dose: "1ª dose", data: addDays(today, -30), proximaEmMeses: 6 }, criadoEm);
 registrarVacina(db, titularDemo, { filhoId: pedro.id, vacina: "Hepatite A", dose: "reforço", data: addDays(today, -200) }, criadoEm);
 
+// Fatura de cartao em OFX montada aqui, com datas relativas a hoje, para a Fatura e os Extratos terem conteudo.
+const ofxData = (d: string) => `${d.replaceAll("-", "")}000000[-3:BRT]`;
+const comprasCartao: [number, number, string][] = [
+  [-2, 38.5, "Uber *Trip"],
+  [-6, 214.9, "Posto Ipiranga Sao Paulo SP"],
+  [-11, 89.9, "Livraria Cultura"],
+  [-18, 156.3, "Amazon Marketplace"],
+  [-24, 42, "Spotify"],
+];
+const movimentosCartao = comprasCartao
+  .map(([d, v, memo], i) => `<STMTTRN><TRNTYPE>DEBIT</TRNTYPE><DTPOSTED>${ofxData(addDays(today, d))}</DTPOSTED><TRNAMT>-${v.toFixed(2)}</TRNAMT><FITID>DEMO${i}</FITID><MEMO>${memo}</MEMO></STMTTRN>`)
+  .join("");
+const faturaOfx = `<?xml version="1.0" encoding="UTF-8"?><?OFX OFXHEADER="200" VERSION="211"?><OFX><SIGNONMSGSRSV1><SONRS><FI><ORG>Nu Pagamentos S.A.</ORG><FID>260</FID></FI></SONRS></SIGNONMSGSRSV1><CREDITCARDMSGSRSV1><CCSTMTTRNRS><CCSTMTRS><CURDEF>BRL</CURDEF><CCACCTFROM><ACCTID>************8842</ACCTID></CCACCTFROM><BANKTRANLIST><DTSTART>${ofxData(addDays(today, -25))}</DTSTART><DTEND>${ofxData(today)}</DTEND>${movimentosCartao}</BANKTRANLIST></CCSTMTRS></CCSTMTTRNRS></CREDITCARDMSGSRSV1></OFX>`;
+const fatura = importarExtrato(repo, titularDemo, Buffer.from(faturaOfx), "fatura-nubank.ofx");
+atualizarContaBancaria(db, titularDemo, fatura.contaBancaria.id, { nome: "Nubank", fechamento: 5, vencimento: 12 });
+
+// Chave Pix ficticia e tres cobrancas: uma aberta, uma vencida e uma paga.
+salvarChave(db, titularDemo, { tipo: "email", chave: DEMO_EMAIL, nome: "Demonstracao", cidade: "Sao Paulo" });
+criarCobranca(db, titularDemo, { pagador: "João", whatsapp: "11988887777", descricao: "Consultoria de agosto", valor: 850, vencimento: addDays(today, 5) });
+criarCobranca(db, titularDemo, { pagador: "Studio Lume", descricao: "Ajustes no site", valor: 420, vencimento: addDays(today, -3) });
+const paga = criarCobranca(db, titularDemo, { pagador: "Café Aroma", descricao: "Cardápio digital", valor: 600, vencimento: addDays(today, -8) });
+marcarPaga(repo, titularDemo, paga.id, { data: addDays(today, -9) });
+
 for (const [role, text] of [
   ["user", "gastei 62 na farmácia"],
   ["assistant", "Lancei R$ 62,00 em Saúde. No mês já são R$ 180,00."],
@@ -334,6 +359,6 @@ for (const [role, text] of [
   repo.addHistory(phone, role, text);
 }
 
-console.log(`Demonstracao gravada em ${file}: ${total} lancamentos, 6 lembretes, ${tarefas.length} tarefas, ${exemplos.length} documentos, 3 contas a pagar, 2 recorrencias e 2 filhos com compromissos.`);
+console.log(`Demonstracao gravada em ${file}: ${total} lancamentos, 6 lembretes, ${tarefas.length} tarefas, ${exemplos.length} documentos, 3 contas a pagar, 2 recorrencias, 1 fatura de cartao importada, 3 cobrancas por Pix e 2 filhos com compromissos.`);
 console.log(`Para entrar no painel de demonstracao: ${DEMO_EMAIL} / ${DEMO_SENHA}`);
 console.log(`Como membro so gastos da mesma conta: ${BIA.email} / ${DEMO_SENHA}`);
