@@ -269,19 +269,31 @@ O WhatsApp Cloud API da Meta dá um número de teste gratuito, que conversa com 
 
 ### 2.2 Subir o servidor e abrir um túnel
 
-A Meta precisa de uma URL pública com HTTPS para entregar as mensagens. Em um terminal:
+A Meta precisa de uma URL pública com HTTPS para entregar as mensagens. Antes, confira o `.env`:
 
 ```bash
-npm start
+npm run verificar
 ```
 
-Em outro terminal, abra um túnel para a porta 3000. Com o Cloudflare (instale uma vez com `winget install Cloudflare.cloudflared`):
+Ele aponta o que falta e testa de verdade as chaves de IA e o token da Meta (só leitura, nada é enviado pelo WhatsApp). Depois, em um terminal:
+
+```bash
+npm run real
+```
+
+Ele compila o painel, roda a verificação e sobe o servidor na porta 3000 com o webhook, o painel e as páginas públicas (cobrança e agendamento) juntos. Em outro terminal, abra um túnel para essa porta. Com o Cloudflare (instale uma vez com `winget install Cloudflare.cloudflared`):
 
 ```bash
 cloudflared tunnel --url http://localhost:3000
 ```
 
-Ele mostra uma URL como `https://algo-aleatorio.trycloudflare.com`. O ngrok também serve (`ngrok http 3000`).
+Ele mostra uma URL como `https://algo-aleatorio.trycloudflare.com`. O ngrok também serve (`ngrok http 3000`). Coloque essa URL em `PAINEL_URL`, para os links mandados no WhatsApp abrirem no celular, reinicie o `npm run real` e confira o túnel:
+
+```bash
+npm run verificar -- https://SUA-URL
+```
+
+A URL do túnel rápido muda a cada vez que ele abre: troque `PAINEL_URL`, o webhook na Meta e, com Google, o redirecionamento na credencial.
 
 ### 2.3 Cadastrar o webhook
 
@@ -370,6 +382,8 @@ O agente usa o fallback do servidor da Anthropic (`fallbacks: "default"`): se um
 | `src/scheduler.ts` | A cada 30 segundos: lembretes vencidos, lançamentos recorrentes, os avisos de cada pessoa no horário dela, a confirmação da véspera aos clientes e os recados agendados para outras pessoas |
 | `src/whatsapp.ts` | Envio de texto e modelo, download de mídia, leitura do webhook |
 | `src/cli.ts` | Mesmo agente no terminal |
+| `src/verificar.ts` | Confere o `.env`, as chaves e o túnel antes do teste real (`npm run verificar`) |
+| `src/web.ts` | Serve o painel compilado no mesmo servidor da API |
 
 Em `docs/aprendizados-meu-assessor.md` está o que veio da entrevista do fundador do Meu Assessor e como cada ponto entrou no projeto.
 
