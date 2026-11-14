@@ -14,7 +14,7 @@ if (!process.env[keyName]) {
 }
 
 // Conversa pelo terminal, sem WhatsApp: mesmo agente e mesmo banco, com um telefone ficticio.
-const phone = process.env.CLI_PHONE ?? "5500000000000";
+const phone = process.env.CLI_PHONE?.replace(/\D/g, "") || "5500000000000";
 const repo = makeRepo(openDb());
 // So nomeia numero novo: um CLI_PHONE de membro de conta compartilhada ja tem nome proprio.
 if (!repo.getUser(phone)) repo.ensureUser(phone, "Terminal");
