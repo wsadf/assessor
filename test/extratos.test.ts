@@ -23,6 +23,7 @@ const x = await import("../src/extratos.js");
 const { documentos } = await import("../src/documentos.js");
 const { executarFerramenta } = await import("../src/tools.js");
 const { auth } = await import("../src/auth.js");
+const { localDate } = await import("../src/time.js");
 const { buildServer } = await import("../src/server.js");
 
 after(() => fs.rmSync(path.join(os.tmpdir(), `assessor-arquivos-${process.pid}`), { recursive: true, force: true }));
@@ -146,7 +147,12 @@ test("fatura do cartao, API, ferramentas, permissao e isolamento", async () => {
   assert.deepEqual(antes.aberta, { fechamento: "2026-10-05", vencimento: "2026-10-12", total: 242.4, quantidade: 2 });
 
   const ferramenta = (nome: string, entrada: object, quem = ctx, extras = {}) => executarFerramenta(repo, quem, nome, entrada, extras);
-  assert.match(await ferramenta("fatura_do_cartao", { cartao: null }), /fatura em aberto R\$\s55,90 .+ fecha em 2026-1\d-05/);
+  // A ferramenta le o dia real: a fatura esperada sai da mesma conta feita para hoje.
+  const deHoje = x.faturaDoCartao(db, ctx, null, localDate())[0];
+  assert.ok(deHoje.configurado);
+  const textoFatura = await ferramenta("fatura_do_cartao", { cartao: null });
+  assert.match(textoFatura, /final 4321: fatura em aberto R\$\s[\d.]+,\d\d \(\d+ compras?\)/);
+  assert.ok(textoFatura.includes(`fecha em ${deHoje.aberta.fechamento} e vence em ${deHoje.aberta.vencimento}`));
   assert.match(await ferramenta("contas_bancarias", {}), /fechamento 5, vencimento 12/);
   assert.match(await ferramenta("importar_extrato", {}), /Nenhum extrato OFX recebido/);
 
